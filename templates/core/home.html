@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Timeline</h2>
+{% for post in posts %}
+  <article>
+    <p><strong><a href="/actors/{{ post.author.handle }}/">@{{ post.author.handle }}</a></strong> · {{ post.created_at }}</p>
+    {% if post.spoiler_text %}<p><em>CW: {{ post.spoiler_text }}</em></p>{% endif %}
+    <p>{{ post.content }}</p>
+    <hr>
+  </article>
+{% empty %}
+  <p>No posts yet.</p>
+{% endfor %}
+{% if user.is_authenticated and not user.email_verified %}
+<form method="post" action="/accounts/verify/resend/">{% csrf_token %}<button class="button" type="submit">Resend verification email</button></form>
+{% endif %}
+{% endblock %}

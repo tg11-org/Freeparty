@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>@{{ actor.handle }}</h2>
+{% if actor.profile %}
+  <p>{{ actor.profile.bio }}</p>
+  <p>{{ actor.profile.location }}</p>
+{% endif %}
+{% if user.is_authenticated and user.actor.id != actor.id %}
+  <form method="post" action="/social/follow/{{ actor.handle }}/">{% csrf_token %}<button class="button" type="submit">Follow</button></form>
+  <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}<button class="button button-danger" type="submit">Unfollow</button></form>
+{% endif %}
+{% endblock %}

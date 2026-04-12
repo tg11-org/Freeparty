@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Notifications</h2>
+<form method="post" action="/notifications/mark-all-read/">
+  {% csrf_token %}
+  <button class="button" type="submit">Mark all as read</button>
+</form>
+<br>
+{% for item in notifications %}
+  <article>
+    <p><strong>{{ item.notification_type }}</strong> · {{ item.created_at }}</p>
+    {% if item.source_actor %}<p>From @{{ item.source_actor.handle }}</p>{% endif %}
+  </article>
+  <hr>
+{% empty %}
+  <p>No notifications yet.</p>
+{% endfor %}
+{% endblock %}

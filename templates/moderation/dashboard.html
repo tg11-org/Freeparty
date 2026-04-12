@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Moderation Dashboard</h2>
+<p>Filter:</p>
+<p>
+  <a href="/moderation/">All</a> |
+  <a href="/moderation/?status=open">Open</a> |
+  <a href="/moderation/?status=reviewing">Reviewing</a> |
+  <a href="/moderation/?status=resolved">Resolved</a> |
+  <a href="/moderation/?status=dismissed">Dismissed</a>
+</p>
+
+{% for report in reports %}
+  <article>
+    <p><strong>{{ report.reason }}</strong> · status: {{ report.status }} · {{ report.created_at }}</p>
+    <p>Reporter: @{{ report.reporter.handle }}</p>
+    {% if report.target_actor %}<p>Target actor: @{{ report.target_actor.handle }}</p>{% endif %}
+    {% if report.target_post %}<p>Target post: {{ report.target_post.id }}</p>{% endif %}
+    <p><a href="/moderation/reports/{{ report.id }}/">Open report</a></p>
+  </article>
+  <hr>
+{% empty %}
+  <p>No reports found.</p>
+{% endfor %}
+{% endblock %}

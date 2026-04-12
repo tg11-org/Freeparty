@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Public posts</h2>
+{% for post in posts %}
+  <article>
+    <p><strong>@{{ post.author.handle }}</strong> · {{ post.created_at }}</p>
+    <p>{{ post.content }}</p>
+  </article>
+  <hr>
+{% empty %}
+  <p>No public posts.</p>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Report {{ report.id }}</h2>
+<p><strong>Reason:</strong> {{ report.reason }}</p>
+<p><strong>Status:</strong> {{ report.status }}</p>
+<p><strong>Description:</strong> {{ report.description|default:"(none)" }}</p>
+<p><strong>Reporter:</strong> @{{ report.reporter.handle }}</p>
+{% if report.target_actor %}<p><strong>Target actor:</strong> @{{ report.target_actor.handle }}</p>{% endif %}
+{% if report.target_post %}<p><strong>Target post:</strong> {{ report.target_post.id }}</p>{% endif %}
+
+<h3>Update Report</h3>
+<form method="post" action="/moderation/reports/{{ report.id }}/update/">
+  {% csrf_token %}
+  <p>
+    <label for="status">Status</label>
+    <select name="status" id="status">
+      <option value="open">open</option>
+      <option value="reviewing">reviewing</option>
+      <option value="resolved">resolved</option>
+      <option value="dismissed">dismissed</option>
+    </select>
+  </p>
+  <p>
+    <label for="action_type">Action Type</label>
+    <select name="action_type" id="action_type">
+      <option value="">(none)</option>
+      {% for value, label in action_choices %}
+        <option value="{{ value }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p>
+    <label for="notes">Action Notes</label>
+    <textarea name="notes" id="notes" rows="4"></textarea>
+  </p>
+  <p>
+    <label for="internal_note">Internal Note</label>
+    <textarea name="internal_note" id="internal_note" rows="4"></textarea>
+  </p>
+  <button class="button" type="submit">Save moderation update</button>
+</form>
+
+<h3>Actions</h3>
+{% for action in report.actions.all %}
+  <article>
+    <p><strong>{{ action.action_type }}</strong> by {{ action.moderator }} at {{ action.applied_at }}</p>
+    <p>{{ action.notes|default:"(no notes)" }}</p>
+  </article>
+{% empty %}
+  <p>No actions yet.</p>
+{% endfor %}
+
+<h3>Internal Notes</h3>
+{% for note in report.notes.all %}
+  <article>
+    <p><strong>{{ note.author }}</strong> · {{ note.created_at }}</p>
+    <p>{{ note.body }}</p>
+  </article>
+{% empty %}
+  <p>No internal notes yet.</p>
+{% endfor %}
+{% endblock %}
