@@ -108,6 +108,20 @@ cp .env.example .env
 docker compose up --build
 ```
 
+Windows helper scripts (non-destructive stop/start):
+
+```powershell
+./scripts/start.ps1
+./scripts/stop.ps1
+```
+
+```cmd
+scripts\start.cmd
+scripts\stop.cmd
+```
+
+These scripts intentionally use `docker compose stop` for shutdown, which preserves containers, volumes, and files.
+
 3. Create superuser (new shell):
 
 ```bash
