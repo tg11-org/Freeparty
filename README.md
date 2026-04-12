@@ -113,14 +113,18 @@ Windows helper scripts (non-destructive stop/start):
 ```powershell
 ./scripts/start.ps1
 ./scripts/stop.ps1
+./scripts/logs.ps1              # View live logs from all services
+./scripts/logs.ps1 web          # View logs from specific service (web, db, redis, etc.)
 ```
 
 ```cmd
 scripts\start.cmd
 scripts\stop.cmd
+scripts\logs.cmd                REM View live logs from all services
+scripts\logs.cmd web            REM View logs from specific service
 ```
 
-These scripts intentionally use `docker compose stop` for shutdown, which preserves containers, volumes, and files.
+These scripts intentionally use `docker compose stop` for shutdown, which preserves containers, volumes, and files. The `logs` scripts follow live output from all services (Ctrl+C to stop).
 
 3. Create superuser (new shell):
 

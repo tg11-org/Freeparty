@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, Client
+from django.urls import reverse
 
 from apps.accounts.models import User
 from apps.accounts.services import VerificationService
@@ -23,3 +24,21 @@ class UserModelTests(TestCase):
 		self.assertIsNotNone(verified_user)
 		assert verified_user is not None
 		self.assertTrue(verified_user.email_verified)
+
+
+class LogoutViewTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(
+			email="logout@example.com",
+			username="logoutuser",
+			password="secret123"
+		)
+		self.logout_url = reverse("accounts:logout")
+		self.home_url = reverse("home")
+
+	def test_logout_redirects_to_home(self):
+		"""Test that logout view redirects to home page"""
+		self.client.login(username="logoutuser", password="secret123")
+		response = self.client.post(self.logout_url)
+		self.assertRedirects(response, self.home_url)

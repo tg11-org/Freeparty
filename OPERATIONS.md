@@ -10,8 +10,32 @@ Expected services in Compose:
 - redis
 - celery_worker
 - celery_beat
+- mailhog (local email server for testing)
 
-## 2. Health Checks
+## 2. Local Email Testing with MailHog
+
+When developing locally, all emails are captured by MailHog instead of being sent to external servers. No configuration needed.
+
+**Access MailHog Web UI:**
+- Open http://localhost:8025 in your browser
+- All emails sent by the app (verification, password reset, notifications) appear here
+- Click any email to view full headers and body
+- Emails are captured in memory (cleared on container restart)
+
+**How it works:**
+- Django is configured to send mail to `mailhog:1025` (SMTP port)
+- MailHog intercepts and stores all messages
+- MailHog Web UI runs on port 8025
+
+**Testing email flows:**
+1. Trigger email action (sign up, password reset, etc.)
+2. Check MailHog at http://localhost:8025
+3. Extract any tokens/links for testing (e.g., verification token, reset link)
+4. Click links directly or paste into browser
+
+**No additional setup needed** — MailHog starts automatically with `docker compose up`.
+
+## 3. Health Checks
 
 Web health endpoints:
 - `GET /health/live/`
@@ -25,14 +49,14 @@ Interpretation:
 - `live`: process is running.
 - `ready`: DB + cache are available.
 
-## 3. Startup Sequence
+## 4. Startup Sequence
 
 1. Start infra and app.
 2. Verify readiness endpoint returns status `ok`.
 3. Confirm migrations are current.
 4. Confirm Celery worker and beat process are alive.
 
-## 4. Incident Triage Quick Guide
+## 5. Incident Triage Quick Guide
 
 ### App returns 500
 - Check app logs.
@@ -49,7 +73,7 @@ Interpretation:
 - Access `/moderation/` and verify report queue renders.
 - Use report detail page to update status and record notes/actions.
 
-## 5. Deployment Notes
+## 6. Deployment Notes
 
 - Behind Apache reverse proxy to Daphne.
 - Enable websocket proxying for `/ws/` paths.

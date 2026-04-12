@@ -19,7 +19,7 @@ class RateLimitedLoginView(LoginView):
 
 
 class RateLimitedLogoutView(LogoutView):
-	pass
+	next_page = "home"
 
 
 @method_decorator(ratelimit(key="ip", rate="5/m", block=True), name="dispatch")
