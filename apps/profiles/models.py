@@ -21,6 +21,8 @@ class Profile(TimeStampedModel):
 	header = models.ImageField(upload_to=header_upload_to, blank=True)
 	website_url = models.URLField(blank=True)
 	location = models.CharField(max_length=255, blank=True)
+	show_follower_count = models.BooleanField(default=True)
+	show_following_count = models.BooleanField(default=True)
 
 	def __str__(self) -> str:
 		return f"Profile<{self.actor.handle}>"

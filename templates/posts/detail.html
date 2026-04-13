@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load tz mention_tags %}
+{% block title %}Post by @{{ post.author.handle }} · Freeparty{% endblock %}
+{% block content %}
+
+{% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+
+<section style="margin-top:1.5rem;">
+  <h3 style="font-size:1rem;margin:0 0 0.75rem;color:var(--text2);">{{ comments.count }} comment{{ comments.count|pluralize }}</h3>
+
+  {% if user.is_authenticated %}
+  <form method="post" action="/posts/{{ post.id }}/comment/" style="margin-bottom:1.25rem;display:flex;flex-direction:column;gap:0.5rem;">
+    {% csrf_token %}
+    <textarea name="content" rows="3" maxlength="2000" placeholder="Add a comment..." required
+      style="width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.95rem;resize:vertical;"></textarea>
+    <button class="btn" type="submit" style="align-self:flex-end;">Reply</button>
+  </form>
+  {% endif %}
+
+  {% for comment in comments %}
+  <article style="display:flex;gap:0.75rem;padding:0.75rem 0;border-bottom:1px solid var(--border);">
+    {% if comment.author.profile.avatar %}
+      <a href="/actors/{{ comment.author.handle }}/"><img src="{{ comment.author.profile.avatar.url }}" alt="@{{ comment.author.handle }}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;"></a>
+    {% else %}
+      <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;color:var(--text2);">{{ comment.author.handle|first|upper }}</div>
+    {% endif %}
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.2rem;">
+        <a href="/actors/{{ comment.author.handle }}/" style="font-weight:600;color:var(--accent);">@{{ comment.author.handle }}</a>
+        &middot;
+        <span>{{ comment.created_at|timesince }} ago</span>
+        {% if comment.updated_at > comment.created_at %}
+          &middot; <span>edited</span>
+        {% endif %}
+      </div>
+      <p style="margin:0;word-break:break-word;">{{ comment.content|linkify_mentions|linebreaksbr }}</p>
+      {% if user.is_authenticated and user.actor.id == comment.author.id %}
+      <details style="margin-top:0.45rem;">
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.8rem;">Manage comment</summary>
+        <div style="margin-top:0.45rem;display:flex;flex-direction:column;gap:0.4rem;">
+          <form method="post" action="/posts/comments/{{ comment.id }}/edit/" style="display:flex;flex-direction:column;gap:0.4rem;">
+            {% csrf_token %}
+            <textarea name="content" rows="2" maxlength="2000" required>{{ comment.content }}</textarea>
+            <button class="btn" type="submit" style="align-self:flex-start;">Save</button>
+          </form>
+          <form method="post" action="/posts/comments/{{ comment.id }}/delete/" onsubmit="return confirm('Delete this comment?');">
+            {% csrf_token %}
+            <button class="btn btn-danger" type="submit">Delete</button>
+          </form>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+  </article>
+  {% empty %}
+    <p style="color:var(--text2);">No comments yet. Be the first!</p>
+  {% endfor %}
+</section>
+{% endblock %}

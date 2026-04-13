@@ -1,0 +1,55 @@
+{# post_card.html — include with post=post, liked_ids=set, reposted_ids=set #}
+{% load tz mention_tags %}
+<article class="post-card">
+  {# Avatar #}
+  <div>
+    {% if post.author.profile.avatar %}
+      <a href="/actors/{{ post.author.handle }}/"><img class="post-avatar" src="{{ post.author.profile.avatar.url }}" alt="@{{ post.author.handle }}'s avatar"></a>
+    {% else %}
+      <a href="/actors/{{ post.author.handle }}/"><div class="post-avatar-placeholder" aria-hidden="true">{{ post.author.handle|first|upper }}</div></a>
+    {% endif %}
+  </div>
+  <div class="post-body">
+    <div class="post-meta">
+      <a href="/actors/{{ post.author.handle }}/">@{{ post.author.handle }}</a>
+      <span>·</span>
+      <time datetime="{{ post.created_at|date:"c" }}" title="{{ post.created_at }}">{{ post.created_at|timesince }} ago</time>
+    </div>
+    {% if post.spoiler_text %}<p><em>CW: {{ post.spoiler_text }}</em></p>{% endif %}
+    <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+    <div class="post-actions">
+      <a class="btn" href="/posts/{{ post.id }}/">💬 {{ post.comment_count }}</a>
+      {% if user.is_authenticated %}
+        <form method="post" action="/social/like/{{ post.id }}/">
+          {% csrf_token %}
+          <button class="btn {% if post.id in liked_ids %}active{% endif %}" type="submit">
+            {% if post.id in liked_ids %}❤️{% else %}🤍{% endif %} {{ post.like_count }}
+          </button>
+        </form>
+        <form method="post" action="/social/repost/{{ post.id }}/">
+          {% csrf_token %}
+          <button class="btn {% if post.id in reposted_ids %}active{% endif %}" type="submit">
+            🔁 {{ post.repost_count }}
+          </button>
+        </form>
+        <a class="btn" href="/posts/{{ post.id }}/#share" title="Share">📤</a>
+        <form method="post" action="/moderation/report/">
+          {% csrf_token %}
+          <input type="hidden" name="target_post_id" value="{{ post.id }}">
+          <input type="hidden" name="reason" value="user_report">
+          <button class="btn btn-danger" type="submit" title="Report post">⚑</button>
+        </form>
+        {% if user.actor.id == post.author.id %}
+          <a class="btn" href="/posts/{{ post.id }}/edit/" title="Edit post">Edit</a>
+          <form method="post" action="/posts/{{ post.id }}/delete/" onsubmit="return confirm('Delete this post?');">
+            {% csrf_token %}
+            <button class="btn btn-danger" type="submit" title="Delete post">Delete</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <span class="btn">🤍 {{ post.like_count }}</span>
+        <span class="btn">🔁 {{ post.repost_count }}</span>
+      {% endif %}
+    </div>
+  </div>
+</article>

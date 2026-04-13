@@ -45,8 +45,65 @@ class Post(TimeStampedModel):
 	def __str__(self) -> str:
 		return f"Post<{self.id}>"
 
+	@property
+	def like_count(self) -> int:
+		return self.likes.count()
+
+	@property
+	def comment_count(self) -> int:
+		return self.comments.filter(deleted_at__isnull=True).count()
+
+	@property
+	def repost_count(self) -> int:
+		return self.reposts.count()
+
+
+class Comment(TimeStampedModel):
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="comments")
+	author = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="comments")
+	content = models.TextField(max_length=2000)
+	deleted_at = models.DateTimeField(null=True, blank=True)
+
+	class Meta:
+		ordering = ["created_at"]
+		indexes = [
+			models.Index(fields=["post", "created_at"]),
+		]
+
+	def __str__(self) -> str:
+		return f"Comment<{self.id}>"
+
 
 class Attachment(TimeStampedModel):
+	class AttachmentType(models.TextChoices):
+		IMAGE = "image", "Image"
+		VIDEO = "video", "Video"
+		FILE = "file", "File"
+
+	class ProcessingState(models.TextChoices):
+		PENDING = "pending", "Pending"
+		PROCESSED = "processed", "Processed"
+		FAILED = "failed", "Failed"
+
+	class ModerationState(models.TextChoices):
+		NORMAL = "normal", "Normal"
+		FLAGGED = "flagged", "Flagged"
+		REMOVED = "removed", "Removed"
+
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="attachments")
+	attachment_type = models.CharField(max_length=16, choices=AttachmentType.choices)
+	file = models.FileField(upload_to="attachments/%Y/%m/%d")
+	alt_text = models.CharField(max_length=500, blank=True)
+	mime_type = models.CharField(max_length=255)
+	file_size = models.PositiveBigIntegerField(default=0)
+	processing_state = models.CharField(max_length=16, choices=ProcessingState.choices, default=ProcessingState.PENDING)
+	moderation_state = models.CharField(max_length=16, choices=ModerationState.choices, default=ModerationState.NORMAL)
+
+	class Meta:
+		ordering = ["-created_at"]
+
 	class AttachmentType(models.TextChoices):
 		IMAGE = "image", "Image"
 		VIDEO = "video", "Video"

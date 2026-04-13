@@ -1,18 +1,16 @@
 {% extends "base.html" %}
-
+{% block title %}Home · Freeparty{% endblock %}
 {% block content %}
-<h2>Timeline</h2>
-{% for post in posts %}
-  <article>
-    <p><strong><a href="/actors/{{ post.author.handle }}/">@{{ post.author.handle }}</a></strong> · {{ post.created_at }}</p>
-    {% if post.spoiler_text %}<p><em>CW: {{ post.spoiler_text }}</em></p>{% endif %}
-    <p>{{ post.content }}</p>
-    <hr>
-  </article>
-{% empty %}
-  <p>No posts yet.</p>
-{% endfor %}
+<h2>{% if user.is_authenticated %}Your Timeline{% else %}Public Posts{% endif %}</h2>
 {% if user.is_authenticated and not user.email_verified %}
-<form method="post" action="/accounts/verify/resend/">{% csrf_token %}<button class="button" type="submit">Resend verification email</button></form>
+<div style="background:var(--surface2);border-left:3px solid var(--danger);padding:0.6rem 0.9rem;border-radius:6px;margin-bottom:1rem;">
+  Email address not verified.
+  <form method="post" action="/accounts/verify/resend/" style="display:inline;">{% csrf_token %}<button class="button" style="padding:0.2rem 0.6rem;font-size:0.85rem;" type="submit">Resend email</button></form>
+</div>
 {% endif %}
+{% for post in posts %}
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+{% empty %}
+  <p style="color:var(--text2);">No posts yet. <a href="/posts/public/">Browse the public feed</a> or <a href="/actors/search/">find people to follow</a>.</p>
+{% endfor %}
 {% endblock %}

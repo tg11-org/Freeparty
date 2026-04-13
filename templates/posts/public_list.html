@@ -1,14 +1,10 @@
 {% extends "base.html" %}
-
+{% block title %}Explore · Freeparty{% endblock %}
 {% block content %}
-<h2>Public posts</h2>
+<h2>Explore</h2>
 {% for post in posts %}
-  <article>
-    <p><strong>@{{ post.author.handle }}</strong> · {{ post.created_at }}</p>
-    <p>{{ post.content }}</p>
-  </article>
-  <hr>
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
 {% empty %}
-  <p>No public posts.</p>
+  <p style="color:var(--text2);">No public posts yet.</p>
 {% endfor %}
 {% endblock %}

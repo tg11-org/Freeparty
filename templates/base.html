@@ -1,39 +1,251 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light" data-contrast="normal" data-font="default" data-text-size="normal" data-spacing="normal" data-motion="normal" data-links="normal">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Freeparty Social Media</title>
+    <title>{% block title %}Freeparty{% endblock %}</title>
+    <script>
+      (function () {
+        var t = localStorage.getItem("fp-theme") || "auto";
+        var c = localStorage.getItem("fp-contrast") || "normal";
+        var f = localStorage.getItem("fp-font") || "default";
+        var s = localStorage.getItem("fp-text-size") || "normal";
+        var p = localStorage.getItem("fp-spacing") || "normal";
+        var m = localStorage.getItem("fp-motion") || "normal";
+        var l = localStorage.getItem("fp-links") || "normal";
+        var resolved = t === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", t);
+        document.documentElement.setAttribute("data-contrast", c);
+        document.documentElement.setAttribute("data-font", f);
+        document.documentElement.setAttribute("data-text-size", s);
+        document.documentElement.setAttribute("data-spacing", p);
+        document.documentElement.setAttribute("data-motion", m);
+        document.documentElement.setAttribute("data-links", l);
+      })();
+    </script>
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f7f9fb;
-        --surface: #ffffff;
-        --text: #1f2a37;
-        --accent: #0d9488;
-        --danger: #dc2626;
+        --bg: #f2f6fc; --surface: #ffffff; --surface2: #e8eef8;
+        --text: #0e1f38; --text2: #3a5470; --accent: #0f7a6e;
+        --accent-alt: #1d4ed8; --danger: #b91c1c; --border: #ccd7ea;
+        --focus: #f59e0b; --radius: 10px; color-scheme: light;
       }
-      body { margin: 0; font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
-      header { background: linear-gradient(135deg, #0ea5a4, #2563eb); color: #fff; padding: 1rem; }
-      nav a { color: #fff; margin-right: 1rem; text-decoration: none; }
-      main { max-width: 900px; margin: 1.25rem auto; background: var(--surface); padding: 1.25rem; border-radius: 12px; }
-      .messages { list-style: none; padding: 0; }
-      .messages li { padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem; background: #e2e8f0; }
-      .button { background: var(--accent); color: #fff; border: 0; padding: 0.5rem 0.75rem; border-radius: 6px; cursor: pointer; }
+      html[data-theme="dark"] {
+        --bg: #07111e; --surface: #0d1c30; --surface2: #152539;
+        --text: #e8f3ff; --text2: #abbcce; --accent: #33c4b0;
+        --accent-alt: #60a5fa; --danger: #f87171; --border: #2a3f5c;
+        --focus: #facc15; color-scheme: dark;
+      }
+      html[data-theme="cyberpunk"] {
+        --bg: #0a0014; --surface: #12002a; --surface2: #1e0040;
+        --text: #f0e6ff; --text2: #c084fc; --accent: #ff00ff;
+        --accent-alt: #00ffcc; --danger: #ff3366; --border: #7c3aed;
+        --focus: #ffd700; color-scheme: dark;
+      }
+      html[data-theme="forest"] {
+        --bg: #0d1f0d; --surface: #142614; --surface2: #1c3320;
+        --text: #e0f5e0; --text2: #a8d5a8; --accent: #4caf50;
+        --accent-alt: #80cbc4; --danger: #ef5350; --border: #2e5c2e;
+        --focus: #ffe082; color-scheme: dark;
+      }
+      html[data-theme="sunset"] {
+        --bg: #1a0a00; --surface: #2c1000; --surface2: #3d1800;
+        --text: #fff0e0; --text2: #ffc080; --accent: #ff7043;
+        --accent-alt: #ffca28; --danger: #e53935; --border: #7c3a00;
+        --focus: #ffeb3b; color-scheme: dark;
+      }
+      html[data-theme="ocean"] {
+        --bg: #001628; --surface: #002540; --surface2: #00335a;
+        --text: #d0f0ff; --text2: #80c8e8; --accent: #00b4d8;
+        --accent-alt: #48cae4; --danger: #ef476f; --border: #005580;
+        --focus: #ffe066; color-scheme: dark;
+      }
+      html[data-theme="rose"] {
+        --bg: #1a000a; --surface: #2b0016; --surface2: #3d0022;
+        --text: #ffe0ed; --text2: #f9a8c9; --accent: #ec4899;
+        --accent-alt: #f472b6; --danger: #dc2626; --border: #7c0038;
+        --focus: #fde68a; color-scheme: dark;
+      }
+      html[data-contrast="high"] {
+        --bg: #000; --surface: #000; --surface2: #111;
+        --text: #fff; --text2: #fff; --accent: #0ff; --accent-alt: #0ff;
+        --danger: #f66; --border: #fff; --focus: #ff0;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.55;
+      }
+      html[data-font="dyslexic"] body,
+      html[data-font="dyslexic"] input,
+      html[data-font="dyslexic"] textarea,
+      html[data-font="dyslexic"] button,
+      html[data-font="dyslexic"] select {
+        font-family: "OpenDyslexic", "Comic Sans MS", Verdana, sans-serif;
+        letter-spacing: 0.025em; word-spacing: 0.1em;
+      }
+      a { color: var(--accent); }
+      a:hover { color: var(--accent-alt); }
+      a:focus-visible, button:focus-visible, input:focus-visible,
+      select:focus-visible, textarea:focus-visible {
+        outline: 3px solid var(--focus); outline-offset: 2px;
+      }
+      header {
+        background: linear-gradient(135deg, #0f4f7a 0%, #1a3066 60%, #2e1060 100%);
+        color: #fff; padding: 0.85rem 1rem 0.7rem;
+      }
+      html[data-contrast="high"] header { background: #000; border-bottom: 2px solid #fff; }
+      header h1 { margin: 0 0 0.5rem; font-size: 1.4rem; letter-spacing: 0.01em; }
+      nav { display: flex; flex-wrap: wrap; gap: 0.3rem 0.75rem; align-items: center; }
+      nav a { color: #fff; text-decoration: underline; text-underline-offset: 3px; font-size: 0.9rem; }
+      .search-bar { display: flex; gap: 0.4rem; margin-top: 0.7rem; }
+      .search-bar input {
+        flex: 1; padding: 0.3rem 0.6rem; border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.12);
+        color: #fff; font-size: 0.875rem;
+      }
+      .search-bar input::placeholder { color: rgba(255,255,255,0.6); }
+      .search-bar button {
+        padding: 0.3rem 0.75rem; border-radius: 999px; border: none;
+        background: rgba(255,255,255,0.2); color: #fff; cursor: pointer; font-size: 0.875rem;
+      }
+      .search-bar button:hover { background: rgba(255,255,255,0.35); }
+      .a11y-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; align-items: center; }
+      .a11y-btn {
+        display: inline-flex;
+        align-items: center;
+        background: rgba(255,255,255,0.1); color: #fff;
+        border: 1px solid rgba(255,255,255,0.6); padding: 0.25rem 0.55rem;
+        border-radius: 999px; cursor: pointer; font-size: 0.78rem; font-weight: 600;
+        white-space: nowrap;
+        line-height: 1.1;
+      }
+      .a11y-btn:hover { background: rgba(255,255,255,0.22); }
+      .theme-select-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.6);
+        border-radius: 999px;
+        padding: 0.25rem 1.45rem 0.25rem 0.55rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      .theme-select-wrap:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+      .theme-select {
+        appearance: none;
+        background: transparent;
+        color: #fff;
+        border: 0;
+        padding: 0;
+        min-width: 6.75rem;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      .theme-select:focus-visible { outline: none; }
+      .theme-select option { background: #0d1c30; color: #fff; }
+      .theme-select-wrap::after {
+        content: "v"; position: absolute; right: 0.55rem; top: 50%;
+        transform: translateY(-50%); pointer-events: none; color: #fff; font-size: 0.7rem;
+      }
+      main {
+        max-width: 800px; margin: 1.2rem auto;
+        background: var(--surface); padding: 1.2rem;
+        border-radius: var(--radius); border: 1px solid var(--border);
+      }
+      h2 { margin-top: 0; font-size: 1.25rem; }
+      .post-card {
+        display: flex; gap: 0.75rem; padding: 0.85rem 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .post-card:last-child { border-bottom: none; }
+      .post-avatar {
+        width: 42px; height: 42px; border-radius: 50%;
+        object-fit: cover; flex-shrink: 0;
+        background: var(--surface2); border: 1px solid var(--border);
+      }
+      .post-avatar-placeholder {
+        width: 42px; height: 42px; border-radius: 50%;
+        background: var(--surface2); border: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; font-weight: 700; color: var(--text2); flex-shrink: 0;
+      }
+      .post-body { flex: 1; min-width: 0; }
+      .post-meta { font-size: 0.82rem; color: var(--text2); margin-bottom: 0.3rem; }
+      .post-meta a { color: var(--text); font-weight: 700; text-decoration: none; }
+      .post-meta a:hover { text-decoration: underline; }
+      .post-content { margin: 0 0 0.5rem; word-break: break-word; white-space: pre-wrap; }
+      .post-content a { color: var(--accent); }
+      .post-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
+      .post-actions form { margin: 0; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.2rem 0.6rem;
+        border-radius: 999px; border: 1px solid var(--border); background: var(--surface2);
+        color: var(--text2); cursor: pointer; font-size: 0.8rem; text-decoration: none;
+        transition: background 0.15s;
+      }
+      .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .btn-danger { border-color: var(--danger); color: var(--danger); }
+      .btn-danger:hover { background: var(--danger); color: #fff; }
+      .button { background: var(--accent); color: #fff; border: 0; padding: 0.45rem 0.9rem; border-radius: var(--radius); cursor: pointer; font-size: 0.9rem; }
+      .button:hover { opacity: 0.88; }
       .button-danger { background: var(--danger); }
-      form p { display: flex; flex-direction: column; gap: 0.25rem; }
-      textarea, input, select { padding: 0.4rem; border-radius: 6px; border: 1px solid #cbd5e1; }
+      .messages { list-style: none; padding: 0; margin: 0 0 1rem; }
+      .messages li { padding: 0.55rem 0.75rem; border-radius: 6px; margin-bottom: 0.4rem; background: var(--surface2); border-left: 3px solid var(--accent); }
+      form p { display: flex; flex-direction: column; gap: 0.2rem; }
+      textarea, input[type=text], input[type=email], input[type=password], input[type=url], input[type=search], select {
+        padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border);
+        background: var(--surface); color: var(--text); font-size: 0.9rem; width: 100%;
+      }
+      .profile-avatar { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); }
+      .profile-avatar-lg { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 3px solid var(--accent); }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+      .mention { color: var(--accent); font-weight: 600; }
+      html[data-text-size="large"] { font-size: 112.5%; }
+      html[data-text-size="larger"] { font-size: 125%; }
+      html[data-spacing="relaxed"] body { line-height: 1.8; }
+      html[data-links="underlined"] a { text-decoration: underline !important; text-underline-offset: 3px; }
+      html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+      }
+      .skip-link {
+        position: absolute;
+        left: 0.5rem;
+        top: -40px;
+        background: #fff;
+        color: #000;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 2px solid var(--focus);
+        z-index: 999;
+      }
+      .skip-link:focus { top: 0.5rem; }
+      @media (max-width: 680px) {
+        main { margin: 0.5rem; padding: 0.9rem; border-radius: 8px; }
+        header h1 { font-size: 1.1rem; }
+      }
     </style>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <header>
-      <h1>Freeparty Social Media</h1>
+      <h1><a href="/" style="color:#fff;text-decoration:none;">Freeparty</a></h1>
       <nav>
         <a href="/">Home</a>
-        <a href="/posts/public/">Public</a>
+        <a href="/posts/public/">Explore</a>
         {% if user.is_authenticated %}
           <a href="/posts/new/">Post</a>
-          <a href="/profiles/me/edit/">Edit Profile</a>
+          <a href="/actors/{{ user.actor.handle }}/">My Profile</a>
           <a href="/notifications/">Notifications</a>
           {% if user.is_staff %}<a href="/moderation/">Moderation</a>{% endif %}
           <a href="/accounts/logout/">Logout</a>
@@ -42,8 +254,34 @@
           <a href="/accounts/signup/">Sign up</a>
         {% endif %}
       </nav>
+      <form class="search-bar" method="get" action="/actors/search/" role="search" aria-label="Site search">
+        <input type="search" name="q" placeholder="Search people and posts" value="{{ request.GET.q|default:'' }}" aria-label="Search">
+        <button type="submit">Search</button>
+      </form>
+      <div class="a11y-bar" role="group" aria-label="Display preferences">
+        <label class="theme-select-wrap" for="theme-chooser">
+          Theme
+          <select class="theme-select" id="theme-chooser" aria-label="Choose theme">
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="cyberpunk">Cyberpunk</option>
+            <option value="forest">Forest</option>
+            <option value="sunset">Sunset</option>
+            <option value="ocean">Ocean</option>
+            <option value="rose">Rose</option>
+          </select>
+        </label>
+        <button class="a11y-btn" id="contrast-btn" type="button">Contrast</button>
+        <button class="a11y-btn" id="font-btn" type="button">Font</button>
+        <button class="a11y-btn" id="text-size-btn" type="button">Text size</button>
+        <button class="a11y-btn" id="spacing-btn" type="button">Spacing</button>
+        <button class="a11y-btn" id="motion-btn" type="button">Motion</button>
+        <button class="a11y-btn" id="links-btn" type="button">Links</button>
+      </div>
+      <span id="a11y-live" class="sr-only" aria-live="polite"></span>
     </header>
-    <main>
+    <main id="main-content" tabindex="-1">
       {% if messages %}
         <ul class="messages">
           {% for message in messages %}
@@ -53,5 +291,131 @@
       {% endif %}
       {% block content %}{% endblock %}
     </main>
+    <script>
+    (function(){
+      var root = document.documentElement;
+      var sel = document.getElementById("theme-chooser");
+      var cBtn = document.getElementById("contrast-btn");
+      var fBtn = document.getElementById("font-btn");
+      var textSizeBtn = document.getElementById("text-size-btn");
+      var spacingBtn = document.getElementById("spacing-btn");
+      var motionBtn = document.getElementById("motion-btn");
+      var linksBtn = document.getElementById("links-btn");
+      var live = document.getElementById("a11y-live");
+      var searchInput = document.querySelector('.search-bar input[name="q"]');
+
+      function resolveTheme(pref){
+        if(pref === "auto") return window.matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light";
+        return pref;
+      }
+      function loadOpenDyslexic(){
+        if(!document.getElementById("od-css")){
+          var l = document.createElement("link");
+          l.id = "od-css"; l.rel = "stylesheet";
+          l.href = "https://fonts.cdnfonts.com/css/open-dyslexic";
+          document.head.appendChild(l);
+        }
+      }
+      function announce(m){ live.textContent = ""; setTimeout(function(){ live.textContent = m; }, 50); }
+      function apply(){
+        var pref = root.getAttribute("data-theme-pref") || "auto";
+        var contrast = root.getAttribute("data-contrast") || "normal";
+        var font = root.getAttribute("data-font") || "default";
+        var textSize = root.getAttribute("data-text-size") || "normal";
+        var spacing = root.getAttribute("data-spacing") || "normal";
+        var motion = root.getAttribute("data-motion") || "normal";
+        var links = root.getAttribute("data-links") || "normal";
+        root.setAttribute("data-theme", resolveTheme(pref));
+        if (sel) sel.value = pref;
+        if (cBtn) cBtn.textContent = contrast === "high" ? "High Contrast On" : "Contrast";
+        if (fBtn) fBtn.textContent = font === "dyslexic" ? "OpenDyslexic On" : "Font";
+        if (textSizeBtn) textSizeBtn.textContent = textSize === "normal" ? "Text size" : (textSize === "large" ? "Text size Large" : "Text size Larger");
+        if (spacingBtn) spacingBtn.textContent = spacing === "relaxed" ? "Spacing Relaxed" : "Spacing";
+        if (motionBtn) motionBtn.textContent = motion === "reduced" ? "Motion Reduced" : "Motion";
+        if (linksBtn) linksBtn.textContent = links === "underlined" ? "Links Underlined" : "Links";
+        if (font === "dyslexic") loadOpenDyslexic();
+      }
+      if (sel) {
+        sel.addEventListener("change", function(){
+          var v = sel.value;
+          root.setAttribute("data-theme-pref", v);
+          localStorage.setItem("fp-theme", v);
+          apply();
+          announce("Theme: " + v);
+        });
+      }
+      if (cBtn) {
+        cBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-contrast") || "normal";
+          var next = cur === "normal" ? "high" : "normal";
+          root.setAttribute("data-contrast", next);
+          localStorage.setItem("fp-contrast", next);
+          apply();
+          announce("Contrast: " + next);
+        });
+      }
+      if (fBtn) {
+        fBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-font") || "default";
+          var next = cur === "default" ? "dyslexic" : "default";
+          root.setAttribute("data-font", next);
+          localStorage.setItem("fp-font", next);
+          apply();
+          announce("Font: " + (next === "dyslexic" ? "OpenDyslexic" : "Default"));
+        });
+      }
+      if (textSizeBtn) {
+        textSizeBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-text-size") || "normal";
+          var next = cur === "normal" ? "large" : (cur === "large" ? "larger" : "normal");
+          root.setAttribute("data-text-size", next);
+          localStorage.setItem("fp-text-size", next);
+          apply();
+          announce("Text size: " + next);
+        });
+      }
+      if (spacingBtn) {
+        spacingBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-spacing") || "normal";
+          var next = cur === "normal" ? "relaxed" : "normal";
+          root.setAttribute("data-spacing", next);
+          localStorage.setItem("fp-spacing", next);
+          apply();
+          announce("Spacing: " + next);
+        });
+      }
+      if (motionBtn) {
+        motionBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-motion") || "normal";
+          var next = cur === "normal" ? "reduced" : "normal";
+          root.setAttribute("data-motion", next);
+          localStorage.setItem("fp-motion", next);
+          apply();
+          announce("Motion: " + next);
+        });
+      }
+      if (linksBtn) {
+        linksBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-links") || "normal";
+          var next = cur === "normal" ? "underlined" : "normal";
+          root.setAttribute("data-links", next);
+          localStorage.setItem("fp-links", next);
+          apply();
+          announce("Links: " + next);
+        });
+      }
+
+      document.addEventListener("keydown", function(evt){
+        if (evt.key === "/" && searchInput && document.activeElement !== searchInput) {
+          evt.preventDefault();
+          searchInput.focus();
+        }
+      });
+      window.matchMedia("(prefers-color-scheme:dark)").addEventListener("change", function(){
+        if ((root.getAttribute("data-theme-pref") || "auto") === "auto") apply();
+      });
+      apply();
+    })();
+    </script>
   </body>
 </html>

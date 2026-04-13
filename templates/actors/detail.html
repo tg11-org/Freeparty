@@ -1,13 +1,66 @@
 {% extends "base.html" %}
-
+{% block title %}@{{ actor.handle }} · Freeparty{% endblock %}
 {% block content %}
-<h2>@{{ actor.handle }}</h2>
-{% if actor.profile %}
-  <p>{{ actor.profile.bio }}</p>
-  <p>{{ actor.profile.location }}</p>
-{% endif %}
+<div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+  {% if actor.profile.avatar %}
+    <img class="profile-avatar-lg" src="{{ actor.profile.avatar.url }}" alt="@{{ actor.handle }}'s avatar">
+  {% else %}
+    <div style="width:96px;height:96px;border-radius:50%;background:var(--surface2);border:3px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700;color:var(--text2);">{{ actor.handle|first|upper }}</div>
+  {% endif %}
+  <div style="flex:1;min-width:0;">
+    <h2 style="margin:0 0 0.2rem;">@{{ actor.handle }}</h2>
+    {% if actor.profile.location %}<p style="margin:0;font-size:0.85rem;color:var(--text2);">📍 {{ actor.profile.location }}</p>{% endif %}
+    {% if actor.profile.website_url %}<p style="margin:0.2rem 0 0;font-size:0.85rem;"><a href="{{ actor.profile.website_url }}" target="_blank" rel="noopener noreferrer">🌐 {{ actor.profile.website_url }}</a></p>{% endif %}
+    {% if actor.profile.bio %}<p style="margin:0.5rem 0 0;">{{ actor.profile.bio }}</p>{% endif %}
+    <p style="font-size:0.85rem;color:var(--text2);margin:0.5rem 0 0;">
+      {% if show_follower_count %}
+        <strong style="color:var(--text);">{{ follower_count }}</strong> followers
+      {% else %}
+        <span>Followers hidden</span>
+      {% endif %}
+      &ensp;
+      {% if show_following_count %}
+        <strong style="color:var(--text);">{{ following_count }}</strong> following
+      {% else %}
+        <span>Following hidden</span>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
 {% if user.is_authenticated and user.actor.id != actor.id %}
-  <form method="post" action="/social/follow/{{ actor.handle }}/">{% csrf_token %}<button class="button" type="submit">Follow</button></form>
-  <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}<button class="button button-danger" type="submit">Unfollow</button></form>
+<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.25rem;">
+  {% if is_blocked_by_me %}
+    <form method="post" action="/social/unblock/{{ actor.handle }}/">{% csrf_token %}
+      <button class="btn btn-danger" type="submit">🚫 Unblock</button>
+    </form>
+  {% elif is_blocked_by_them %}
+    <span class="btn" style="opacity:0.6;">🚫 You are blocked</span>
+  {% else %}
+    {% if is_following %}
+      <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}
+        <button class="btn active" type="submit">✓ Following</button>
+      </form>
+    {% else %}
+      <form method="post" action="/social/follow/{{ actor.handle }}/">{% csrf_token %}
+        <button class="btn" type="submit">＋ Follow</button>
+      </form>
+    {% endif %}
+    <form method="post" action="/social/block/{{ actor.handle }}/">{% csrf_token %}
+      <button class="btn btn-danger" type="submit">🚫 Block</button>
+    </form>
+    <form method="post" action="/social/report-actor/{{ actor.handle }}/">{% csrf_token %}
+      <input type="hidden" name="reason" value="user_report">
+      <button class="btn btn-danger" type="submit">⚑ Report</button>
+    </form>
+  {% endif %}
+</div>
 {% endif %}
+
+<h3 style="margin:0 0 0.5rem;font-size:1rem;color:var(--text2);">Posts</h3>
+{% for post in posts %}
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+{% empty %}
+  <p style="color:var(--text2);">No posts yet.</p>
+{% endfor %}
 {% endblock %}

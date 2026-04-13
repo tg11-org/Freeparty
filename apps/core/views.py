@@ -4,6 +4,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
+from apps.social.models import Like, Repost
 from apps.timelines.services import home_timeline, public_timeline
 
 
@@ -11,9 +12,18 @@ from apps.timelines.services import home_timeline, public_timeline
 def home_view(request: HttpRequest) -> HttpResponse:
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		posts = home_timeline(request.user.actor.id)
+		actor = request.user.actor
+		liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+		reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	else:
 		posts = public_timeline()
-	return render(request, "core/home.html", {"posts": posts})
+		liked_ids = set()
+		reposted_ids = set()
+	return render(request, "core/home.html", {
+		"posts": posts,
+		"liked_ids": liked_ids,
+		"reposted_ids": reposted_ids,
+	})
 
 
 @require_http_methods(["GET"])

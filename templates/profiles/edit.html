@@ -2,6 +2,7 @@
 
 {% block content %}
 <h2>Edit profile</h2>
+<p style="color:var(--text2);margin-top:0;">Control your profile details and privacy visibility.</p>
 <form method="post" enctype="multipart/form-data">{% csrf_token %}
   {{ form.as_p }}
   <button class="button" type="submit">Save</button>

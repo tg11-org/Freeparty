@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Search · Freeparty{% endblock %}
+{% block content %}
+<h2 style="margin:0 0 1rem;">Search results for <strong>{{ query }}</strong></h2>
+
+{% if actor_results %}
+<section style="margin-bottom:2rem;">
+  <h3 style="font-size:1rem;color:var(--text2);margin:0 0 0.75rem;">People</h3>
+  <div style="display:flex;flex-direction:column;gap:0.75rem;">
+    {% for actor in actor_results %}
+    <div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--surface2);border-radius:0.75rem;border:1px solid var(--border);">
+      {% if actor.profile.avatar %}
+        <a href="/actors/{{ actor.handle }}/"><img src="{{ actor.profile.avatar.url }}" alt="@{{ actor.handle }}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;"></a>
+      {% else %}
+        <a href="/actors/{{ actor.handle }}/" style="width:48px;height:48px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;color:var(--text2);flex-shrink:0;">{{ actor.handle|first|upper }}</a>
+      {% endif %}
+      <div style="flex:1;min-width:0;">
+        <a href="/actors/{{ actor.handle }}/" style="font-weight:600;color:var(--accent);">@{{ actor.handle }}</a>
+        {% if actor.profile.bio %}<p style="margin:0.15rem 0 0;font-size:0.85rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ actor.profile.bio|truncatechars:80 }}</p>{% endif %}
+      </div>
+      {% if user.is_authenticated and user.actor.id != actor.id %}
+      <form method="post" action="/social/follow/{{ actor.handle }}/">{% csrf_token %}
+        <button class="btn" type="submit">＋ Follow</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if post_results %}
+<section>
+  <h3 style="font-size:1rem;color:var(--text2);margin:0 0 0.75rem;">Posts</h3>
+  {% for post in post_results %}
+    {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if not actor_results and not post_results %}
+<p style="color:var(--text2);">No results found for "<strong>{{ query }}</strong>".</p>
+{% endif %}
+{% endblock %}
