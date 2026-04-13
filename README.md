@@ -125,6 +125,15 @@ docker compose up --detach --build
 
 If your environment uses legacy Compose, replace `docker compose` with `docker-compose`.
 
+Ubuntu 22.04 note: `docker-compose` v1.29.x can fail during container recreate with
+`KeyError: 'ContainerConfig'`. Prefer Docker Compose v2 plugin:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker-compose-plugin
+docker compose version
+```
+
 Windows helper scripts (non-destructive stop/start):
 
 ```powershell

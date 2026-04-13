@@ -49,13 +49,20 @@ if [[ ! -f .env ]]; then
 fi
 
 COMPOSE_BIN=(docker compose)
+COMPOSE_V1="false"
 if ! docker compose version >/dev/null 2>&1; then
   if command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_BIN=(docker-compose)
+    COMPOSE_V1="true"
   else
     echo "Neither 'docker compose' nor 'docker-compose' is available on PATH."
     exit 1
   fi
+fi
+
+if [[ "${COMPOSE_V1}" == "true" ]]; then
+  echo "Detected docker-compose v1. Running a cleanup pass to avoid known recreate bug (KeyError: ContainerConfig)."
+  "${COMPOSE_BIN[@]}" down --remove-orphans || true
 fi
 
 echo "Configuring .env for deployment..."
@@ -75,12 +82,12 @@ updates = {
     'DEBUG': 'False',
     'SITE_SCHEME': 'https',
     'SITE_DOMAIN': site_domain,
-  'BIND_IP': server_ip,
+    'BIND_IP': server_ip,
     'WEB_PORT': app_port,
-  'DB_PORT': '5432',
-  'REDIS_PORT': '6379',
-  'SMTP_PORT': '1025',
-  'MAILHOG_UI_PORT': '8025',
+    'DB_PORT': '5432',
+    'REDIS_PORT': '6379',
+    'SMTP_PORT': '1025',
+    'MAILHOG_UI_PORT': '8025',
 }
 
 for key, value in updates.items():
@@ -107,7 +114,7 @@ env_path.write_text(text, encoding='utf-8')
 PY
 
 echo "Starting Docker stack..."
-"${COMPOSE_BIN[@]}" up --detach --build
+"${COMPOSE_BIN[@]}" up --detach --build --remove-orphans
 
 echo "Running migrations..."
 "${COMPOSE_BIN[@]}" exec -T web python manage.py migrate
@@ -133,5 +140,7 @@ Next steps:
 1. Install Apache config from deploy/apache/freeparty.site.conf
 2. Enable Apache modules: proxy proxy_http proxy_wstunnel headers rewrite ssl socache_shmcb
 3. Reload Apache
+
+Recommended: install Docker Compose v2 plugin and use 'docker compose' (legacy docker-compose v1 is deprecated).
 
 EOF
