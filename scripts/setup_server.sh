@@ -48,6 +48,16 @@ if [[ ! -f .env ]]; then
   echo "Created .env from .env.example"
 fi
 
+COMPOSE_BIN=(docker compose)
+if ! docker compose version >/dev/null 2>&1; then
+  if command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker-compose)
+  else
+    echo "Neither 'docker compose' nor 'docker-compose' is available on PATH."
+    exit 1
+  fi
+fi
+
 echo "Configuring .env for deployment..."
 python3 - <<'PY' "$SITE_DOMAIN" "$SERVER_IP" "$APP_PORT"
 import pathlib
@@ -93,18 +103,18 @@ env_path.write_text(text, encoding='utf-8')
 PY
 
 echo "Starting Docker stack..."
-docker compose up -d --build
+"${COMPOSE_BIN[@]}" up --detach --build
 
 echo "Running migrations..."
-docker compose exec -T web python manage.py migrate
+"${COMPOSE_BIN[@]}" exec -T web python manage.py migrate
 
 echo "Collecting static files..."
-docker compose exec -T web python manage.py collectstatic --noinput
+"${COMPOSE_BIN[@]}" exec -T web python manage.py collectstatic --noinput
 
 if [[ "$NON_INTERACTIVE" != "true" ]]; then
   read -r -p "Create superuser now? [y/N] " CREATE_SUPERUSER
   if [[ "$CREATE_SUPERUSER" =~ ^[Yy]$ ]]; then
-    docker compose exec web python manage.py createsuperuser
+    "${COMPOSE_BIN[@]}" exec web python manage.py createsuperuser
   fi
 fi
 

@@ -8,8 +8,20 @@ if not exist ".env" (
   echo Created .env from .env.example
 )
 
+set "COMPOSE=docker compose"
+docker compose version >nul 2>nul
+if errorlevel 1 (
+  docker-compose --version >nul 2>nul
+  if errorlevel 1 (
+    echo Neither docker compose nor docker-compose is available.
+    pause
+    exit /b 1
+  )
+  set "COMPOSE=docker-compose"
+)
+
 echo Starting Freeparty services (non-destructive)...
-docker compose up -d --build
+%COMPOSE% up --detach --build
 if errorlevel 1 (
   echo Failed to start services.
   pause

@@ -120,8 +120,10 @@ cp .env.example .env
 2. Start stack:
 
 ```bash
-docker compose up --build
+docker compose up --detach --build
 ```
+
+If your environment uses legacy Compose, replace `docker compose` with `docker-compose`.
 
 Windows helper scripts (non-destructive stop/start):
 
@@ -155,7 +157,7 @@ What it does:
 - defaults `SITE_SCHEME=https`
 - sets `WEB_BIND`/`WEB_PORT` for Docker bind address and port
 - updates `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / `CORS_ALLOWED_ORIGINS`
-- runs `docker compose up -d --build`, migrations, and collectstatic
+- runs `docker compose up --detach --build`, migrations, and collectstatic
 
 3. Create superuser (new shell):
 
