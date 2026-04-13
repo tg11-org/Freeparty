@@ -2,24 +2,74 @@
 
 {% block content %}
 <h2>Moderation Dashboard</h2>
-<p>Filter:</p>
-<p>
-  <a href="/moderation/">All</a> |
-  <a href="/moderation/?status=open">Open</a> |
-  <a href="/moderation/?status=reviewing">Reviewing</a> |
-  <a href="/moderation/?status=resolved">Resolved</a> |
-  <a href="/moderation/?status=dismissed">Dismissed</a>
-</p>
+<form method="get" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.6rem;margin-bottom:1rem;">
+  <p style="margin:0;">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">All</option>
+      <option value="open" {% if selected_status == "open" %}selected{% endif %}>Open</option>
+      <option value="under_review" {% if selected_status == "under_review" %}selected{% endif %}>Under review</option>
+      <option value="actioned" {% if selected_status == "actioned" %}selected{% endif %}>Actioned</option>
+      <option value="resolved" {% if selected_status == "resolved" %}selected{% endif %}>Resolved</option>
+      <option value="dismissed" {% if selected_status == "dismissed" %}selected{% endif %}>Dismissed</option>
+      <option value="reviewing" {% if selected_status == "reviewing" %}selected{% endif %}>Reviewing (legacy)</option>
+    </select>
+  </p>
+  <p style="margin:0;">
+    <label for="reason">Reason contains</label>
+    <input id="reason" type="text" name="reason" value="{{ reason|default:'' }}">
+  </p>
+  <p style="margin:0;">
+    <label for="actor">Reporter handle</label>
+    <input id="actor" type="text" name="actor" value="{{ actor_q|default:'' }}">
+  </p>
+  <p style="margin:0;">
+    <label for="post">Target post ID</label>
+    <input id="post" type="text" name="post" value="{{ post_q|default:'' }}" placeholder="UUID">
+  </p>
+  <p style="margin:0;">
+    <label for="date_from">From date</label>
+    <input id="date_from" type="date" name="date_from" value="{{ date_from|default:'' }}">
+  </p>
+  <p style="margin:0;">
+    <label for="date_to">To date</label>
+    <input id="date_to" type="date" name="date_to" value="{{ date_to|default:'' }}">
+  </p>
+  <p style="margin:0;">
+    <label for="target">Target type</label>
+    <select id="target" name="target">
+      <option value="" {% if not target_type %}selected{% endif %}>Any</option>
+      <option value="actor" {% if target_type == "actor" %}selected{% endif %}>Actor</option>
+      <option value="post" {% if target_type == "post" %}selected{% endif %}>Post</option>
+    </select>
+  </p>
+  <p style="margin:0;display:flex;align-items:end;">
+    <button class="button" type="submit">Apply filters</button>
+  </p>
+</form>
 
 {% for report in reports %}
-  <article>
-    <p><strong>{{ report.reason }}</strong> · status: {{ report.status }} · {{ report.created_at }}</p>
+  <article style="padding:0.7rem 0.8rem;border:1px solid var(--border);border-radius:8px;background:var(--surface2);margin-bottom:0.75rem;">
+    <p><strong>{{ report.reason }}</strong> · status: <strong>{{ report.status }}</strong> · {{ report.created_at|timesince }} ago</p>
     <p>Reporter: @{{ report.reporter.handle }}</p>
     {% if report.target_actor %}<p>Target actor: @{{ report.target_actor.handle }}</p>{% endif %}
     {% if report.target_post %}<p>Target post: {{ report.target_post.id }}</p>{% endif %}
-    <p><a href="/moderation/reports/{{ report.id }}/">Open report</a></p>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+      <a class="btn" href="/moderation/reports/{{ report.id }}/">Open report</a>
+      <form method="post" action="/moderation/reports/{{ report.id }}/quick-status/">{% csrf_token %}
+        <input type="hidden" name="status" value="under_review">
+        <button class="btn" type="submit">Move to under review</button>
+      </form>
+      <form method="post" action="/moderation/reports/{{ report.id }}/quick-status/">{% csrf_token %}
+        <input type="hidden" name="status" value="resolved">
+        <button class="btn" type="submit">Resolve</button>
+      </form>
+      <form method="post" action="/moderation/reports/{{ report.id }}/quick-status/">{% csrf_token %}
+        <input type="hidden" name="status" value="dismissed">
+        <button class="btn" type="submit">Dismiss</button>
+      </form>
+    </div>
   </article>
-  <hr>
 {% empty %}
   <p>No reports found.</p>
 {% endfor %}

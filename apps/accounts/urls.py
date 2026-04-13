@@ -1,10 +1,11 @@
-from django.contrib.auth.views import PasswordResetCompleteView, PasswordResetConfirmView, PasswordResetDoneView
+from django.contrib.auth.views import PasswordResetCompleteView, PasswordResetDoneView
 from django.urls import path
 
 from apps.accounts.views import (
     RateLimitedLoginView,
     RateLimitedLogoutView,
     RateLimitedPasswordResetView,
+    RateLimitedPasswordResetConfirmView,
     resend_verification_view,
     signup_view,
     verify_email_view,
@@ -13,6 +14,7 @@ from apps.accounts.views import (
 app_name = "accounts"
 
 urlpatterns = [
+    path("", RateLimitedLoginView.as_view(), name="index"),
     path("signup/", signup_view, name="signup"),
     path("login/", RateLimitedLoginView.as_view(), name="login"),
     path("logout/", RateLimitedLogoutView.as_view(), name="logout"),
@@ -20,7 +22,7 @@ urlpatterns = [
     path("password-reset/done/", PasswordResetDoneView.as_view(template_name="accounts/password_reset_done.html"), name="password-reset-done"),
     path(
         "password-reset/<uidb64>/<token>/",
-        PasswordResetConfirmView.as_view(template_name="accounts/password_reset_confirm.html"),
+        RateLimitedPasswordResetConfirmView.as_view(template_name="accounts/password_reset_confirm.html"),
         name="password_reset_confirm",
     ),
     path(

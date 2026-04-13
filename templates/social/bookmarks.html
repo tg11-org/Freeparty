@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Bookmarks · Freeparty{% endblock %}
+{% block content %}
+<h2>Your Bookmarks</h2>
+{% for post in posts %}
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
+{% empty %}
+  <p style="color:var(--text2);">No bookmarks yet.</p>
+{% endfor %}
+{% include "partials/pagination.html" with page_obj=page_obj page_param="page" %}
+{% endblock %}

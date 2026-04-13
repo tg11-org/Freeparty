@@ -2,8 +2,37 @@
 
 {% block content %}
 <h2>Create post</h2>
-<form method="post">{% csrf_token %}
-  {{ form.as_p }}
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+  {{ form.non_field_errors }}
+  <p>{{ form.content.label_tag }} {{ form.content }}</p>
+  <p>{{ form.spoiler_text.label_tag }} {{ form.spoiler_text }}
+    <small style="color:var(--text2);">Add a content warning that readers must dismiss before seeing the post</small>
+  </p>
+  <p>{{ form.visibility.label_tag }} {{ form.visibility }}</p>
+  <p>
+    <label>
+      {{ form.is_nsfw }} {{ form.is_nsfw.label }}
+    </label>
+    <label>
+      {{ form.is_18plus }} {{ form.is_18plus.label }}
+    </label>
+  </p>
+  <p>{{ form.local_only.label_tag }} {{ form.local_only }}</p>
+  <p>
+    <label for="id_attachment">Image or video <small style="color:var(--text2);">(max 25 MB · jpg/png/gif/webp/mp4/webm/mov)</small></label>
+    {{ form.attachment }}
+    {{ form.attachment.errors }}
+  </p>
+  <p>
+    <label for="id_attachment_alt_text">Alt text <small style="color:var(--text2);">Describe the media for screen readers</small></label>
+    {{ form.attachment_alt_text }}
+    {{ form.attachment_alt_text.errors }}
+  </p>
+  <p>
+    <label for="id_attachment_caption">Caption <small style="color:var(--text2);">Optional text shown below the media</small></label>
+    {{ form.attachment_caption }}
+    {{ form.attachment_caption.errors }}
+  </p>
   <button class="button" type="submit">Publish</button>
 </form>
 {% endblock %}

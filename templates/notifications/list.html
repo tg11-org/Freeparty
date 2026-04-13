@@ -2,18 +2,57 @@
 
 {% block content %}
 <h2>Notifications</h2>
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+  <a class="btn {% if filter_type == 'all' %}active{% endif %}" href="/notifications/{% if grouped_view %}?view=grouped{% endif %}">All</a>
+  <a class="btn {% if filter_type == 'unread' %}active{% endif %}" href="/notifications/?type=unread{% if grouped_view %}&view=grouped{% endif %}">Unread</a>
+  <a class="btn {% if filter_type == 'follow' %}active{% endif %}" href="/notifications/?type=follow{% if grouped_view %}&view=grouped{% endif %}">Follows</a>
+  <a class="btn {% if filter_type == 'like' %}active{% endif %}" href="/notifications/?type=like{% if grouped_view %}&view=grouped{% endif %}">Likes</a>
+  <a class="btn {% if filter_type == 'mention' %}active{% endif %}" href="/notifications/?type=mention{% if grouped_view %}&view=grouped{% endif %}">Mentions</a>
+</div>
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+  <a class="btn {% if not grouped_view %}active{% endif %}" href="/notifications/{% if filter_type != 'all' %}?type={{ filter_type }}{% endif %}">Flat</a>
+  <a class="btn {% if grouped_view %}active{% endif %}" href="/notifications/?view=grouped{% if filter_type != 'all' %}&type={{ filter_type }}{% endif %}">Grouped</a>
+</div>
 <form method="post" action="/notifications/mark-all-read/">
   {% csrf_token %}
   <button class="button" type="submit">Mark all as read</button>
 </form>
 <br>
-{% for item in notifications %}
-  <article>
-    <p><strong>{{ item.notification_type }}</strong> · {{ item.created_at }}</p>
-    {% if item.source_actor %}<p>From @{{ item.source_actor.handle }}</p>{% endif %}
-  </article>
-  <hr>
-{% empty %}
-  <p>No notifications yet.</p>
-{% endfor %}
+{% if grouped_view %}
+  {% for group in grouped_notifications %}
+    <h3 style="margin:0.85rem 0 0.45rem;">{{ group.label }}</h3>
+    {% for item in group.items %}
+      <article style="padding:0.6rem 0.65rem;border-left:3px solid {% if item.read_at %}var(--border){% else %}var(--accent){% endif %};background:var(--surface2);border-radius:8px;margin-bottom:0.55rem;">
+        <p style="margin:0 0 0.25rem;"><strong>{{ item.notification_type }}</strong> · {{ item.created_at|timesince }} ago {% if not item.read_at %}<span style="color:var(--accent);font-weight:600;">(new)</span>{% endif %}</p>
+        {% if item.source_actor %}<p>From @{{ item.source_actor.handle }}</p>{% endif %}
+        {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post.content|truncatechars:80 }}</a></p>{% endif %}
+        {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
+        {% if not item.read_at %}
+          <form method="post" action="/notifications/{{ item.id }}/mark-read/">{% csrf_token %}
+            <button class="btn" type="submit">Mark read</button>
+          </form>
+        {% endif %}
+      </article>
+    {% endfor %}
+  {% empty %}
+    <p>No notifications yet.</p>
+  {% endfor %}
+{% else %}
+  {% for item in notifications %}
+    <article style="padding:0.6rem 0.65rem;border-left:3px solid {% if item.read_at %}var(--border){% else %}var(--accent){% endif %};background:var(--surface2);border-radius:8px;margin-bottom:0.55rem;">
+      <p style="margin:0 0 0.25rem;"><strong>{{ item.notification_type }}</strong> · {{ item.created_at|timesince }} ago {% if not item.read_at %}<span style="color:var(--accent);font-weight:600;">(new)</span>{% endif %}</p>
+      {% if item.source_actor %}<p>From @{{ item.source_actor.handle }}</p>{% endif %}
+      {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post.content|truncatechars:80 }}</a></p>{% endif %}
+      {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
+      {% if not item.read_at %}
+        <form method="post" action="/notifications/{{ item.id }}/mark-read/">{% csrf_token %}
+          <button class="btn" type="submit">Mark read</button>
+        </form>
+      {% endif %}
+    </article>
+  {% empty %}
+    <p>No notifications yet.</p>
+  {% endfor %}
+{% endif %}
+{% include "partials/pagination.html" with page_obj=page_obj page_param="page" query_string=query_string %}
 {% endblock %}

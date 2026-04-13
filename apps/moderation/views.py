@@ -1,8 +1,12 @@
+from datetime import datetime, time
+from uuid import UUID
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
 from apps.actors.models import Actor
@@ -44,11 +48,50 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 		return redirect("home")
 
 	status = request.GET.get("status")
+	reason = request.GET.get("reason", "").strip()
+	actor_q = request.GET.get("actor", "").strip()
+	post_q = request.GET.get("post", "").strip()
+	target_type = request.GET.get("target", "").strip()
+	date_from = request.GET.get("date_from", "").strip()
+	date_to = request.GET.get("date_to", "").strip()
 	reports = Report.objects.select_related("reporter", "target_actor", "target_post", "reviewed_by").order_by("-created_at")
-	if status in {Report.Status.OPEN, Report.Status.REVIEWING, Report.Status.RESOLVED, Report.Status.DISMISSED}:
+	if status in {choice for choice, _ in Report.Status.choices}:
 		reports = reports.filter(status=status)
+	if reason:
+		reports = reports.filter(reason__icontains=reason)
+	if actor_q:
+		reports = reports.filter(reporter__handle__icontains=actor_q)
+	if post_q:
+		try:
+			reports = reports.filter(target_post_id=UUID(post_q))
+		except ValueError:
+			reports = reports.none()
 
-	return render(request, "moderation/dashboard.html", {"reports": reports, "selected_status": status})
+	parsed_from = parse_date(date_from) if date_from else None
+	if parsed_from:
+		start_of_day = timezone.make_aware(datetime.combine(parsed_from, time.min), timezone.get_current_timezone())
+		reports = reports.filter(created_at__gte=start_of_day)
+
+	parsed_to = parse_date(date_to) if date_to else None
+	if parsed_to:
+		end_of_day = timezone.make_aware(datetime.combine(parsed_to, time.max), timezone.get_current_timezone())
+		reports = reports.filter(created_at__lte=end_of_day)
+
+	if target_type == "actor":
+		reports = reports.filter(target_actor__isnull=False)
+	elif target_type == "post":
+		reports = reports.filter(target_post__isnull=False)
+
+	return render(request, "moderation/dashboard.html", {
+		"reports": reports,
+		"selected_status": status,
+		"reason": reason,
+		"actor_q": actor_q,
+		"post_q": post_q,
+		"target_type": target_type,
+		"date_from": date_from,
+		"date_to": date_to,
+	})
 
 
 @login_required
@@ -92,9 +135,34 @@ def moderation_report_update_view(request: HttpRequest, report_id: str) -> HttpR
 			action_type=action_type,
 			notes=notes,
 		)
+		if not new_status:
+			report.status = Report.Status.ACTIONED
+			report.reviewed_at = timezone.now()
+			report.reviewed_by = request.user
+			report.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
 
 	if internal_note.strip():
 		ModerationNote.objects.create(report=report, author=request.user, body=internal_note.strip())
 
 	messages.success(request, "Moderation update saved.")
 	return redirect("moderation:report-detail", report_id=report.id)
+
+
+@login_required
+@require_POST
+def moderation_quick_status_view(request: HttpRequest, report_id: str) -> HttpResponse:
+	if not request.user.is_staff:
+		messages.error(request, "Moderator access required.")
+		return redirect("home")
+
+	report = get_object_or_404(Report, id=report_id)
+	new_status = request.POST.get("status")
+	if new_status in {choice for choice, _ in Report.Status.choices}:
+		report.status = new_status
+		report.reviewed_at = timezone.now()
+		report.reviewed_by = request.user
+		report.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
+		messages.success(request, f"Report moved to {new_status}.")
+	else:
+		messages.error(request, "Invalid status value.")
+	return redirect("moderation:dashboard")

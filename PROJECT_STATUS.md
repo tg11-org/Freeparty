@@ -1,6 +1,6 @@
 # Freeparty Project Status
 
-Last Updated: 2026-04-12
+Last Updated: 2026-04-13 (Phase 3 - Increment 3.4 Reliability Slice Started)
 
 ## Snapshot
 
@@ -61,6 +61,10 @@ Services in `compose.yaml`:
 - Post ownership actions:
   - Edit post
   - Soft-delete post (`deleted_at`)
+- Centralized policy checks now enforced for:
+  - post view permissions (`can_view_post`)
+  - post edit/delete ownership (`can_edit_post`, `can_delete_post`)
+  - engagement permission checks on like/repost against visibility and block rules
 
 ### Comments
 
@@ -70,6 +74,135 @@ Services in `compose.yaml`:
   - Edit comment
   - Soft-delete comment (`deleted_at`)
 - Comment rendering supports clickable mentions
+- Centralized comment policy checks:
+  - `can_comment_on_post`
+  - `can_edit_comment`
+  - `can_delete_comment`
+
+### Permission and Ownership Layer (Phase 2 Priority A)
+
+- Added reusable permission helpers in `apps/core/permissions.py`:
+  - `can_view_post`
+  - `can_edit_post`
+  - `can_delete_post`
+  - `can_comment_on_post`
+  - `can_edit_comment`
+  - `can_delete_comment`
+  - `can_view_actor`
+  - `can_follow_actor`
+- Added post visibility selectors in `apps/posts/selectors.py` and adopted them in timeline services.
+- Enforced blocked-relationship visibility in:
+  - public timeline
+  - home timeline
+  - actor pages
+  - search results
+  - actor API listing
+- API ownership enforcement added for post update/delete and follow creation.
+
+### Pagination and Query Hygiene (Phase 2 Priority B)
+
+- Added shared paginator helper: `apps/core/pagination.py`.
+- Added reusable pagination UI partial: `templates/partials/pagination.html`.
+- Added pagination to:
+  - home timeline
+  - public timeline
+  - actor profile post list
+  - search results (people and posts independently)
+  - notifications list
+- Added API-wide DRF page-number pagination defaults.
+- Notifications list now supports lightweight unread/type filtering with paginated output.
+
+### Privacy and Relationship Controls (Phase 2 Priority C)
+
+- Added `Profile.is_private_account` with migration.
+- Private account behavior implemented:
+  - follow attempts create `pending` follow relations
+  - account owner can approve/reject pending requests
+  - private profiles are hidden from non-followers
+  - private-account posts are hidden from non-followers (including public visibility posts)
+- Added follow request queue UI:
+  - `/social/follow-requests/`
+  - approve/reject actions
+- Added follow-request API actions:
+  - `GET /api/v1/follows/incoming/`
+  - `POST /api/v1/follows/{id}/approve/`
+  - `POST /api/v1/follows/{id}/reject/`
+- Added profile privacy API endpoint:
+  - `GET/PATCH /api/v1/profiles/me/`
+
+### Moderation Workflow (Phase 2 Priority D)
+
+- Report statuses expanded to include:
+  - `under_review`
+  - `actioned`
+  - legacy `reviewing` remains supported for compatibility
+- Moderation dashboard upgraded with filter controls:
+  - status
+  - reason contains
+  - reporter handle
+  - target post id
+  - date range (`from`/`to`)
+  - target type (actor/post)
+- Quick triage actions added from queue rows:
+  - move to under_review
+  - resolve
+  - dismiss
+- Report update behavior improved:
+  - status updates consistently stamp `reviewed_by` and `reviewed_at`
+  - creating moderation actions auto-sets report to `actioned` when status omitted
+- Admin usability improved for reports/actions/notes with richer filters/search and ordering.
+
+### Notifications and API Parity (Phase 2 Priority E/F slice)
+
+- Notification dedupe helper added (`apps/notifications/services.py`) and used in follow/like/repost/comment pathways.
+- Notification UI now supports single-item mark-read in addition to mark-all-read.
+- Notification UI adds optional grouped display mode (group by day on current page).
+- Notifications API endpoints added via `api/v1/notifications/`:
+  - list (with filtering)
+  - mark single read (`POST /api/v1/notifications/{id}/mark-read/`)
+  - mark all read (`POST /api/v1/notifications/mark-all-read/`)
+- Comment API parity added via `api/v1/comments/`:
+  - create/edit/delete
+  - owner-only edit/delete with centralized permission checks
+  - soft-delete behavior on delete
+
+### Phase 3 Kickoff: Reliability and Observability
+
+- Added request observability middleware (`apps.core.middleware.RequestObservabilityMiddleware`):
+  - propagates incoming `X-Request-ID` or generates one when absent
+  - sets `X-Request-ID` response header for request correlation
+  - logs `request_complete` entries with method/path/status/duration/request_id/user_id
+  - logs `request_error` entries with request correlation context on exceptions
+  - logs `slow_request` warnings when request latency exceeds threshold
+- Added configurable threshold setting:
+  - `REQUEST_SLOW_MS` (default `700`)
+- Added middleware tests in `apps.core.tests`:
+  - request-id generation
+  - request-id passthrough
+  - slow-request warning logging
+  - request completion structured log coverage
+  - request error structured log coverage
+- Added shared Celery task observability helper (`apps.core.services.task_observability.observe_celery_task`) and instrumented tasks in:
+  - `apps.accounts.tasks`
+  - `apps.notifications.tasks`
+  - `apps.federation.tasks`
+- Added initial SLO baseline targets to operations runbook:
+  - HTTP p95 latency
+  - HTTP 5xx error rate
+  - Celery queue lag
+  - Celery task failure rate
+
+### Phase 3.2 Kickoff: Moderation Staff API Parity (In Progress)
+
+- Added staff-only moderation report API routes:
+  - `GET /api/v1/moderation/reports/`
+  - `GET /api/v1/moderation/reports/{id}/`
+  - `POST /api/v1/moderation/reports/{id}/status/`
+  - `POST /api/v1/moderation/reports/{id}/actions/`
+  - `POST /api/v1/moderation/reports/{id}/notes/`
+- Added moderation API serializers and filter parity for queue-like triage.
+- Added moderation API tests for staff access, filters, status updates, action creation, and note creation.
+- Added notification row context summaries (actor + source post + payload summary text) in HTML notification lists.
 
 ### Mentions
 
@@ -127,12 +260,26 @@ Services in `compose.yaml`:
 - Added profile follower/following visibility controls + migration
 - Added expanded accessibility preferences and toolbar controls
 - Updated theme toolbar styling to avoid nested pill visual glitch
+- Phase 2 increment started with centralized permission policy and blocked-relationship enforcement
+- Added new permission-focused tests in `apps.posts.tests` and `apps.social.tests`
+- Added pagination/filter tests in `apps.posts.tests` and `apps.notifications.tests`
+- Added private-account visibility and follow-request tests in `apps.actors.tests`, `apps.posts.tests`, and `apps.social.tests`
+- Added moderation workflow tests in `apps.moderation.tests`
+- Added notification API/mark-read tests in `apps.notifications.tests`
+- Added comment API parity tests in `apps.posts.tests`
 
 ## Data Model Additions Since Foundation
 
 - `apps.posts.models.Comment`
 - `apps.profiles.models.Profile.show_follower_count`
 - `apps.profiles.models.Profile.show_following_count`
+- `apps.posts.models.Comment`
+- `apps.profiles.models.Profile.show_follower_count`
+- `apps.profiles.models.Profile.show_following_count`
+- `apps.moderation.models.TrustSignal` (Phase 3.3)
+- `apps.moderation.models.SecurityAuditEvent` (Phase 3.3)
+- `apps.core.models.AsyncTaskExecution` (Phase 3.4)
+- `apps.core.models.AsyncTaskFailure` (Phase 3.4)
 
 ## Validation State
 
@@ -141,17 +288,40 @@ Latest checks run successfully:
 - `python manage.py migrate`
 - `python manage.py check`
 - Template compile scan via Django loader (`TEMPLATE_ERRORS 0`)
+- `python manage.py test apps.posts apps.social`
+- `python manage.py test apps.posts apps.social apps.notifications`
+- `python manage.py test apps.actors apps.posts apps.social apps.notifications`
+- `python manage.py test apps.moderation apps.notifications apps.posts apps.social`
+- `python manage.py migrate`
+- `python manage.py check`
+- Template compile scan via Django loader (`TEMPLATE_ERRORS 0`)
+- `python manage.py test apps.posts apps.social`
+- `python manage.py test apps.posts apps.social apps.notifications`
+- `python manage.py test apps.actors apps.posts apps.social apps.notifications`
+- `python manage.py test apps.moderation apps.notifications apps.posts apps.social`
+- `python manage.py test apps.moderation apps.core apps.notifications` (Phase 3: 37 tests passing)
+- `python manage.py test apps.actors apps.federation apps.core apps.moderation apps.notifications apps.accounts` (Phase 3.4 slice: 47 tests passing)
 
 ## Current Gaps / Next Recommended Milestones
 
-1. Add dedicated permission helpers and tests for post/comment ownership rules.
-2. Add pagination to search, actor post lists, and public timeline.
-3. Add optional account-level privacy controls (private account approval flow).
-4. Add stronger moderation workflows (review queues, action audit UX).
-5. Add richer notifications UI (filters, grouped events).
-6. Add API parity for new UI actions (comments, edits, deletes, privacy settings).
-7. Expand automated tests across posts, comments, social actions, and template flows.
-8. Add accessibility documentation and quick preset profiles.
+1. Add API coverage for moderation queue/report actions (staff-only endpoints).
+2. Add optional actor/post context summaries in notification rows to improve triage speed.
+3. Expand integration tests for combined privacy+moderation+notification edge cases.
+4. Continue Phase 3 hardening beyond kickoff (anti-abuse scoring, query profiling, reliability SLOs).
+
+## Forward Roadmap Additions
+
+- **Phase 4 candidate**: Media-first posting and timeline UX
+  - complete image/video attachment posting flow (HTML + API)
+  - media processing/validation hardening (mime/type/size/duration)
+  - dedicated timeline tab/feed filter for photo/video posts only
+  - media moderation and thumbnail pipeline test coverage
+- **Future phase candidate**: Private messaging + E2E encryption
+  - direct message domain and transport design
+  - end-to-end encrypted message payload envelope and key lifecycle
+  - local user-verification UX (fingerprint hex + generated visual identicon, similar in spirit to Telegram safety numbers)
+  - device/session verification and key-change warnings
+  - explicit threat model + crypto review gate before enabling by default
 
 ## Quick Command Reference
 

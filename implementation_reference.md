@@ -38,11 +38,176 @@ Recommended next hardening:
 - Keep relationship logic in `apps.social.services`.
 - Keep URI generation in `apps.core.services.uris`.
 - Keep token signing/verification in `apps.accounts.services`.
+- Keep object-level social permissions in `apps.core.permissions`.
+- Keep reusable timeline/search query constraints in selector modules (`apps.posts.selectors`).
+
+### Permission Policy Contract (Phase 2)
+
+Use these helpers instead of ad-hoc checks in views/API code:
+
+- `can_view_post`
+- `can_edit_post`
+- `can_delete_post`
+- `can_comment_on_post`
+- `can_edit_comment`
+- `can_delete_comment`
+- `can_view_actor`
+- `can_follow_actor`
+
+Rules covered by these helpers:
+
+- ownership checks
+- soft-deleted object restrictions
+- moderation visibility restrictions
+- blocked relationship restrictions
+- follower-only visibility logic
+
+### Private Account Convention
+
+- `profiles.Profile.is_private_account` controls account-level privacy.
+- When private mode is enabled:
+	- `follow_actor` creates/updates relation state to `pending`
+	- profile visibility is restricted to accepted followers and owner
+	- post visibility is restricted to accepted followers and owner
+- Follow request lifecycle endpoints:
+	- HTML: `/social/follow-requests/`
+	- API: `/api/v1/follows/incoming/`, `/api/v1/follows/{id}/approve/`, `/api/v1/follows/{id}/reject/`
+
+### Moderation Workflow Convention
+
+- Report queue triage happens through:
+	- dashboard filters (status/reason/reporter/target type/post/date)
+	- quick status transitions from queue rows
+	- report detail update form for full action + notes
+- Report status now supports: `open`, `under_review`, `actioned`, `resolved`, `dismissed` (+ legacy `reviewing`).
+- Any report mutation that changes status should stamp `reviewed_by` and `reviewed_at`.
+
+### Notifications Convention
+
+- Use `apps.notifications.services.create_notification_if_new` for event notifications to reduce duplicate spam.
+- Notification read operations supported in both HTML and API:
+	- HTML: single mark-read + mark-all-read
+	- API: `POST /api/v1/notifications/{id}/mark-read/` and `POST /api/v1/notifications/mark-all-read/`
+- Notification UI supports optional grouped mode (`?view=grouped`) for low-noise inbox scanning.
+- Notification rows should include source context when available:
+	- source actor handle
+	- source post link/snippet
+	- payload summary text for quick triage
+
+### Observability Convention (Phase 3 Kickoff)
+
+- `apps.core.middleware.RequestObservabilityMiddleware` is responsible for baseline request tracing.
+- Correlation policy:
+	- preserve inbound `X-Request-ID` when provided
+	- generate new request id when missing
+	- include `X-Request-ID` on all responses
+- Latency policy:
+	- emit `slow_request` warning logs when request time >= `REQUEST_SLOW_MS`
+	- tune `REQUEST_SLOW_MS` per environment without code changes
+- Request log policy:
+	- emit `request_complete` with method/path/status/duration/request_id/user_id
+	- emit `request_error` with request correlation context on unhandled exceptions
+
+### Celery Task Observability Convention
+
+- Use `apps.core.services.task_observability.observe_celery_task` in task bodies.
+- Emit standardized lifecycle logs:
+	- `task_start`
+	- `task_success`
+	- `task_failure`
+- Include `correlation_id` when task is triggered from a request/flow that already has one.
+
+### Celery Reliability Convention (Phase 3.4)
+
+- Use `apps.core.services.task_reliability` for idempotency and failure capture on critical tasks.
+- Core models:
+	- `apps.core.models.AsyncTaskExecution`: tracks idempotency key, attempts, status, and last error details.
+	- `apps.core.models.AsyncTaskFailure`: captures each failure event with attempt/max_retries and terminal marker.
+- Pattern for reliable task implementation:
+	1. Build deterministic idempotency key (for example `federation_delivery:{delivery_id}`).
+	2. Call `start_task_execution(...)` and return early when `should_skip` is true.
+	3. Execute task body.
+	4. Call `mark_task_execution_succeeded(...)` on success.
+	5. Call `mark_task_execution_failed(...)` in `except` block before re-raising.
+- Initial integration is implemented in `apps.federation.tasks.execute_federation_delivery`.
+
+### Moderation Staff API Convention (Phase 3.2)
+
+- Staff-only moderation report endpoints are served under `/api/v1/moderation/reports/`.
+- Core actions:
+	- queue list + filters
+	- report detail
+	- status transition
+	- action creation
+	- moderator note creation
+- All mutating actions must stamp `reviewed_by`/`reviewed_at` or equivalent audit fields.
+
+- All mutating actions must stamp `reviewed_by`/`reviewed_at` or equivalent audit fields.
+
+### Trust Signals and Adaptive Throttling Convention (Phase 3.3)
+
+Trust signals are per-actor signals used for abuse detection and adaptive throttling recommendations.
+
+**Model**: `apps.moderation.models.TrustSignal` (one-to-one with Actor)
+- Account age, email verification status, recent report/action counts
+- Velocity counters (posts/follows/likes/reposts per hour)
+- Computed trust_score (0-100; higher = more trustworthy)
+- Throttle status with context-specific reason and expiration
+
+**Service**: `apps.moderation.services.TrustSignalService`
+- `compute_trust_signal(actor)`: Calculate/update trust score with configurable thresholds
+- `get_trust_signal(actor)`: Fetch or compute (lazy initialization)
+- `should_throttle(actor)`: Check current throttle status and auto-expire stale throttles
+
+**Service**: `apps.moderation.services.ActionVelocityTracker`
+- `record_post(actor)`: Update hourly post velocity counter
+- `record_follow(actor)`: Update hourly follow velocity counter
+- `record_like(actor)`: Update hourly like velocity counter
+- `record_repost(actor)`: Update hourly repost velocity counter
+- `is_velocity_anomaly(actor, action_type)`: Check if action would exceed threshold
+
+**Staff visibility**:
+- Trust signal summary is included in moderation report detail API as `target_actor_trust_signal`
+- Shows computed scores, velocity signals, and throttle status/reason
+- Staff can use this to understand why an actor is flagged
+
+**Configuration thresholds** (tunable):
+- Minimum account age for trust bonus: 7 days
+- Velocity thresholds: 5 posts/hour, 10 follows/hour, 20 likes/hour, 10 reposts/hour
+- Throttle trigger: trust_score < 30
+- Throttle durations: 7 day (actions), 3 days (reports), 1 hour (velocity), 6 hours (generic)
+
+### Security Audit Events Convention (Phase 3.3)
+
+Security audit events log forensically important account and moderator actions.
+
+**Model**: `apps.moderation.models.SecurityAuditEvent`
+- Records user, event type, IP address (when available), user agent, context JSON
+- Auto-indexed by user/event_type for fast queries
+
+**Service**: `apps.moderation.services.SecurityAuditService`
+- `log_login_success(user, ip, ua)`: Record successful login
+- `log_login_failure(user, ip, ua, reason)`: Record failed login attempt
+- `log_password_reset_request(user, ip, ua)`: Record password reset initiated
+- `log_password_reset_complete(user, ip, ua)`: Record password reset completed
+- `log_email_verification(user, ip, ua)`: Record email verification
+- `log_email_changed(user, old_email, ip, ua)`: Record email change
+- `log_moderator_action(moderator, target, action_type, ip, ua)`: Record moderator action
+
+**Integration points**:
+- `apps.accounts.views.RateLimitedLoginView`: Logs login success/failure
+- `apps.accounts.views.RateLimitedPasswordResetView`: Logs reset request
+- `apps.accounts.views.RateLimitedPasswordResetConfirmView`: Logs reset completion
+- `apps.accounts.views.verify_email_view`: Logs email verification
+
+**Staff query**:
+- Export audit events via admin panel or management command for compliance
+- Query by user or event type for incident investigation
 
 ## 5. Suggested Next Milestones
 
 ### Milestone A: Stronger API Surface
-- Add API serializers/views for moderation, notifications, and profiles.
+- Add API serializers/views for moderation actions/report triage.
 - Add pagination and filtering strategy for timelines and posts.
 - Add API permissions matrix (owner/mod/admin/public).
 

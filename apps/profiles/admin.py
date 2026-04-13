@@ -1,9 +1,15 @@
 from django.contrib import admin
 
-from apps.profiles.models import Profile
+from apps.profiles.models import Profile, ProfileEditHistory
 
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
 	list_display = ("actor", "website_url", "location", "updated_at")
 	search_fields = ("actor__handle", "location")
+
+
+@admin.register(ProfileEditHistory)
+class ProfileEditHistoryAdmin(admin.ModelAdmin):
+	list_display = ("profile", "editor", "created_at")
+	search_fields = ("profile__actor__handle", "editor__username", "editor__email")

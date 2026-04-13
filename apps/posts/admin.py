@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.posts.models import Attachment, Comment, Post
+from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
 
 
 @admin.register(Post)
@@ -22,3 +22,15 @@ class CommentAdmin(admin.ModelAdmin):
 	list_display = ("id", "post", "author", "created_at", "deleted_at")
 	list_filter = ("deleted_at",)
 	search_fields = ("content", "author__handle")
+
+
+@admin.register(PostEditHistory)
+class PostEditHistoryAdmin(admin.ModelAdmin):
+	list_display = ("post", "editor", "created_at")
+	search_fields = ("post__id", "editor__username", "editor__email")
+
+
+@admin.register(CommentEditHistory)
+class CommentEditHistoryAdmin(admin.ModelAdmin):
+	list_display = ("comment", "editor", "created_at")
+	search_fields = ("comment__id", "editor__username", "editor__email")

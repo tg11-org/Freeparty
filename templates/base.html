@@ -230,6 +230,23 @@
         z-index: 999;
       }
       .skip-link:focus { top: 0.5rem; }
+      /* ── Content gates (spoiler/nsfw) ─────────────────────────── */
+      .content-gate { margin: 0.35rem 0; }
+      .content-gate-btn { margin-bottom: 0.35rem; font-size: 0.85rem; }
+      .content-gate[data-revealed="false"] .content-gate-body {
+        filter: blur(14px);
+        pointer-events: none;
+        user-select: none;
+        max-height: 6rem;
+        overflow: hidden;
+        border-radius: 0.5rem;
+      }
+      .content-gate[data-gate-type="nsfw"][data-revealed="false"] .content-gate-body {
+        border: 1px dashed var(--danger);
+      }
+      .content-gate[data-gate-type="spoiler"][data-revealed="false"] .content-gate-body {
+        border: 1px dashed var(--border);
+      }
       @media (max-width: 680px) {
         main { margin: 0.5rem; padding: 0.9rem; border-radius: 8px; }
         header h1 { font-size: 1.1rem; }
@@ -246,6 +263,8 @@
         {% if user.is_authenticated %}
           <a href="/posts/new/">Post</a>
           <a href="/actors/{{ user.actor.handle }}/">My Profile</a>
+          <a href="/social/bookmarks/">Bookmarks</a>
+          <a href="/social/follow-requests/">Requests</a>
           <a href="/notifications/">Notifications</a>
           {% if user.is_staff %}<a href="/moderation/">Moderation</a>{% endif %}
           <a href="/accounts/logout/">Logout</a>
@@ -406,10 +425,15 @@
       }
 
       document.addEventListener("keydown", function(evt){
-        if (evt.key === "/" && searchInput && document.activeElement !== searchInput) {
-          evt.preventDefault();
-          searchInput.focus();
-        }
+        if (evt.key !== "/") return;
+        var active = document.activeElement;
+        if (!active || !searchInput) return;
+        if (active === searchInput) return;
+        var tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (active.isContentEditable) return;
+        evt.preventDefault();
+        searchInput.focus();
       });
       window.matchMedia("(prefers-color-scheme:dark)").addEventListener("change", function(){
         if ((root.getAttribute("data-theme-pref") || "auto") === "auto") apply();

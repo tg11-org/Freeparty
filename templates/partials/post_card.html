@@ -14,9 +14,116 @@
       <a href="/actors/{{ post.author.handle }}/">@{{ post.author.handle }}</a>
       <span>·</span>
       <time datetime="{{ post.created_at|date:"c" }}" title="{{ post.created_at }}">{{ post.created_at|timesince }} ago</time>
+      {% if post.is_18plus %}<span style="display:inline-block;padding:0.1rem 0.4rem;border-radius:4px;background:#7c3aed;color:#fff;font-size:0.7rem;font-weight:700;line-height:1.4;">18+</span>{% endif %}
+      {% if post.is_nsfw %}<span style="display:inline-block;padding:0.1rem 0.4rem;border-radius:4px;background:var(--danger);color:#fff;font-size:0.7rem;font-weight:700;line-height:1.4;">NSFW</span>{% endif %}
     </div>
-    {% if post.spoiler_text %}<p><em>CW: {{ post.spoiler_text }}</em></p>{% endif %}
-    <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+
+    {# ── Spoiler wrapper ─────────────────────────────────────────── #}
+    {% if post.spoiler_text %}
+      <div class="content-gate" data-revealed="false" data-gate-type="spoiler">
+        <button class="btn content-gate-btn" type="button"
+          onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?btn.getAttribute('data-show-label'):btn.getAttribute('data-hide-label');})(this)"
+          data-show-label="CW: {{ post.spoiler_text }} (show)"
+          data-hide-label="Hide spoiler">CW: {{ post.spoiler_text }} (show)</button>
+        <div class="content-gate-body">
+          {# NSFW within spoiler #}
+          {% if post.is_nsfw %}
+            <div class="content-gate" data-revealed="false" data-gate-type="nsfw" style="margin-top:0;">
+              <button class="btn content-gate-btn" type="button"
+                onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
+              <div class="content-gate-body">
+                <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+                {% if post.attachments.all %}
+                  <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
+                    {% for media in post.attachments.all %}
+                      {% if media.moderation_state == 'normal' %}
+                        {% if media.attachment_type == 'image' %}
+                          <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                        {% elif media.attachment_type == 'video' %}
+                          <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                            <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
+                            Your browser does not support the video tag.
+                          </video>
+                        {% endif %}
+                        {% if media.caption %}<p style="font-size:0.85rem;color:var(--text2);margin:0.2rem 0 0;">{{ media.caption }}</p>{% endif %}
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+            {% if post.attachments.all %}
+              <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
+                {% for media in post.attachments.all %}
+                  {% if media.moderation_state == 'normal' %}
+                    {% if media.attachment_type == 'image' %}
+                      <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                    {% elif media.attachment_type == 'video' %}
+                      <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                        <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
+                        Your browser does not support the video tag.
+                      </video>
+                    {% endif %}
+                    {% if media.caption %}<p style="font-size:0.85rem;color:var(--text2);margin:0.2rem 0 0;">{{ media.caption }}</p>{% endif %}
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+    {# ── NSFW (no spoiler) ──────────────────────────────────────── #}
+    {% elif post.is_nsfw %}
+      <div class="content-gate" data-revealed="false" data-gate-type="nsfw">
+        <button class="btn content-gate-btn" type="button"
+          onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
+        <div class="content-gate-body">
+          <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+          {% if post.attachments.all %}
+            <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
+              {% for media in post.attachments.all %}
+                {% if media.moderation_state == 'normal' %}
+                  {% if media.attachment_type == 'image' %}
+                    <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                  {% elif media.attachment_type == 'video' %}
+                    <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                      <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
+                      Your browser does not support the video tag.
+                    </video>
+                  {% endif %}
+                  {% if media.caption %}<p style="font-size:0.85rem;color:var(--text2);margin:0.2rem 0 0;">{{ media.caption }}</p>{% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+    {# ── Normal (no gate) ──────────────────────────────────────── #}
+    {% else %}
+      <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+      {% if post.attachments.all %}
+        <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
+          {% for media in post.attachments.all %}
+            {% if media.moderation_state == 'normal' %}
+              {% if media.attachment_type == 'image' %}
+                <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+              {% elif media.attachment_type == 'video' %}
+                <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                  <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
+                  Your browser does not support the video tag.
+                </video>
+              {% endif %}
+              {% if media.caption %}<p style="font-size:0.85rem;color:var(--text2);margin:0.2rem 0 0;">{{ media.caption }}</p>{% endif %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endif %}
+
     <div class="post-actions">
       <a class="btn" href="/posts/{{ post.id }}/">💬 {{ post.comment_count }}</a>
       {% if user.is_authenticated %}
@@ -30,6 +137,12 @@
           {% csrf_token %}
           <button class="btn {% if post.id in reposted_ids %}active{% endif %}" type="submit">
             🔁 {{ post.repost_count }}
+          </button>
+        </form>
+        <form method="post" action="/social/bookmark/{{ post.id }}/">
+          {% csrf_token %}
+          <button class="btn {% if post.id in bookmarked_ids %}active{% endif %}" type="submit" title="Bookmark">
+            🔖
           </button>
         </form>
         <a class="btn" href="/posts/{{ post.id }}/#share" title="Share">📤</a>

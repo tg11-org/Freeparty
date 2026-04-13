@@ -11,6 +11,7 @@ env = environ.Env(
     DEBUG=(bool, False),
     SECRET_KEY=(str, "change-me"),
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
+    REQUEST_SLOW_MS=(int, 700),
     CORS_ALLOWED_ORIGINS=(list, []),
     CSRF_TRUSTED_ORIGINS=(list, []),
     EMAIL_VERIFICATION_REQUIRED=(bool, True),
@@ -53,6 +54,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "apps.core.middleware.RequestObservabilityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -146,6 +148,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
     ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": env.int("API_PAGE_SIZE", default=20),
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.UserRateThrottle",
         "rest_framework.throttling.AnonRateThrottle",
@@ -176,3 +180,4 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
 EMAIL_VERIFICATION_REQUIRED = env("EMAIL_VERIFICATION_REQUIRED")
+REQUEST_SLOW_MS = env.int("REQUEST_SLOW_MS", default=700)

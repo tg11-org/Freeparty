@@ -15,10 +15,12 @@
   <p>
     <label for="status">Status</label>
     <select name="status" id="status">
-      <option value="open">open</option>
-      <option value="reviewing">reviewing</option>
-      <option value="resolved">resolved</option>
-      <option value="dismissed">dismissed</option>
+      <option value="open" {% if report.status == "open" %}selected{% endif %}>open</option>
+      <option value="under_review" {% if report.status == "under_review" %}selected{% endif %}>under_review</option>
+      <option value="actioned" {% if report.status == "actioned" %}selected{% endif %}>actioned</option>
+      <option value="resolved" {% if report.status == "resolved" %}selected{% endif %}>resolved</option>
+      <option value="dismissed" {% if report.status == "dismissed" %}selected{% endif %}>dismissed</option>
+      <option value="reviewing" {% if report.status == "reviewing" %}selected{% endif %}>reviewing (legacy)</option>
     </select>
   </p>
   <p>

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Follow Requests · Freeparty{% endblock %}
+{% block content %}
+<h2>Follow Requests</h2>
+<p style="color:var(--text2);margin-top:0;">Approve or reject pending requests for your private account.</p>
+
+{% for relation in pending_requests %}
+  <article style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:0.75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);margin-bottom:0.65rem;">
+    <div style="display:flex;align-items:center;gap:0.65rem;min-width:0;">
+      {% if relation.follower.profile.avatar %}
+        <img class="post-avatar" src="{{ relation.follower.profile.avatar.url }}" alt="@{{ relation.follower.handle }} avatar">
+      {% else %}
+        <div class="post-avatar-placeholder">{{ relation.follower.handle|first|upper }}</div>
+      {% endif %}
+      <div style="min-width:0;">
+        <a href="/actors/{{ relation.follower.handle }}/" style="font-weight:600;color:var(--accent);">@{{ relation.follower.handle }}</a>
+        <p style="margin:0;font-size:0.82rem;color:var(--text2);">Requested {{ relation.created_at|timesince }} ago</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
+      <form method="post" action="/social/follow-requests/{{ relation.id }}/approve/">{% csrf_token %}
+        <button class="btn" type="submit">Approve</button>
+      </form>
+      <form method="post" action="/social/follow-requests/{{ relation.id }}/reject/">{% csrf_token %}
+        <button class="btn btn-danger" type="submit">Reject</button>
+      </form>
+    </div>
+  </article>
+{% empty %}
+  <p style="color:var(--text2);">No pending follow requests.</p>
+{% endfor %}
+{% endblock %}

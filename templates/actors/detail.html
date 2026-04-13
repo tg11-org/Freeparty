@@ -8,7 +8,12 @@
     <div style="width:96px;height:96px;border-radius:50%;background:var(--surface2);border:3px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700;color:var(--text2);">{{ actor.handle|first|upper }}</div>
   {% endif %}
   <div style="flex:1;min-width:0;">
-    <h2 style="margin:0 0 0.2rem;">@{{ actor.handle }}</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+      <h2 style="margin:0 0 0.2rem;">@{{ actor.handle }}</h2>
+      {% if user.is_authenticated and user.actor.id == actor.id %}
+        <a class="btn" href="{% url 'profiles:edit' %}">Edit profile</a>
+      {% endif %}
+    </div>
     {% if actor.profile.location %}<p style="margin:0;font-size:0.85rem;color:var(--text2);">📍 {{ actor.profile.location }}</p>{% endif %}
     {% if actor.profile.website_url %}<p style="margin:0.2rem 0 0;font-size:0.85rem;"><a href="{{ actor.profile.website_url }}" target="_blank" rel="noopener noreferrer">🌐 {{ actor.profile.website_url }}</a></p>{% endif %}
     {% if actor.profile.bio %}<p style="margin:0.5rem 0 0;">{{ actor.profile.bio }}</p>{% endif %}
@@ -41,6 +46,11 @@
       <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}
         <button class="btn active" type="submit">✓ Following</button>
       </form>
+    {% elif is_follow_pending %}
+      <span class="btn" style="opacity:0.75;">Request pending</span>
+      <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}
+        <button class="btn" type="submit">Cancel request</button>
+      </form>
     {% else %}
       <form method="post" action="/social/follow/{{ actor.handle }}/">{% csrf_token %}
         <button class="btn" type="submit">＋ Follow</button>
@@ -63,4 +73,5 @@
 {% empty %}
   <p style="color:var(--text2);">No posts yet.</p>
 {% endfor %}
+{% include "partials/pagination.html" with page_obj=page_obj page_param="page" %}
 {% endblock %}

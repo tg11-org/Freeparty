@@ -29,7 +29,7 @@
         <a href="/actors/{{ comment.author.handle }}/" style="font-weight:600;color:var(--accent);">@{{ comment.author.handle }}</a>
         &middot;
         <span>{{ comment.created_at|timesince }} ago</span>
-        {% if comment.updated_at > comment.created_at %}
+        {% if comment.is_edited %}
           &middot; <span>edited</span>
         {% endif %}
       </div>

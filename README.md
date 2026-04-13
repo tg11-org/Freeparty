@@ -36,6 +36,20 @@ Freeparty is a centralized-first, federation-ready social media foundation inspi
 - Channels websocket scaffolding for notifications (`/ws/notifications/`).
 - Moderation and federation-first schemas included now, full protocols later.
 - Notification UX includes bulk "mark all as read" action.
+- Notification UX includes optional grouped view mode and single-item read actions.
+- Centralized object permission policy layer for post/comment/actor follow and visibility checks.
+- Block-aware visibility enforcement in timeline and search queries.
+- Optional private account mode with follow-request approval/rejection flow.
+- API parity additions:
+  - paginated list APIs by default
+  - follow request incoming/approve/reject actions
+  - profile privacy update endpoint (`/api/v1/profiles/me/`)
+  - comments CRUD endpoint (`/api/v1/comments/`)
+  - notifications read actions (`/api/v1/notifications/*`)
+- Moderation queue workflow supports richer triage filters and quick status transitions.
+- Phase 3 kickoff includes request correlation (`X-Request-ID`) and slow-request warning logs.
+- Phase 3.1 adds structured request lifecycle logs (`request_complete`, `request_error`) and Celery task lifecycle logs (`task_start`, `task_success`, `task_failure`).
+- Phase 3.2 kickoff adds staff moderation API routes under `/api/v1/moderation/reports/` for queue/detail/status/action/note workflows.
 
 Implementation companion document:
 
@@ -88,6 +102,7 @@ Required core settings:
 - `CELERY_RESULT_BACKEND`
 - `ALLOWED_HOSTS`
 - `SITE_SCHEME`, `SITE_DOMAIN`
+- `REQUEST_SLOW_MS` (optional, default `700`)
 
 Email:
 
@@ -125,6 +140,22 @@ scripts\logs.cmd web            REM View logs from specific service
 ```
 
 These scripts intentionally use `docker compose stop` for shutdown, which preserves containers, volumes, and files. The `logs` scripts follow live output from all services (Ctrl+C to stop).
+
+Linux server bootstrap (Ubuntu 22.04+):
+
+```bash
+chmod +x scripts/setup_server.sh
+./scripts/setup_server.sh --site-domain freeparty.tg11.org --server-ip 127.5.0.0 --app-port 18000
+```
+
+What it does:
+
+- creates `.env` from `.env.example` if missing
+- switches to production settings (`DJANGO_SETTINGS_MODULE=config.settings.production`, `DEBUG=False`)
+- defaults `SITE_SCHEME=https`
+- sets `WEB_BIND`/`WEB_PORT` for Docker bind address and port
+- updates `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / `CORS_ALLOWED_ORIGINS`
+- runs `docker compose up -d --build`, migrations, and collectstatic
 
 3. Create superuser (new shell):
 
@@ -213,6 +244,25 @@ This app expects Apache to reverse proxy to Daphne.
 - WebSocket proxying should be enabled for `/ws/` endpoints when live notifications are enabled.
 - Static/media can be served by Apache or moved to object storage/CDN.
 - Preserve and trust proxy SSL header (`X-Forwarded-Proto`) only from trusted proxy networks.
+
+Ready-to-use vhost template:
+
+- `deploy/apache/freeparty.site.conf`
+
+For your setup, this template terminates TLS on `https://freeparty.tg11.org`, redirects HTTP to HTTPS, and proxies:
+
+- HTTP app traffic `/` -> `http://127.5.0.0:18000/`
+- WebSocket traffic `/ws/` -> `ws://127.5.0.0:18000/ws/`
+
+Install it on Ubuntu:
+
+```bash
+sudo a2enmod proxy proxy_http proxy_wstunnel headers rewrite ssl socache_shmcb
+sudo cp deploy/apache/freeparty.site.conf /etc/apache2/sites-available/freeparty.conf
+sudo a2ensite freeparty.conf
+sudo apache2ctl configtest
+sudo systemctl reload apache2
+```
 
 ## Future Federation Roadmap
 

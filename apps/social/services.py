@@ -11,8 +11,17 @@ def can_follow(follower_id, followee_id) -> bool:
     return True
 
 
+def can_follow_actor(follower_id, followee_id) -> bool:
+    return can_follow(follower_id=follower_id, followee_id=followee_id)
+
+
 def follow_actor(follower, followee) -> Follow:
-    state = Follow.FollowState.ACCEPTED
+    is_private = False
+    try:
+        is_private = bool(followee.profile.is_private_account)
+    except Exception:
+        is_private = False
+    state = Follow.FollowState.PENDING if is_private else Follow.FollowState.ACCEPTED
     follow, _ = Follow.objects.update_or_create(
         follower=follower,
         followee=followee,
@@ -23,3 +32,15 @@ def follow_actor(follower, followee) -> Follow:
 
 def unfollow_actor(follower, followee) -> None:
     Follow.objects.filter(follower=follower, followee=followee).update(state=Follow.FollowState.REMOVED)
+
+
+def approve_follow_request(follow: Follow) -> Follow:
+    follow.state = Follow.FollowState.ACCEPTED
+    follow.save(update_fields=["state", "updated_at"])
+    return follow
+
+
+def reject_follow_request(follow: Follow) -> Follow:
+    follow.state = Follow.FollowState.REJECTED
+    follow.save(update_fields=["state", "updated_at"])
+    return follow
