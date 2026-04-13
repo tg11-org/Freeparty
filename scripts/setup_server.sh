@@ -75,8 +75,12 @@ updates = {
     'DEBUG': 'False',
     'SITE_SCHEME': 'https',
     'SITE_DOMAIN': site_domain,
-    'WEB_BIND': server_ip,
+  'BIND_IP': server_ip,
     'WEB_PORT': app_port,
+  'DB_PORT': '5432',
+  'REDIS_PORT': '6379',
+  'SMTP_PORT': '1025',
+  'MAILHOG_UI_PORT': '8025',
 }
 
 for key, value in updates.items():

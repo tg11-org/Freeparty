@@ -155,7 +155,7 @@ What it does:
 - creates `.env` from `.env.example` if missing
 - switches to production settings (`DJANGO_SETTINGS_MODULE=config.settings.production`, `DEBUG=False`)
 - defaults `SITE_SCHEME=https`
-- sets `WEB_BIND`/`WEB_PORT` for Docker bind address and port
+- sets `BIND_IP`/`WEB_PORT` for Docker bind address and app port (plus default infra ports)
 - updates `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / `CORS_ALLOWED_ORIGINS`
 - runs `docker compose up --detach --build`, migrations, and collectstatic
 
