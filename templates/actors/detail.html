@@ -69,7 +69,7 @@
 
 <h3 style="margin:0 0 0.5rem;font-size:1rem;color:var(--text2);">Posts</h3>
 {% for post in posts %}
-  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
 {% empty %}
   <p style="color:var(--text2);">No posts yet.</p>
 {% endfor %}

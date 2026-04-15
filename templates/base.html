@@ -443,5 +443,86 @@
       apply();
     })();
     </script>
+    <script>
+    (function () {
+      function ensureActionStatusNode(form) {
+        var node = form.querySelector("[data-action-status]");
+        if (node) return node;
+        node = document.createElement("p");
+        node.setAttribute("data-action-status", "1");
+        node.style.margin = "0.3rem 0 0";
+        node.style.fontSize = "0.78rem";
+        node.style.color = "var(--text2)";
+        form.appendChild(node);
+        return node;
+      }
+
+      function updatePostActionUI(form, actionType, payload) {
+        var button = form.querySelector("[data-action-button='" + actionType + "']");
+        if (!button) return;
+        var icon = button.querySelector("[data-action-icon='" + actionType + "']");
+        var count = button.querySelector("[data-action-count='" + actionType + "']");
+
+        if (actionType === "like") {
+          var liked = !!payload.liked;
+          button.classList.toggle("active", liked);
+          if (icon) icon.textContent = liked ? "❤️" : "🤍";
+          if (count && typeof payload.like_count !== "undefined") count.textContent = String(payload.like_count);
+          return;
+        }
+        if (actionType === "repost") {
+          var reposted = !!payload.reposted;
+          button.classList.toggle("active", reposted);
+          if (count && typeof payload.repost_count !== "undefined") count.textContent = String(payload.repost_count);
+          return;
+        }
+        if (actionType === "bookmark") {
+          var bookmarked = !!payload.bookmarked;
+          button.classList.toggle("active", bookmarked);
+          if (icon) icon.textContent = bookmarked ? "📌" : "🔖";
+        }
+      }
+
+      document.addEventListener("submit", function (evt) {
+        var form = evt.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.getAttribute("data-async-post-action") !== "1") return;
+        evt.preventDefault();
+
+        var actionType = form.getAttribute("data-action-type") || "";
+        if (!actionType) return;
+
+        var statusNode = ensureActionStatusNode(form);
+        statusNode.textContent = "Updating...";
+
+        var body = new FormData(form);
+        fetch(form.action, {
+          method: "POST",
+          body: body,
+          credentials: "same-origin",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json"
+          }
+        })
+          .then(function (response) {
+            return response.json().then(function (payload) {
+              return { ok: response.ok, payload: payload };
+            });
+          })
+          .then(function (result) {
+            if (!result.ok || !result.payload.ok) {
+              statusNode.textContent = (result.payload && result.payload.error) ? result.payload.error : "Update failed.";
+              return;
+            }
+            updatePostActionUI(form, actionType, result.payload);
+            statusNode.textContent = "";
+          })
+          .catch(function () {
+            statusNode.textContent = "Network error while updating.";
+          });
+      });
+    })();
+    </script>
   </body>
 </html>

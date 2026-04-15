@@ -204,3 +204,55 @@ class BookmarkFlowTests(TestCase):
 		second = self.client.post(f"/social/bookmark/{self.post.id}/")
 		self.assertEqual(second.status_code, 302)
 		self.assertFalse(Bookmark.objects.filter(actor=self.viewer.actor, post=self.post).exists())
+
+
+class SocialAjaxToggleTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.owner = User.objects.create_user(email="ajax-owner@example.com", username="ajaxowner", password="secret123")
+		self.viewer = User.objects.create_user(email="ajax-viewer@example.com", username="ajaxviewer", password="secret123")
+		self.owner.mark_email_verified()
+		self.viewer.mark_email_verified()
+		self.post = Post.objects.create(
+			author=self.owner.actor,
+			content="Ajax target post",
+			canonical_uri=post_uri("ajax-target-post"),
+		)
+
+	def test_like_toggle_returns_json(self):
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/like/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["liked"])
+		self.assertEqual(payload["like_count"], 1)
+
+	def test_repost_toggle_returns_json(self):
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/repost/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["reposted"])
+		self.assertEqual(payload["repost_count"], 1)
+
+	def test_bookmark_toggle_returns_json(self):
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/bookmark/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["bookmarked"])

@@ -18,6 +18,12 @@ from apps.social.models import Block, Bookmark, Follow, Like, Repost
 from apps.social.services import approve_follow_request, follow_actor, reject_follow_request, unfollow_actor
 
 
+def _wants_json(request: HttpRequest) -> bool:
+	requested_with = (request.headers.get("x-requested-with") or "").lower()
+	accept = (request.headers.get("accept") or "").lower()
+	return requested_with == "xmlhttprequest" or "application/json" in accept
+
+
 @ratelimit(key="user_or_ip", rate="60/h", block=True)
 @login_required
 @require_POST
@@ -88,6 +94,8 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	actor = request.user.actor
 	post = get_object_or_404(Post, id=post_id)
 	if not can_comment_on_post(actor, post):
+		if _wants_json(request):
+			return JsonResponse({"ok": False, "error": "You cannot engage with this post."}, status=403)
 		messages.error(request, "You cannot engage with this post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 	like, created = Like.objects.get_or_create(actor=actor, post=post)
@@ -102,8 +110,8 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			notification_type=Notification.NotificationType.LIKE,
 			source_post=post,
 		)
-	if request.headers.get("x-requested-with") == "XMLHttpRequest":
-		return JsonResponse({"liked": liked, "like_count": post.like_count})
+	if _wants_json(request):
+		return JsonResponse({"ok": True, "liked": liked, "like_count": post.like_count})
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
@@ -114,14 +122,19 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	actor = request.user.actor
 	post = get_object_or_404(Post, id=post_id)
 	if actor.id == post.author_id:
+		if _wants_json(request):
+			return JsonResponse({"ok": False, "error": "You cannot repost your own post."}, status=400)
 		messages.error(request, "You cannot repost your own post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 	if not can_comment_on_post(actor, post):
+		if _wants_json(request):
+			return JsonResponse({"ok": False, "error": "You cannot repost this post."}, status=403)
 		messages.error(request, "You cannot repost this post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 	repost = Repost.objects.filter(actor=actor, post=post).first()
 	if repost:
 		repost.delete()
+		reposted = False
 		messages.success(request, "Repost removed.")
 	else:
 		try:
@@ -129,8 +142,11 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		except IntegrityError:
 			created = False
 		if not created:
+			if _wants_json(request):
+				return JsonResponse({"ok": False, "error": "Post already reposted."}, status=400)
 			messages.info(request, "Post already reposted.")
 			return redirect(request.META.get("HTTP_REFERER", "home"))
+		reposted = True
 		create_notification_if_new(
 			recipient=post.author,
 			source_actor=actor,
@@ -138,6 +154,8 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			source_post=post,
 		)
 		messages.success(request, "Post reposted.")
+	if _wants_json(request):
+		return JsonResponse({"ok": True, "reposted": reposted, "repost_count": post.repost_count})
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
@@ -176,15 +194,21 @@ def bookmark_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	actor = request.user.actor
 	post = get_object_or_404(Post, id=post_id)
 	if not can_view_post(actor, post):
+		if _wants_json(request):
+			return JsonResponse({"ok": False, "error": "You cannot bookmark this post."}, status=403)
 		messages.error(request, "You cannot bookmark this post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 
 	bookmark, created = Bookmark.objects.get_or_create(actor=actor, post=post)
 	if not created:
 		bookmark.delete()
+		bookmarked = False
 		messages.success(request, "Bookmark removed.")
 	else:
+		bookmarked = True
 		messages.success(request, "Post bookmarked.")
+	if _wants_json(request):
+		return JsonResponse({"ok": True, "bookmarked": bookmarked})
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 

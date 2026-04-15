@@ -3,7 +3,7 @@
 {% block title %}Post by @{{ post.author.handle }} · Freeparty{% endblock %}
 {% block content %}
 
-{% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+{% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
 
 <section style="margin-top:1.5rem;">
   <h3 style="font-size:1rem;margin:0 0 0.75rem;color:var(--text2);">{{ comments.count }} comment{{ comments.count|pluralize }}</h3>

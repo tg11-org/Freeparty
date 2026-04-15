@@ -7,7 +7,7 @@ from apps.actors.models import Actor
 from apps.core.pagination import paginate_queryset
 from apps.core.permissions import can_view_actor
 from apps.posts.models import Post
-from apps.social.models import Block, Follow, Like, Repost
+from apps.social.models import Block, Bookmark, Follow, Like, Repost
 
 
 @require_http_methods(["GET"])
@@ -37,6 +37,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	is_blocked_by_them = False
 	liked_ids = set()
 	reposted_ids = set()
+	bookmarked_ids = set()
 
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		my_actor = request.user.actor
@@ -54,6 +55,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 			is_blocked_by_them = Block.objects.filter(blocker=actor, blocked=my_actor).exists()
 		liked_ids = set(Like.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
+		bookmarked_ids = set(Bookmark.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 
 	return render(request, "actors/detail.html", {
 		"actor": actor,
@@ -69,6 +71,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		"show_following_count": show_following_count,
 		"liked_ids": liked_ids,
 		"reposted_ids": reposted_ids,
+		"bookmarked_ids": bookmarked_ids,
 	})
 
 
@@ -125,11 +128,13 @@ def search_view(request: HttpRequest) -> HttpResponse:
 		posts_page_obj = None
 	liked_ids: set = set()
 	reposted_ids: set = set()
+	bookmarked_ids: set = set()
 	if request.user.is_authenticated and posts:
-		from apps.social.models import Like, Repost
+		from apps.social.models import Bookmark, Like, Repost
 		post_ids = [p.id for p in posts]
 		liked_ids = set(Like.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
+		bookmarked_ids = set(Bookmark.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 	return render(request, "actors/search.html", {
 		"query": query,
 		"actor_results": actors,
@@ -138,5 +143,6 @@ def search_view(request: HttpRequest) -> HttpResponse:
 		"posts_page_obj": posts_page_obj,
 		"liked_ids": liked_ids,
 		"reposted_ids": reposted_ids,
+		"bookmarked_ids": bookmarked_ids,
 		"query_string": f"q={query}",
 	})

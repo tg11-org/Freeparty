@@ -13,7 +13,7 @@
 </div>
 {% endif %}
 {% for post in posts %}
-  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids %}
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
 {% empty %}
   <p style="color:var(--text2);">No posts yet. <a href="/posts/public/">Browse the public feed</a> or <a href="/actors/search/">find people to follow</a>.</p>
 {% endfor %}

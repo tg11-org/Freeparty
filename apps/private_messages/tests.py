@@ -242,6 +242,58 @@ class PrivateMessagesHtmlFlowTests(TestCase):
         self.assertEqual(envelope.sender_key_id, "alice-key-1")
         self.assertEqual(envelope.recipient_key_id, "bob-key-1")
 
+    def test_conversation_updates_endpoint_returns_new_envelopes_after_marker(self):
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        UserIdentityKey.objects.create(
+            actor=self.alice.actor,
+            key_id="alice-key-1",
+            public_key="alice-public-key",
+            fingerprint_hex="a" * 64,
+            algorithm=UserIdentityKey.Algorithm.CURVE25519,
+        )
+        UserIdentityKey.objects.create(
+            actor=self.bob.actor,
+            key_id="bob-key-1",
+            public_key="bob-public-key",
+            fingerprint_hex="b" * 64,
+            algorithm=UserIdentityKey.Algorithm.CURVE25519,
+        )
+
+        first = store_encrypted_message(
+            conversation=conversation,
+            sender=self.alice.actor,
+            recipient_actor=self.bob.actor,
+            ciphertext="first-cipher",
+            message_nonce="first-nonce",
+            sender_key_id="alice-key-1",
+            recipient_key_id="bob-key-1",
+            client_message_id="client-1",
+        )
+        second = store_encrypted_message(
+            conversation=conversation,
+            sender=self.bob.actor,
+            recipient_actor=self.alice.actor,
+            ciphertext="second-cipher",
+            message_nonce="second-nonce",
+            sender_key_id="bob-key-1",
+            recipient_key_id="alice-key-1",
+            client_message_id="client-2",
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.get(f"/messages/{conversation.id}/updates/?after={first.created_at.isoformat()}")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(len(payload["envelopes"]), 1)
+        self.assertEqual(payload["envelopes"][0]["id"], str(second.id))
+        self.assertIn("alice-key-1", payload["public_keys_by_key_id"])
+        self.assertIn("bob-key-1", payload["public_keys_by_key_id"])
+
     def test_conversation_detail_shows_key_change_warning_for_unacknowledged_remote_key(self):
         conversation = create_direct_conversation(
             created_by=self.alice.actor,

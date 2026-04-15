@@ -25,6 +25,25 @@ from apps.private_messages.services import (
 from apps.social.models import Block
 
 
+def _serialize_envelope(message: EncryptedMessageEnvelope) -> dict:
+    return {
+        "id": str(message.id),
+        "sender_id": str(message.sender_id or ""),
+        "sender_handle": message.sender.handle if message.sender else "unknown",
+        "ciphertext": message.ciphertext,
+        "message_nonce": message.message_nonce,
+        "sender_key_id": message.sender_key_id,
+        "recipient_key_id": message.recipient_key_id,
+        "created_at": message.created_at.isoformat(),
+    }
+
+
+def _public_keys_for_conversation(*, actor, other_participants: list[Actor]) -> dict[str, str]:
+    participant_ids = [actor.id, *(other.id for other in other_participants)]
+    known_keys = UserIdentityKey.objects.filter(actor_id__in=participant_ids).order_by("-created_at")
+    return {key.key_id: key.public_key for key in known_keys}
+
+
 def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMessageEnvelopeForm | None = None) -> dict:
     participant_records = list(conversation.participants.all())
     self_participant = next((participant for participant in participant_records if participant.actor_id == actor.id), None)
@@ -60,22 +79,8 @@ def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMe
         .select_related("sender")
         .order_by("created_at")
     )
-    participant_ids = [actor.id, *(other.id for other in other_participants)]
-    known_keys = UserIdentityKey.objects.filter(actor_id__in=participant_ids).order_by("-created_at")
-    public_keys_by_key_id = {key.key_id: key.public_key for key in known_keys}
-    envelope_payloads = [
-        {
-            "id": str(message.id),
-            "sender_id": str(message.sender_id or ""),
-            "sender_handle": message.sender.handle if message.sender else "unknown",
-            "ciphertext": message.ciphertext,
-            "message_nonce": message.message_nonce,
-            "sender_key_id": message.sender_key_id,
-            "recipient_key_id": message.recipient_key_id,
-            "created_at": message.created_at.isoformat(),
-        }
-        for message in envelopes
-    ]
+    public_keys_by_key_id = _public_keys_for_conversation(actor=actor, other_participants=other_participants)
+    envelope_payloads = [_serialize_envelope(message) for message in envelopes]
 
     return {
         "conversation": conversation,
@@ -104,6 +109,7 @@ def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMe
         "remote_public_key": remote_key.public_key if remote_key else "",
         "envelope_payloads": envelope_payloads,
         "public_keys_by_key_id": public_keys_by_key_id,
+        "updates_url": f"/messages/{conversation.id}/updates/",
     }
 
 
@@ -288,5 +294,33 @@ def register_identity_key_view(request: HttpRequest) -> HttpResponse:
             "created": created,
             "key_id": key.key_id,
             "fingerprint_hex": key.fingerprint_hex,
+        }
+    )
+
+
+@login_required
+@require_GET
+def conversation_updates_view(request: HttpRequest, conversation_id: str) -> HttpResponse:
+    actor = request.user.actor
+    if not is_private_messages_enabled():
+        return JsonResponse({"ok": False, "error": "Private messaging is not enabled."}, status=400)
+
+    conversation = get_object_or_404(
+        Conversation.objects.prefetch_related("participants__actor"),
+        id=conversation_id,
+        participants__actor=actor,
+    )
+    after = (request.GET.get("after") or "").strip()
+    envelopes_qs = EncryptedMessageEnvelope.objects.filter(conversation=conversation).select_related("sender").order_by("created_at")
+    if after:
+        envelopes_qs = envelopes_qs.filter(created_at__gt=after)
+
+    envelope_payloads = [_serialize_envelope(message) for message in envelopes_qs[:100]]
+    other_participants = [participant.actor for participant in conversation.participants.all() if participant.actor_id != actor.id]
+    return JsonResponse(
+        {
+            "ok": True,
+            "envelopes": envelope_payloads,
+            "public_keys_by_key_id": _public_keys_for_conversation(actor=actor, other_participants=other_participants),
         }
     )

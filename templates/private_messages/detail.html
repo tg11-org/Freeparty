@@ -43,72 +43,81 @@
   <h3>Encrypted Envelopes</h3>
   {{ envelope_payloads|json_script:"pm-envelope-payloads" }}
   {{ public_keys_by_key_id|json_script:"pm-public-keys" }}
-  {% if can_send_encrypted %}
-    <div style="margin-bottom:0.8rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
-      <p style="margin:0 0 0.45rem;"><strong>Browser E2E mode:</strong> this page encrypts in your browser and only uploads ciphertext.</p>
-      <p id="e2ee-key-status" style="margin:0;color:var(--text2);font-size:0.92rem;">Checking local key availability...</p>
-      <button class="btn" type="button" id="register-browser-key" style="margin-top:0.6rem;">Generate browser keypair for this device</button>
-      {% if remote_active_key_algorithm != "curve25519" %}
-        <p style="margin:0.6rem 0 0;color:var(--text2);font-size:0.92rem;">@{{ remote_handle }} still needs a browser-registered keypair before decrypt-on-read can succeed consistently.</p>
-      {% endif %}
-    </div>
-    <form id="e2ee-send-form" method="post" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;margin-bottom:1rem;">
-      {% csrf_token %}
-      {{ message_form.non_field_errors }}
-      <div>
-        <label for="plaintext_message"><strong>Message</strong></label>
-        <textarea id="plaintext_message" rows="4" style="width:100%;"></textarea>
-      </div>
-      <div style="display:none;">
-        {{ message_form.ciphertext }}
-        {{ message_form.message_nonce }}
-        {{ message_form.client_message_id }}
-      </div>
-      <button class="btn" type="submit">Encrypt and send</button>
-      <p id="e2ee-send-status" style="margin:0;color:var(--text2);font-size:0.92rem;"></p>
-    </form>
-    <noscript>
-      <p style="color:var(--text2);">JavaScript is required for browser-side encryption.</p>
-    </noscript>
-  {% else %}
-    <p style="color:var(--text2);">{{ send_block_reason }}</p>
-    {% if not local_has_active_key %}
-      <form method="post" action="{% url 'private_messages:bootstrap-key' %}" style="margin-bottom:0.85rem;">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{% url 'private_messages:detail' conversation.id %}">
-        <button class="btn" type="submit">Generate my identity key</button>
-      </form>
-    {% elif not remote_has_active_key and remote_handle %}
-      <p style="color:var(--text2);">@{{ remote_handle }} still needs an active identity key before encrypted sending can start.</p>
+  <div id="envelope-list" style="display:grid;gap:0.65rem;">
+    {% if envelopes %}
+      {% for message in envelopes %}
+        <article data-envelope-id="{{ message.id }}" style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
+          <p style="margin:0 0 0.3rem;"><strong>@{{ message.sender.handle|default:'unknown' }}</strong> · {{ message.created_at }}</p>
+          <p data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</p>
+          {% if show_ciphertext_preview %}
+            <p style="margin:0 0 0.35rem;color:var(--text2);font-size:0.92rem;">Dev preview enabled (DEBUG only): raw ciphertext below.</p>
+            <pre style="margin:0;padding:0.65rem;border:1px dashed var(--border);border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:color-mix(in srgb, var(--surface) 85%, black 2%);">{{ message.ciphertext }}</pre>
+          {% else %}
+            <p style="margin:0;color:var(--text2);font-size:0.62rem;display:none;">This message is E2E Encrypted.</p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    {% else %}
+      <p id="no-envelopes-hint" style="color:var(--text2);">No encrypted envelopes stored yet.</p>
     {% endif %}
-  {% endif %}
+  </div>
 
-  {% if envelopes %}
-    {% for message in envelopes %}
-      <article data-envelope-id="{{ message.id }}" style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;margin-bottom:0.7rem;">
-        <p style="margin:0 0 0.3rem;"><strong>@{{ message.sender.handle|default:'unknown' }}</strong> · {{ message.created_at }}</p>
-        <p data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</p>
-        {% if show_ciphertext_preview %}
-          <p style="margin:0 0 0.35rem;color:var(--text2);font-size:0.92rem;">Dev preview enabled (DEBUG only): raw ciphertext below.</p>
-          <pre style="margin:0;padding:0.65rem;border:1px dashed var(--border);border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:color-mix(in srgb, var(--surface) 85%, black 2%);">{{ message.ciphertext }}</pre>
-        {% else %}
-          <p style="margin:0;color:var(--text2);font-size:0.62rem;display:none;">This message is E2E Encrypted.</p>
+  <div style="position:sticky;bottom:0;margin-top:0.9rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);z-index:5;">
+    {% if can_send_encrypted %}
+      <div style="margin-bottom:0.8rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
+        <p style="margin:0 0 0.45rem;"><strong>Browser E2E mode:</strong> this page encrypts in your browser and only uploads ciphertext.</p>
+        <p id="e2ee-key-status" style="margin:0;color:var(--text2);font-size:0.92rem;">Checking local key availability...</p>
+        <button class="btn" type="button" id="register-browser-key" style="margin-top:0.6rem;">Generate browser keypair for this device</button>
+        {% if remote_active_key_algorithm != "curve25519" %}
+          <p style="margin:0.6rem 0 0;color:var(--text2);font-size:0.92rem;">@{{ remote_handle }} still needs a browser-registered keypair before decrypt-on-read can succeed consistently.</p>
         {% endif %}
-      </article>
-    {% endfor %}
-  {% else %}
-    <p style="color:var(--text2);">No encrypted envelopes stored yet.</p>
-  {% endif %}
+      </div>
+      <form id="e2ee-send-form" method="post" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;">
+        {% csrf_token %}
+        {{ message_form.non_field_errors }}
+        <div>
+          <label for="plaintext_message"><strong>Message</strong></label>
+          <textarea id="plaintext_message" rows="3" style="width:100%;"></textarea>
+        </div>
+        <div style="display:none;">
+          {{ message_form.ciphertext }}
+          {{ message_form.message_nonce }}
+          {{ message_form.client_message_id }}
+        </div>
+        <button class="btn" type="submit">Encrypt and send</button>
+        <p id="e2ee-send-status" style="margin:0;color:var(--text2);font-size:0.92rem;"></p>
+      </form>
+      <noscript>
+        <p style="color:var(--text2);">JavaScript is required for browser-side encryption.</p>
+      </noscript>
+    {% else %}
+      <p style="color:var(--text2);">{{ send_block_reason }}</p>
+      {% if not local_has_active_key %}
+        <form method="post" action="{% url 'private_messages:bootstrap-key' %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'private_messages:detail' conversation.id %}">
+          <button class="btn" type="submit">Generate my identity key</button>
+        </form>
+      {% elif not remote_has_active_key and remote_handle %}
+        <p style="color:var(--text2);">@{{ remote_handle }} still needs an active identity key before encrypted sending can start.</p>
+      {% endif %}
+    {% endif %}
+  </div>
 </section>
 <script>
   (function () {
     const envelopePayloads = JSON.parse(document.getElementById("pm-envelope-payloads").textContent || "[]");
     const publicKeysById = JSON.parse(document.getElementById("pm-public-keys").textContent || "{}");
+    const knownEnvelopeIds = new Set(envelopePayloads.map(function (item) { return item.id; }));
+    const envelopeListNode = document.getElementById("envelope-list");
+    const noEnvelopesHint = document.getElementById("no-envelopes-hint");
     const viewerActorId = "{{ viewer.id }}";
     const localActiveKeyId = "{{ local_active_key_id }}";
     const localActiveKeyAlgorithm = "{{ local_active_key_algorithm }}";
     const remoteActiveKeyId = "{{ remote_active_key_id }}";
     const remoteActiveKeyAlgorithm = "{{ remote_active_key_algorithm }}";
+    const updatesUrl = "{{ updates_url }}";
+    const showCiphertextPreview = "{{ show_ciphertext_preview|yesno:'1,0' }}" === "1";
     const registerUrl = "{% url 'private_messages:register-key' %}";
     const csrfTokenInput = document.querySelector("#e2ee-send-form input[name='csrfmiddlewaretoken']");
     const csrfToken = csrfTokenInput ? csrfTokenInput.value : "";
@@ -161,6 +170,60 @@
         chunks.push(hexValue.slice(i, i + size));
       }
       return chunks.join("-");
+    }
+
+    function formatEnvelopeTime(isoString) {
+      try {
+        return new Date(isoString).toLocaleString();
+      } catch (_err) {
+        return isoString;
+      }
+    }
+
+    function buildEnvelopeNode(envelope, plaintextText) {
+      const article = document.createElement("article");
+      article.setAttribute("data-envelope-id", envelope.id);
+      article.style.padding = "0.8rem";
+      article.style.border = "1px solid var(--border)";
+      article.style.borderRadius = "10px";
+
+      const header = document.createElement("p");
+      header.style.margin = "0 0 0.3rem";
+      const strong = document.createElement("strong");
+      strong.textContent = "@" + (envelope.sender_handle || "unknown");
+      header.appendChild(strong);
+      header.appendChild(document.createTextNode(" · " + formatEnvelopeTime(envelope.created_at)));
+      article.appendChild(header);
+
+      const body = document.createElement("p");
+      body.setAttribute("data-envelope-plaintext", envelope.id);
+      body.style.margin = "0 0 0.35rem";
+      body.textContent = plaintextText;
+      article.appendChild(body);
+
+      if (showCiphertextPreview) {
+        const hint = document.createElement("p");
+        hint.style.margin = "0 0 0.35rem";
+        hint.style.color = "var(--text2)";
+        hint.style.fontSize = "0.92rem";
+        hint.textContent = "Dev preview enabled (DEBUG only): raw ciphertext below.";
+        article.appendChild(hint);
+
+        const pre = document.createElement("pre");
+        pre.style.margin = "0";
+        pre.style.padding = "0.65rem";
+        pre.style.border = "1px dashed var(--border)";
+        pre.style.borderRadius = "8px";
+        pre.style.overflow = "auto";
+        pre.style.whiteSpace = "pre-wrap";
+        pre.style.wordBreak = "break-all";
+        pre.style.fontFamily = "monospace";
+        pre.style.background = "color-mix(in srgb, var(--surface) 85%, black 2%)";
+        pre.textContent = envelope.ciphertext;
+        article.appendChild(pre);
+      }
+
+      return article;
     }
 
     function drawValidationIdenticon(bytes) {
@@ -376,6 +439,57 @@
       }
     }
 
+    async function appendEnvelopeToDom(envelope) {
+      if (!envelopeListNode) {
+        return;
+      }
+      const plaintext = await decryptEnvelope(envelope);
+      const node = buildEnvelopeNode(envelope, plaintext);
+      if (noEnvelopesHint && noEnvelopesHint.parentNode) {
+        noEnvelopesHint.remove();
+      }
+      envelopeListNode.appendChild(node);
+    }
+
+    async function pollConversationUpdates() {
+      if (!updatesUrl) {
+        return;
+      }
+      const lastEnvelope = envelopePayloads.length ? envelopePayloads[envelopePayloads.length - 1] : null;
+      const after = lastEnvelope ? (lastEnvelope.created_at || "") : "";
+      const sep = updatesUrl.indexOf("?") === -1 ? "?" : "&";
+      const response = await window.fetch(updatesUrl + (after ? (sep + "after=" + encodeURIComponent(after)) : ""), {
+        method: "GET",
+        credentials: "same-origin",
+        headers: {
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      if (!payload.ok) {
+        return;
+      }
+
+      const keyMap = payload.public_keys_by_key_id || {};
+      Object.keys(keyMap).forEach(function (keyId) {
+        publicKeysById[keyId] = keyMap[keyId];
+      });
+
+      const incoming = payload.envelopes || [];
+      for (let i = 0; i < incoming.length; i += 1) {
+        const envelope = incoming[i];
+        if (knownEnvelopeIds.has(envelope.id)) {
+          continue;
+        }
+        knownEnvelopeIds.add(envelope.id);
+        envelopePayloads.push(envelope);
+        await appendEnvelopeToDom(envelope);
+      }
+    }
+
     async function registerBrowserKeypair() {
       if (!window.crypto || !window.crypto.subtle) {
         throw new Error("Web Crypto API is unavailable in this browser.");
@@ -502,6 +616,11 @@
     updateKeyStatus();
     updateSendAvailability();
     renderDecryptedMessages();
+    window.setInterval(function () {
+      pollConversationUpdates().catch(function () {
+        // Keep polling on next tick even if one request fails.
+      });
+    }, 5000);
   })();
 </script>
 {% endblock %}
