@@ -1,6 +1,6 @@
 # Freeparty Project Status
 
-Last Updated: 2026-04-13 (Phase 3 - Increment 3.4 Reliability Slice Started)
+Last Updated: 2026-04-14 (Phase 4 - Increment 4.5 PM/E2E Foundation Slice 1)
 
 ## Snapshot
 
@@ -213,6 +213,98 @@ Services in `compose.yaml`:
 - Report model usage for post and actor reports
 - Notifications for follow/like/reply/mention/repost pathways (model + core paths wired)
 - Notification list and mark-read baseline exists
+
+### Phase 4.5 Kickoff: PM + E2E Foundation (Feature Flagged)
+
+- Added new `apps.private_messages` domain app with foundational schema:
+  - `Conversation`
+  - `ConversationParticipant`
+  - `UserIdentityKey`
+  - `EncryptedMessageEnvelope`
+- Added PM service interfaces with explicit feature gate:
+  - `FEATURE_PM_E2E_ENABLED` (default `False`)
+  - PM service operations raise when feature is disabled
+- Added encrypted-envelope-only persistence path in service layer:
+  - required fields: ciphertext, nonce, sender/recipient key ids
+  - no plaintext message storage path introduced
+- Added baseline PM foundation tests for:
+  - feature-flag enforcement
+  - encrypted envelope persistence
+  - participant uniqueness constraints
+- Added ADR and threat-model checklist for PM rollout gate:
+  - `docs/adr/0001-pm-e2e-foundation.md`
+
+### Phase 5 Kickoff: DM Initiation and Report Taxonomy Hardening
+
+- Added user-facing DM initiation shell under feature flag:
+  - `/messages/` conversation list
+  - `/messages/start/{handle}/` direct conversation start action
+  - `/messages/{id}/` conversation detail shell
+- Added actor profile DM action with:
+  - self-DM prevention
+  - blocked-account prevention
+  - direct conversation dedupe/reuse
+- Added structured report intake flow:
+  - dedicated report form page for actor/post targets
+  - reason taxonomy (`dmca_ip`, `minor_safety`, `graphic_death_injury`, `non_consensual_intimate_media`, `impersonation`, `harassment`, `spam_scam`, `other`)
+  - stored severity (`low`, `medium`, `high`, `critical`)
+- Added tests for DM initiation HTML flow and report severity normalization/submission.
+
+### Phase 5.2: Encrypted Envelope Compose/Store Flow
+
+- Added encrypted envelope compose form on DM detail pages for direct conversations.
+- Send flow derives active sender/recipient identity keys automatically for direct threads.
+- DM HTML view continues to render metadata-only conversation rows; ciphertext is never rendered back to users.
+- Added tests for:
+  - blocked send state when active identity keys are missing
+  - successful encrypted envelope storage when both participants have active keys
+
+### Phase 5.5: Dev Ciphertext Preview Toggle
+
+- Added optional DM detail ciphertext preview toggle for local debugging:
+  - `FEATURE_PM_DEV_CIPHERTEXT_PREVIEW=True`
+  - requires `DEBUG=True` to render
+- Default behavior remains metadata-only rendering with no ciphertext shown.
+- Added PM HTML tests verifying ciphertext visibility when preview is enabled and hidden when disabled.
+
+### Phase 5.6: Browser-Side Crypto Flow
+
+- Added browser identity key registration endpoint:
+  - `POST /messages/keys/register/`
+  - server stores only public key, fingerprint, and key id; private key remains browser-local
+- DM detail now supports:
+  - plaintext compose with browser-side encryption before submit
+  - client-side envelope decryption for rendering when required private key material exists
+- Envelope persistence remains unchanged and server-side plaintext storage is still not introduced.
+- Added PM tests for browser-key registration success and invalid payload handling.
+
+### Phase 5.3: Key Change Warning and Acknowledgment
+
+- Added participant-scoped remote key acknowledgment fields to DM conversations.
+- DM detail now warns when the active remote identity key differs from the last acknowledged key.
+- Added explicit acknowledgment action to confirm a newly verified remote key.
+- Added tests for:
+  - key-change detection contract
+  - warning visibility for unacknowledged remote key changes
+  - successful key acknowledgment flow
+
+### Phase 5.3 Follow-up: Identity Key Bootstrap
+
+- Added self-service identity key bootstrap endpoint for authenticated users:
+  - `POST /messages/keys/bootstrap/`
+- Messages list and DM detail now surface a "Generate my identity key" action when local key is missing.
+- This removes shell/admin dependency for first-time encrypted DM onboarding in local environments.
+
+### Phase 5.4: Moderation Queue Routing Improvements
+
+- Added moderation dashboard filters for:
+  - report reason category
+  - report severity
+- Added clearer report queue/detail display for reason/severity labels.
+- Added staff API filtering parity for:
+  - `severity`
+  - `reason_category`
+- Added tests for dashboard and API severity/category filtering behavior.
 
 ## Accessibility and UI Features
 

@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+{% block title %}Conversation · Freeparty{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+  <h2 style="margin:0;">
+    {% for participant in other_participants %}@{{ participant.handle }}{% if not forloop.last %}, {% endif %}{% endfor %}
+  </h2>
+  <a class="btn" href="{% url 'private_messages:list' %}">Back to messages</a>
+</div>
+
+{% if safety_fingerprint %}
+  <section style="margin-top:1rem;padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
+    <h3 style="margin-top:0;">Safety Fingerprint</h3>
+    <p style="margin:0 0 0.45rem;font-family:monospace;word-break:break-all;">{{ safety_fingerprint }}</p>
+    <p style="margin:0;color:var(--text2);font-size:0.92rem;">Identicon seed contract: <span style="font-family:monospace;">{{ identicon_seed }}</span></p>
+    <div id="fingerprint-validate-panel" style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px dashed var(--border);">
+      <button class="btn" id="validate-fingerprint-btn" type="button">Validate fingerprint</button>
+      <p id="validate-fingerprint-status" style="margin:0.5rem 0 0;color:var(--text2);font-size:0.92rem;">Generate a deterministic check code and visual marker for this contract.</p>
+      <div id="validate-fingerprint-output" style="display:none;margin-top:0.55rem;align-items:flex-start;gap:0.7rem;flex-wrap:wrap;">
+        <canvas id="validate-fingerprint-identicon" width="84" height="84" style="width:84px;height:84px;border:1px solid var(--border);border-radius:8px;"></canvas>
+        <div style="min-width:220px;">
+          <p style="margin:0 0 0.25rem;font-size:0.9rem;"><strong>Validation code</strong></p>
+          <p id="validate-fingerprint-code" style="margin:0;font-family:monospace;word-break:break-all;font-size:0.9rem;"></p>
+        </div>
+      </div>
+    </div>
+    {% if key_change_warning %}
+      <div style="margin-top:0.75rem;padding:0.8rem;border:1px solid var(--danger);border-radius:8px;background:color-mix(in srgb, var(--danger) 8%, var(--surface));">
+        <p style="margin:0 0 0.5rem;"><strong>Key change warning:</strong> {{ key_change_warning }}</p>
+        <p style="margin:0 0 0.65rem;color:var(--text2);font-size:0.92rem;">Current remote key id: <span style="font-family:monospace;">{{ current_remote_key_id }}</span></p>
+        <form method="post" action="{% url 'private_messages:acknowledge-key' conversation.id %}">
+          {% csrf_token %}
+          <button class="btn" type="submit">I verified this new key</button>
+        </form>
+      </div>
+    {% endif %}
+  </section>
+{% else %}
+  <p style="margin-top:1rem;color:var(--text2);">Safety fingerprint will appear once both participants have active identity keys.</p>
+{% endif %}
+
+<section style="margin-top:1rem;">
+  <h3>Encrypted Envelopes</h3>
+  {{ envelope_payloads|json_script:"pm-envelope-payloads" }}
+  {{ public_keys_by_key_id|json_script:"pm-public-keys" }}
+  {% if can_send_encrypted %}
+    <div style="margin-bottom:0.8rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
+      <p style="margin:0 0 0.45rem;"><strong>Browser E2E mode:</strong> this page encrypts in your browser and only uploads ciphertext.</p>
+      <p id="e2ee-key-status" style="margin:0;color:var(--text2);font-size:0.92rem;">Checking local key availability...</p>
+      <button class="btn" type="button" id="register-browser-key" style="margin-top:0.6rem;">Generate browser keypair for this device</button>
+      {% if remote_active_key_algorithm != "curve25519" %}
+        <p style="margin:0.6rem 0 0;color:var(--text2);font-size:0.92rem;">@{{ remote_handle }} still needs a browser-registered keypair before decrypt-on-read can succeed consistently.</p>
+      {% endif %}
+    </div>
+    <form id="e2ee-send-form" method="post" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;margin-bottom:1rem;">
+      {% csrf_token %}
+      {{ message_form.non_field_errors }}
+      <div>
+        <label for="plaintext_message"><strong>Message</strong></label>
+        <textarea id="plaintext_message" rows="4" style="width:100%;"></textarea>
+      </div>
+      <div style="display:none;">
+        {{ message_form.ciphertext }}
+        {{ message_form.message_nonce }}
+        {{ message_form.client_message_id }}
+      </div>
+      <button class="btn" type="submit">Encrypt and send</button>
+      <p id="e2ee-send-status" style="margin:0;color:var(--text2);font-size:0.92rem;"></p>
+    </form>
+    <noscript>
+      <p style="color:var(--text2);">JavaScript is required for browser-side encryption.</p>
+    </noscript>
+  {% else %}
+    <p style="color:var(--text2);">{{ send_block_reason }}</p>
+    {% if not local_has_active_key %}
+      <form method="post" action="{% url 'private_messages:bootstrap-key' %}" style="margin-bottom:0.85rem;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'private_messages:detail' conversation.id %}">
+        <button class="btn" type="submit">Generate my identity key</button>
+      </form>
+    {% elif not remote_has_active_key and remote_handle %}
+      <p style="color:var(--text2);">@{{ remote_handle }} still needs an active identity key before encrypted sending can start.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if envelopes %}
+    {% for message in envelopes %}
+      <article data-envelope-id="{{ message.id }}" style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;margin-bottom:0.7rem;">
+        <p style="margin:0 0 0.3rem;"><strong>@{{ message.sender.handle|default:'unknown' }}</strong> · {{ message.created_at }}</p>
+        <p data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</p>
+        {% if show_ciphertext_preview %}
+          <p style="margin:0 0 0.35rem;color:var(--text2);font-size:0.92rem;">Dev preview enabled (DEBUG only): raw ciphertext below.</p>
+          <pre style="margin:0;padding:0.65rem;border:1px dashed var(--border);border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:color-mix(in srgb, var(--surface) 85%, black 2%);">{{ message.ciphertext }}</pre>
+        {% else %}
+          <p style="margin:0;color:var(--text2);font-size:0.62rem;display:none;">This message is E2E Encrypted.</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  {% else %}
+    <p style="color:var(--text2);">No encrypted envelopes stored yet.</p>
+  {% endif %}
+</section>
+<script>
+  (function () {
+    const envelopePayloads = JSON.parse(document.getElementById("pm-envelope-payloads").textContent || "[]");
+    const publicKeysById = JSON.parse(document.getElementById("pm-public-keys").textContent || "{}");
+    const viewerActorId = "{{ viewer.id }}";
+    const localActiveKeyId = "{{ local_active_key_id }}";
+    const localActiveKeyAlgorithm = "{{ local_active_key_algorithm }}";
+    const remoteActiveKeyId = "{{ remote_active_key_id }}";
+    const remoteActiveKeyAlgorithm = "{{ remote_active_key_algorithm }}";
+    const registerUrl = "{% url 'private_messages:register-key' %}";
+    const csrfTokenInput = document.querySelector("#e2ee-send-form input[name='csrfmiddlewaretoken']");
+    const csrfToken = csrfTokenInput ? csrfTokenInput.value : "";
+    const registerBtn = document.getElementById("register-browser-key");
+    const registerBtnDefaultText = registerBtn ? registerBtn.textContent : "";
+    const statusNode = document.getElementById("e2ee-key-status");
+    const sendStatusNode = document.getElementById("e2ee-send-status");
+    const sendForm = document.getElementById("e2ee-send-form");
+    const sendButton = sendForm ? sendForm.querySelector("button[type='submit']") : null;
+    const plaintextInput = document.getElementById("plaintext_message");
+    const validateFingerprintBtn = document.getElementById("validate-fingerprint-btn");
+    const validateFingerprintStatus = document.getElementById("validate-fingerprint-status");
+    const validateFingerprintOutput = document.getElementById("validate-fingerprint-output");
+    const validateFingerprintCode = document.getElementById("validate-fingerprint-code");
+    const validateFingerprintCanvas = document.getElementById("validate-fingerprint-identicon");
+    const safetyFingerprint = "{{ safety_fingerprint|default:'' }}";
+    const identiconSeed = "{{ identicon_seed|default:'' }}";
+
+    function toBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
+    }
+
+    function fromBase64(base64) {
+      const binary = window.atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function toHex(buffer) {
+      return Array.from(new Uint8Array(buffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    function privateKeyStorageKey(keyId) {
+      return "freeparty.e2ee.private." + viewerActorId + "." + keyId;
+    }
+
+    function chunkHex(hexValue, size) {
+      const chunks = [];
+      for (let i = 0; i < hexValue.length; i += size) {
+        chunks.push(hexValue.slice(i, i + size));
+      }
+      return chunks.join("-");
+    }
+
+    function drawValidationIdenticon(bytes) {
+      if (!validateFingerprintCanvas) {
+        return;
+      }
+      const ctx = validateFingerprintCanvas.getContext("2d");
+      if (!ctx) {
+        return;
+      }
+
+      const rootStyles = window.getComputedStyle(document.documentElement);
+      const bgColor = (rootStyles.getPropertyValue("--surface2") || "#eceff5").trim() || "#eceff5";
+      const accent = "#" + Array.from(bytes.slice(0, 3)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      const accentAlt = "#" + Array.from(bytes.slice(3, 6)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+
+      const size = 7;
+      const cell = 12;
+      const margin = 0;
+      ctx.clearRect(0, 0, validateFingerprintCanvas.width, validateFingerprintCanvas.height);
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, validateFingerprintCanvas.width, validateFingerprintCanvas.height);
+
+      let bitIndex = 0;
+      for (let row = 0; row < size; row += 1) {
+        for (let col = 0; col < Math.ceil(size / 2); col += 1) {
+          const byte = bytes[Math.floor(bitIndex / 8)] || 0;
+          const bit = (byte >> (bitIndex % 8)) & 1;
+          if (bit === 1) {
+            ctx.fillStyle = ((row + col) % 2 === 0) ? accent : accentAlt;
+            const x = margin + (col * cell);
+            const mirrorX = margin + ((size - 1 - col) * cell);
+            const y = margin + (row * cell);
+            ctx.fillRect(x, y, cell - 1, cell - 1);
+            ctx.fillRect(mirrorX, y, cell - 1, cell - 1);
+          }
+          bitIndex += 1;
+        }
+      }
+    }
+
+    async function runFingerprintValidation() {
+      if (!validateFingerprintStatus || !validateFingerprintCode) {
+        return;
+      }
+      if (!window.crypto || !window.crypto.subtle) {
+        validateFingerprintStatus.textContent = "Validation requires Web Crypto support in this browser.";
+        return;
+      }
+      if (!safetyFingerprint || !identiconSeed) {
+        validateFingerprintStatus.textContent = "No fingerprint contract is available yet.";
+        return;
+      }
+
+      validateFingerprintStatus.textContent = "Generating validation marker...";
+      const payload = "freeparty-fingerprint-validate|" + safetyFingerprint + "|" + identiconSeed;
+      const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+      const digestHex = toHex(digest);
+      validateFingerprintCode.textContent = chunkHex(digestHex, 8);
+      drawValidationIdenticon(new Uint8Array(digest));
+      if (validateFingerprintOutput) {
+        validateFingerprintOutput.style.display = "flex";
+      }
+      validateFingerprintStatus.textContent = "Validation marker generated. Compare this code/image on both browsers.";
+    }
+
+    function fallbackClientMessageId() {
+      const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+      return Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    function evaluateSendReadiness() {
+      if (!window.crypto || !window.crypto.subtle) {
+        return { ok: false, message: "Web Crypto API is unavailable in this browser." };
+      }
+      if (!localActiveKeyId || localActiveKeyAlgorithm !== "curve25519") {
+        return { ok: false, message: "Generate your browser keypair first." };
+      }
+      if (!remoteActiveKeyId || remoteActiveKeyAlgorithm !== "curve25519") {
+        return { ok: false, message: "Waiting for the other participant to register a browser keypair." };
+      }
+      if (!window.localStorage.getItem(privateKeyStorageKey(localActiveKeyId))) {
+        return { ok: false, message: "Local private key is missing on this browser/device." };
+      }
+      if (!publicKeysById[remoteActiveKeyId]) {
+        return { ok: false, message: "Remote public key is unavailable." };
+      }
+      return { ok: true, message: "Ready" };
+    }
+
+    function updateSendAvailability() {
+      if (!sendButton || !sendStatusNode) {
+        return;
+      }
+      const readiness = evaluateSendReadiness();
+      sendButton.disabled = !readiness.ok;
+      if (!readiness.ok) {
+        sendStatusNode.textContent = "Cannot send yet: " + readiness.message;
+      } else {
+        sendStatusNode.textContent = "";
+      }
+    }
+
+    function updateRegisterButtonLabel(mode) {
+      if (!registerBtn) {
+        return;
+      }
+      if (mode === "recover") {
+        registerBtn.textContent = "Recover this device (generate new browser keypair)";
+        return;
+      }
+      if (mode === "ready") {
+        registerBtn.textContent = "Rotate browser keypair";
+        return;
+      }
+      registerBtn.textContent = registerBtnDefaultText || "Generate browser keypair for this device";
+    }
+
+    async function importPrivateKey(pkcs8Base64) {
+      return window.crypto.subtle.importKey(
+        "pkcs8",
+        fromBase64(pkcs8Base64),
+        { name: "ECDH", namedCurve: "P-256" },
+        false,
+        ["deriveKey"]
+      );
+    }
+
+    async function importPublicKey(spkiBase64) {
+      return window.crypto.subtle.importKey(
+        "spki",
+        fromBase64(spkiBase64),
+        { name: "ECDH", namedCurve: "P-256" },
+        false,
+        []
+      );
+    }
+
+    async function deriveSharedAesKey(localPrivateKey, remotePublicKey) {
+      return window.crypto.subtle.deriveKey(
+        { name: "ECDH", public: remotePublicKey },
+        localPrivateKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptPlaintext(plaintext, localKeyId, remoteKeyId) {
+      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const remotePublicBase64 = publicKeysById[remoteKeyId];
+      if (!privateBase64) {
+        throw new Error("No local private key for current active key id on this device.");
+      }
+      if (!remotePublicBase64) {
+        throw new Error("Remote public key is not available for active key id.");
+      }
+
+      const localPrivateKey = await importPrivateKey(privateBase64);
+      const remotePublicKey = await importPublicKey(remotePublicBase64);
+      const aesKey = await deriveSharedAesKey(localPrivateKey, remotePublicKey);
+      const nonce = window.crypto.getRandomValues(new Uint8Array(12));
+      const plaintextBytes = new TextEncoder().encode(plaintext);
+      const cipherBuffer = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: nonce },
+        aesKey,
+        plaintextBytes
+      );
+      return {
+        ciphertext: toBase64(cipherBuffer),
+        nonce: toBase64(nonce.buffer),
+      };
+    }
+
+    async function decryptEnvelope(payload) {
+      const sentByViewer = payload.sender_id === viewerActorId;
+      const localKeyId = sentByViewer ? payload.sender_key_id : payload.recipient_key_id;
+      const remoteKeyId = sentByViewer ? payload.recipient_key_id : payload.sender_key_id;
+      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const remotePublicBase64 = publicKeysById[remoteKeyId];
+      if (!privateBase64) {
+        return "Encrypted payload stored. Private key for this message is not available on this device.";
+      }
+      if (!remotePublicBase64) {
+        return "Encrypted payload stored. Remote public key for this message is unavailable.";
+      }
+      try {
+        const localPrivateKey = await importPrivateKey(privateBase64);
+        const remotePublicKey = await importPublicKey(remotePublicBase64);
+        const aesKey = await deriveSharedAesKey(localPrivateKey, remotePublicKey);
+        const plaintextBuffer = await window.crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: new Uint8Array(fromBase64(payload.message_nonce)) },
+          aesKey,
+          fromBase64(payload.ciphertext)
+        );
+        return new TextDecoder().decode(plaintextBuffer);
+      } catch (_error) {
+        return "Unable to decrypt on this device (key mismatch or unsupported legacy envelope).";
+      }
+    }
+
+    async function renderDecryptedMessages() {
+      for (let i = 0; i < envelopePayloads.length; i += 1) {
+        const envelope = envelopePayloads[i];
+        const target = document.querySelector("[data-envelope-plaintext='" + envelope.id + "']");
+        if (!target) {
+          continue;
+        }
+        const plaintext = await decryptEnvelope(envelope);
+        target.textContent = plaintext;
+      }
+    }
+
+    async function registerBrowserKeypair() {
+      if (!window.crypto || !window.crypto.subtle) {
+        throw new Error("Web Crypto API is unavailable in this browser.");
+      }
+      const pair = await window.crypto.subtle.generateKey(
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        ["deriveKey"]
+      );
+      const spki = await window.crypto.subtle.exportKey("spki", pair.publicKey);
+      const pkcs8 = await window.crypto.subtle.exportKey("pkcs8", pair.privateKey);
+      const fingerprint = toHex(await window.crypto.subtle.digest("SHA-256", spki));
+      const keyId = "web-ecdh-" + fingerprint.slice(0, 16);
+
+      const body = new URLSearchParams();
+      body.set("key_id", keyId);
+      body.set("public_key", toBase64(spki));
+      body.set("fingerprint_hex", fingerprint);
+
+      const response = await window.fetch(registerUrl, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+        credentials: "same-origin",
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Failed to register browser identity key.");
+      }
+
+      window.localStorage.setItem(privateKeyStorageKey(keyId), toBase64(pkcs8));
+      statusNode.textContent = "Browser key registered as active key. Reloading conversation to refresh fingerprint and send context.";
+      window.setTimeout(function () {
+        window.location.reload();
+      }, 350);
+    }
+
+    function updateKeyStatus() {
+      if (!statusNode) {
+        return;
+      }
+      if (!localActiveKeyId) {
+        statusNode.textContent = "No active local key is registered yet.";
+        updateRegisterButtonLabel("default");
+        return;
+      }
+      if (localActiveKeyAlgorithm !== "curve25519") {
+        statusNode.textContent = "Active local key is legacy/bootstrap type. Generate a browser keypair to enable local decrypt/encrypt.";
+        updateRegisterButtonLabel("default");
+        return;
+      }
+      if (!window.localStorage.getItem(privateKeyStorageKey(localActiveKeyId))) {
+        statusNode.textContent = "Active local key exists on server, but private key is missing on this browser/device. Use the recovery button below to create and register a new device keypair.";
+        updateRegisterButtonLabel("recover");
+        return;
+      }
+      if (!remoteActiveKeyId || remoteActiveKeyAlgorithm !== "curve25519") {
+        statusNode.textContent = "Local browser key is ready. Waiting for the other participant to register a browser keypair.";
+        updateRegisterButtonLabel("ready");
+        return;
+      }
+      statusNode.textContent = "Browser key material ready. Messages will be encrypted before upload and decrypted on read when compatible.";
+      updateRegisterButtonLabel("ready");
+    }
+
+    if (registerBtn) {
+      registerBtn.addEventListener("click", async function () {
+        registerBtn.disabled = true;
+        try {
+          await registerBrowserKeypair();
+        } catch (error) {
+          statusNode.textContent = error.message || "Failed to generate/register keypair.";
+          registerBtn.disabled = false;
+        }
+      });
+    }
+
+    if (sendForm) {
+      sendForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const readiness = evaluateSendReadiness();
+        if (!readiness.ok) {
+          sendStatusNode.textContent = "Cannot send yet: " + readiness.message;
+          return;
+        }
+        const plaintext = (plaintextInput ? plaintextInput.value : "").trim();
+        if (!plaintext) {
+          sendStatusNode.textContent = "Type a message before sending.";
+          return;
+        }
+        sendStatusNode.textContent = "Encrypting in browser...";
+        try {
+          const encrypted = await encryptPlaintext(plaintext, localActiveKeyId, remoteActiveKeyId);
+          const ciphertextInput = document.getElementById("id_ciphertext");
+          const nonceInput = document.getElementById("id_message_nonce");
+          const clientMessageIdInput = document.getElementById("id_client_message_id");
+          ciphertextInput.value = encrypted.ciphertext;
+          nonceInput.value = encrypted.nonce;
+          if (!clientMessageIdInput.value) {
+            clientMessageIdInput.value = typeof window.crypto.randomUUID === "function"
+              ? window.crypto.randomUUID()
+              : fallbackClientMessageId();
+          }
+          sendForm.submit();
+        } catch (error) {
+          sendStatusNode.textContent = error.message || "Encryption failed.";
+        }
+      });
+    }
+
+    if (validateFingerprintBtn) {
+      validateFingerprintBtn.addEventListener("click", function () {
+        runFingerprintValidation().catch(function () {
+          if (validateFingerprintStatus) {
+            validateFingerprintStatus.textContent = "Unable to generate validation marker right now.";
+          }
+        });
+      });
+    }
+
+    updateKeyStatus();
+    updateSendAvailability();
+    renderDecryptedMessages();
+  })();
+</script>
+{% endblock %}

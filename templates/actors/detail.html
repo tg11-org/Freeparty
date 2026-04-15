@@ -56,13 +56,13 @@
         <button class="btn" type="submit">＋ Follow</button>
       </form>
     {% endif %}
+    <form method="post" action="/messages/start/{{ actor.handle }}/">{% csrf_token %}
+      <button class="btn" type="submit">✉ DM</button>
+    </form>
     <form method="post" action="/social/block/{{ actor.handle }}/">{% csrf_token %}
       <button class="btn btn-danger" type="submit">🚫 Block</button>
     </form>
-    <form method="post" action="/social/report-actor/{{ actor.handle }}/">{% csrf_token %}
-      <input type="hidden" name="reason" value="user_report">
-      <button class="btn btn-danger" type="submit">⚑ Report</button>
-    </form>
+    <a class="btn btn-danger" href="/moderation/report/?target_actor_id={{ actor.id }}">⚑ Report</a>
   {% endif %}
 </div>
 {% endif %}

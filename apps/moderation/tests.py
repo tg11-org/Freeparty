@@ -1,12 +1,13 @@
 from datetime import timedelta
 
 from django.test import Client, TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.moderation.models import ModerationAction, ModerationNote, Report, TrustSignal, SecurityAuditEvent
 from apps.moderation.services import TrustSignalService, ActionVelocityTracker, SecurityAuditService
-from apps.posts.models import Post
+from apps.posts.models import Attachment, Post
 from apps.social.models import Like
 
 
@@ -83,6 +84,72 @@ class ModerationWorkflowTests(TestCase):
 		self.assertNotIn(self.report.id, {item.id for item in reports})
 		self.assertIn(self.post_report.id, {item.id for item in reports})
 
+	def test_dashboard_filters_by_severity_and_reason_category(self):
+		self.client.force_login(self.staff)
+		self.report.severity = Report.Severity.CRITICAL
+		self.report.reason = Report.Reason.MINOR_SAFETY
+		self.report.save(update_fields=["severity", "reason", "updated_at"])
+
+		response = self.client.get(f"/moderation/?severity={Report.Severity.CRITICAL}&reason_category={Report.Reason.MINOR_SAFETY}")
+		self.assertEqual(response.status_code, 200)
+		reports = list(response.context["reports"])
+		self.assertIn(self.report.id, {item.id for item in reports})
+		self.assertNotIn(self.post_report.id, {item.id for item in reports})
+
+	def test_report_detail_shows_target_post_attachments(self):
+		upload = SimpleUploadedFile("detail.png", b"fakepng", content_type="image/png")
+		Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+		)
+		self.client.force_login(self.staff)
+		response = self.client.get(f"/moderation/reports/{self.post_report.id}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Post Attachments")
+
+	def test_staff_can_update_attachment_state_from_report_detail(self):
+		upload = SimpleUploadedFile("detail-flag.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+		)
+		self.client.force_login(self.staff)
+		response = self.client.post(
+			f"/moderation/attachments/{attachment.id}/state/",
+			{"moderation_state": Attachment.ModerationState.REMOVED, "report_id": str(self.post_report.id)},
+		)
+		self.assertEqual(response.status_code, 302)
+		attachment.refresh_from_db()
+		self.assertEqual(attachment.moderation_state, Attachment.ModerationState.REMOVED)
+
+	def test_report_form_renders_structured_reason_choices(self):
+		self.client.force_login(self.reporter)
+		response = self.client.get(f"/moderation/report/?target_post_id={self.post.id}")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "DMCA / IP Complaint")
+		self.assertContains(response, "Posting of a Minor")
+
+	def test_report_submission_derives_severity_from_reason(self):
+		self.client.force_login(self.reporter)
+		response = self.client.post(
+			"/moderation/report/",
+			{
+				"target_post_id": str(self.post.id),
+				"reason": Report.Reason.MINOR_SAFETY,
+				"description": "urgent safety issue",
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		report = Report.objects.order_by("-created_at").first()
+		self.assertEqual(report.reason, Report.Reason.MINOR_SAFETY)
+		self.assertEqual(report.severity, Report.Severity.CRITICAL)
+
 
 class ModerationApiTests(TestCase):
 	def setUp(self):
@@ -110,9 +177,15 @@ class ModerationApiTests(TestCase):
 
 	def test_staff_can_list_and_filter_reports(self):
 		self.client.force_login(self.staff)
-		response = self.client.get(f"/api/v1/moderation/reports/?status=open&post={self.post.id}")
+		self.report.severity = Report.Severity.HIGH
+		self.report.reason = Report.Reason.DMCA_IP
+		self.report.save(update_fields=["severity", "reason", "updated_at"])
+		response = self.client.get(
+			f"/api/v1/moderation/reports/?status=open&post={self.post.id}&severity={Report.Severity.HIGH}&reason_category={Report.Reason.DMCA_IP}"
+		)
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json()["count"], 1)
+		self.assertEqual(response.json()["results"][0]["severity"], Report.Severity.HIGH)
 
 	def test_staff_can_update_report_status(self):
 		self.client.force_login(self.staff)
@@ -141,6 +214,89 @@ class ModerationApiTests(TestCase):
 		self.assertEqual(ModerationNote.objects.filter(report=self.report, author=self.staff).count(), 1)
 		self.report.refresh_from_db()
 		self.assertEqual(self.report.status, Report.Status.ACTIONED)
+
+	def test_staff_can_update_attachment_moderation_state(self):
+		upload = SimpleUploadedFile("flag.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+		)
+		self.client.force_login(self.staff)
+		response = self.client.post(
+			f"/api/v1/moderation/attachments/{attachment.id}/state/",
+			data={"moderation_state": Attachment.ModerationState.FLAGGED, "notes": "review needed"},
+		)
+		self.assertEqual(response.status_code, 200)
+		attachment.refresh_from_db()
+		self.assertEqual(attachment.moderation_state, Attachment.ModerationState.FLAGGED)
+
+	def test_non_staff_cannot_update_attachment_moderation_state(self):
+		upload = SimpleUploadedFile("remove.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+		)
+		self.client.force_login(self.user)
+		response = self.client.post(
+			f"/api/v1/moderation/attachments/{attachment.id}/state/",
+			data={"moderation_state": Attachment.ModerationState.REMOVED},
+		)
+		self.assertEqual(response.status_code, 403)
+
+	def test_flagged_attachment_hidden_from_non_staff_post_api(self):
+		upload = SimpleUploadedFile("hidden.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+			moderation_state=Attachment.ModerationState.FLAGGED,
+		)
+		self.client.force_login(self.user)
+		response = self.client.get(f"/api/v1/posts/{self.post.id}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json().get("attachments"), [])
+
+	def test_flagged_attachment_visible_to_staff_post_api(self):
+		upload = SimpleUploadedFile("staff-visible.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+			moderation_state=Attachment.ModerationState.FLAGGED,
+		)
+		self.client.force_login(self.staff)
+		response = self.client.get(f"/api/v1/posts/{self.post.id}/")
+		self.assertEqual(response.status_code, 200)
+		attachments = response.json().get("attachments", [])
+		self.assertEqual(len(attachments), 1)
+		self.assertEqual(attachments[0]["moderation_state"], Attachment.ModerationState.FLAGGED)
+
+	def test_report_detail_api_includes_target_post_attachments(self):
+		upload = SimpleUploadedFile("api-detail.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+			moderation_state=Attachment.ModerationState.FLAGGED,
+		)
+		self.client.force_login(self.staff)
+		response = self.client.get(f"/api/v1/moderation/reports/{self.report.id}/")
+		self.assertEqual(response.status_code, 200)
+		attachments = response.json().get("target_post_attachments", [])
+		self.assertEqual(len(attachments), 1)
+		self.assertEqual(attachments[0]["id"], str(attachment.id))
 
 
 class TrustSignalTests(TestCase):

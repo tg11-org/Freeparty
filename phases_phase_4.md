@@ -177,11 +177,37 @@ Increment 4.3
 - media async processing tasks + retry/idempotency/failure capture.
 - media failure reprocess operations command.
 
+Execution tasks (Increment 4.3):
+- [x] Add `process_media_attachment` Celery task with retry/backoff/jitter.
+- [x] Add idempotency + execution/failure capture via AsyncTaskExecution/AsyncTaskFailure.
+- [x] Enqueue media processing from HTML and API attachment creation flows.
+- [x] Add `reprocess_failed_media` management command for failed attachments.
+- [x] Add tests for task success/failure, enqueue hooks, and reprocess command.
+
 Increment 4.4
 - media moderation parity and staff tooling updates.
 
+Execution tasks (Increment 4.4):
+- [x] Hide flagged/removed attachments from non-staff API post responses.
+- [x] Keep attachment moderation visibility for staff API consumers.
+- [x] Add staff-only media moderation endpoint to transition attachment state (`normal`/`flagged`/`removed`).
+- [x] Add tests for staff moderation transitions and non-staff visibility enforcement.
+- [x] Add attachment context to moderation report detail API responses.
+- [x] Add staff report-detail UI controls for per-attachment moderation transitions.
+
 Increment 4.5
 - PM + E2E foundations (feature flagged), safety fingerprint UX, threat model.
+
+Execution tasks (Increment 4.5, slice 1):
+- [x] Add feature-flagged PM schema foundation (`Conversation`, `ConversationParticipant`, `UserIdentityKey`, `EncryptedMessageEnvelope`).
+- [x] Add PM service interfaces with explicit feature-flag gate and encrypted-envelope-only write path.
+- [x] Add baseline tests for feature-flag enforcement, encrypted envelope persistence, and participant uniqueness constraints.
+- [x] Add ADR-style PM/E2E foundation record with threat-model checklist and rollout security gate.
+
+Execution tasks (Increment 4.5, slice 2):
+- [x] Add deterministic safety fingerprint utility contract (hex output) from participant identity fingerprints.
+- [x] Add deterministic visual fingerprint seed contract (identicon seed derived from safety fingerprint).
+- [x] Add tests for determinism and order invariance of safety fingerprint + identicon seed outputs.
 
 Acceptance gate per increment:
 - python manage.py check passes.
@@ -203,3 +229,12 @@ At end of Phase 4, provide:
 3. Reliability snapshot for media processing tasks
 4. PM/E2E design status and security review outcome
 5. Remaining risks and recommended Phase 5 scope
+
+Phase 5/6 planning note (email infrastructure):
+- Integrate transactional mail delivery through `mail.tg11.org` (Mailcow), via a dedicated outbound email handler/service seam.
+- Account for current IPv6 delivery issues and include fallback/retry policy + operational health checks before defaulting all transactional mail to this path.
+
+Phase 5/6 planning note (report workflow hardening):
+- Expand report submission options into explicit, policy-driven reason categories (for example: DMCA/IP complaint, posting of a minor, death/injury graphic content, non-consensual intimate media, impersonation, harassment, spam/scam).
+- Add severity-aware moderation routing and on-call escalation rules for high-risk categories.
+- Add structured evidence fields per category to improve triage quality and downstream legal/compliance workflows.

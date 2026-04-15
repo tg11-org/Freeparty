@@ -121,6 +121,105 @@ Interpretation:
 	3. Use `corr=` value to correlate with web/worker logs.
 	4. Address root cause and manually re-enqueue only affected payloads.
 
+### Media processing reliability workflow (Phase 4.3)
+- Media attachments are processed asynchronously by `apps.posts.tasks.process_media_attachment`.
+- Failed media jobs can be re-queued with:
+	- `python manage.py reprocess_failed_media --limit 100`
+- Command behavior:
+	- selects attachments with `processing_state=failed`
+	- sets them back to `pending`
+	- enqueues a new processing task run with a unique idempotency suffix
+
+### Media moderation workflow (Phase 4.4)
+- Staff can transition attachment moderation state via API:
+	- `POST /api/v1/moderation/attachments/{id}/state/`
+	- payload: `{ "moderation_state": "normal|flagged|removed", "notes": "..." }`
+- Staff can also moderate attachments from moderation report detail UI:
+	- `/moderation/reports/{id}/` -> "Post Attachments" section
+- Enforcement baseline:
+	- non-staff post API responses only include attachments with `moderation_state=normal`
+	- staff post API responses include all attachment moderation states
+- Moderation report detail API now includes attachment context:
+	- `target_post_attachments` in `GET /api/v1/moderation/reports/{id}/`
+
+### PM + E2E foundation operations (Phase 4.5)
+- PM service pathways are disabled by default using `FEATURE_PM_E2E_ENABLED=False`.
+- Before enabling in any environment:
+	1. Complete checklist in `docs/adr/0001-pm-e2e-foundation.md`.
+	2. Confirm no plaintext PM fields or debug logs are emitted in app/worker logs.
+	3. Run PM test suite and system checks.
+- PM persistence contract in this slice is encrypted envelope only:
+	- `ciphertext`
+	- `message_nonce`
+	- sender/recipient key ids
+- Development-only ciphertext preview:
+	- `FEATURE_PM_DEV_CIPHERTEXT_PREVIEW=True` only takes effect when `DEBUG=True`.
+	- Use only for local debugging; keep disabled in shared/staging/production environments.
+
+### Report reason taxonomy hardening (Phase 5/6 planning)
+- Introduce structured report reasons for high-risk categories (for example DMCA/IP, posting of a minor, death/severe injury graphic media).
+- Assign escalation rules and response-time targets per category.
+- Capture category-specific evidence fields to improve legal/compliance handling.
+
+### DM initiation workflow (Phase 5 kickoff)
+- Feature-gated HTML DM shell routes:
+	- `GET /messages/`
+	- `POST /messages/start/{handle}/`
+	- `GET /messages/{id}/`
+	- `POST /messages/{id}/send/`
+- If `FEATURE_PM_E2E_ENABLED=False`, DM views intentionally render disabled state or reject initiation.
+- Start flow protections:
+	- self-DM blocked
+	- blocked-account DM blocked
+	- existing direct conversations are reused
+- Send flow protections:
+	- only direct conversations supported
+	- sender must be a participant
+	- both participants need active identity keys
+	- stored envelopes remain metadata-only in HTML rendering
+
+### Key change warning workflow (Phase 5.3)
+- DM detail warns when the current remote active key differs from the last acknowledged remote key for that conversation participant.
+- Operators/testers can validate this by rotating or replacing a participant's active `UserIdentityKey` and reloading the conversation detail page.
+- Acknowledgment behavior:
+	- `POST /messages/{id}/acknowledge-key/`
+	- stores the current remote key id and acknowledgment timestamp on the participant record
+
+### Identity key bootstrap workflow (Phase 5.3 follow-up)
+- When a user has no active key, UI provides a bootstrap action:
+	- `POST /messages/keys/bootstrap/`
+- Successful bootstrap creates an active `UserIdentityKey` for the current actor.
+- Optional `next` form value can return user to DM detail after bootstrap.
+
+### Browser key registration and decrypt-on-read workflow (Phase 5.6)
+- Browser registration endpoint:
+	- `POST /messages/keys/register/`
+	- payload: `key_id`, `public_key`, `fingerprint_hex`
+- Security contract:
+	- server stores public key material only
+	- browser private key remains local (localStorage)
+- Operational implications:
+	- clearing browser storage removes local private keys for that device
+	- envelopes tied to removed local keys will remain stored but cannot be decrypted on that device
+
+### Structured report intake workflow (Phase 5 kickoff)
+- Actor/post report entry points now route to a dedicated report form page.
+- Stored report severity is derived from selected reason category.
+- Current severity expectations:
+	- `critical`: posting of a minor, non-consensual intimate media
+	- `high`: DMCA/IP, graphic death/injury, impersonation
+	- `medium`: harassment, other
+	- `low`: spam/scam
+
+### Moderation queue routing filters (Phase 5.4)
+- Dashboard supports additional filters:
+	- severity
+	- reason category
+- Staff report API supports equivalent query params:
+	- `severity`
+	- `reason_category`
+- Use these filters during incident surge windows to prioritize high/critical safety queues first.
+
 ### Initial SLO Targets (Phase 3 baseline)
 | Objective | Target | Alert Trigger | Scope |
 |---|---|---|---|

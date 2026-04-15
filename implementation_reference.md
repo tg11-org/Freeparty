@@ -142,6 +142,65 @@ Rules covered by these helpers:
 	- moderator note creation
 - All mutating actions must stamp `reviewed_by`/`reviewed_at` or equivalent audit fields.
 
+### Private Messaging Foundation Convention (Phase 4.5)
+
+- PM foundation models live in `apps.private_messages` and currently include:
+	- `Conversation`
+	- `ConversationParticipant`
+	- `UserIdentityKey`
+	- `EncryptedMessageEnvelope`
+- PM runtime writes are feature-gated by `FEATURE_PM_E2E_ENABLED` (default disabled).
+- PM service methods must call `require_private_messages_enabled()` before mutating data.
+- Message storage contract is encrypted-envelope-only:
+	- required: ciphertext, message nonce, sender key id, recipient key id
+	- forbidden: plaintext message persistence path
+- `key_epoch` on envelopes is reserved for ratchet/session-key lifecycle slices.
+- Rollout gate reference: `docs/adr/0001-pm-e2e-foundation.md`.
+- Verification contract (slice 2 delivered):
+	- `compute_safety_fingerprint_hex(local_fp, remote_fp)` -> deterministic 64-char hex digest
+	- `compute_identicon_seed(local_fp, remote_fp)` -> deterministic 32-char visual seed
+	- both contracts are order-invariant across participants by canonicalized sorted input
+	- HTML kickoff routes delivered in Phase 5:
+		- `/messages/`
+		- `/messages/start/{handle}/`
+		- `/messages/{conversation_id}/`
+		- `POST /messages/{conversation_id}/send/`
+	- Use `get_or_create_direct_conversation(...)` for direct-thread reuse instead of creating duplicates.
+	- Use `send_direct_encrypted_message(...)` for direct-thread envelope storage so participant and active-key checks remain centralized.
+	- Conversation HTML must remain metadata-only; do not render stored ciphertext back into page content.
+	- Optional development preview:
+		- `FEATURE_PM_DEV_CIPHERTEXT_PREVIEW=True` plus `DEBUG=True` allows raw ciphertext visibility in DM detail for local debugging only.
+		- Do not enable this preview in non-debug environments.
+	- Browser crypto workflow (Phase 5.6):
+		- `POST /messages/keys/register/` accepts browser-generated `key_id`, `public_key`, `fingerprint_hex` and rotates active key.
+		- private key remains browser-local and must never be submitted to backend.
+		- DM detail encrypts plaintext in browser and submits only ciphertext + nonce.
+		- DM detail decrypts stored envelopes in browser when local private key exists for message key id.
+	- Key-change warning contract:
+		- `ConversationParticipant.acknowledged_remote_key_id` stores the last accepted remote key id for that participant in that conversation
+		- `ConversationParticipant.acknowledged_remote_key_at` stores the acknowledgment timestamp
+		- show warning when current remote active key id differs from the acknowledged remote key id
+	- Identity key bootstrap contract:
+		- use `POST /messages/keys/bootstrap/` for local key generation when none exists
+		- use `ensure_active_identity_key(...)` service helper to centralize creation/rotation behavior
+
+### Report Reason Taxonomy Hardening Convention (Phase 5/6 Planning)
+
+- Expand report reasons from freeform-only input toward policy-backed categories.
+- Initial high-priority categories should include:
+	- DMCA/IP complaint
+	- posting of a minor
+	- death or severe injury graphic media
+	- non-consensual intimate media
+	- impersonation
+	- harassment
+	- spam/scam
+- Route high-severity categories to expedited moderation queues with explicit SLA/ownership.
+- Current kickoff implementation stores derived severity on `moderation.Report.severity` using low/medium/high/critical.
+- Moderation routing implementation now supports dashboard and API filtering by:
+	- `severity`
+	- `reason_category`
+
 - All mutating actions must stamp `reviewed_by`/`reviewed_at` or equivalent audit fields.
 
 ### Trust Signals and Adaptive Throttling Convention (Phase 3.3)

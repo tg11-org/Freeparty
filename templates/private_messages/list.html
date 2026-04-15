@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Messages · Freeparty{% endblock %}
+{% block content %}
+<h2 style="margin-top:0;">Messages</h2>
+{% if not pm_enabled %}
+  <p style="color:var(--text2);">Private messaging is still feature-gated. Enable <strong>FEATURE_PM_E2E_ENABLED</strong> to use DM initiation flows in this environment.</p>
+{% elif not viewer_has_active_key %}
+  <div style="padding:0.9rem;border:1px dashed var(--border);border-radius:10px;margin-bottom:0.9rem;">
+    <p style="margin:0 0 0.65rem;">You do not have an active identity key yet. Generate one to enable encrypted DM sending.</p>
+    <form method="post" action="{% url 'private_messages:bootstrap-key' %}">
+      {% csrf_token %}
+      <button class="btn" type="submit">Generate my identity key</button>
+    </form>
+  </div>
+{% elif conversations %}
+  <div style="display:grid;gap:0.75rem;">
+    {% for conversation in conversations %}
+      <article class="card" style="padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
+        <a href="{% url 'private_messages:detail' conversation.id %}" style="font-weight:700;text-decoration:none;">
+          {% for participant in conversation.participants.all %}
+            {% if participant.actor.id != viewer.id %}@{{ participant.actor.handle }}{% if not forloop.last %}, {% endif %}{% endif %}
+          {% endfor %}
+        </a>
+        <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;">{{ conversation.messages.count }} encrypted envelope{{ conversation.messages.count|pluralize }} stored</p>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <p style="color:var(--text2);">No conversations yet. Visit a profile and use the DM button to start one.</p>
+{% endif %}
+{% endblock %}

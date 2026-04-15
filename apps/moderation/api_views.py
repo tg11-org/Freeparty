@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.moderation.models import ModerationAction, ModerationNote, Report
+from apps.posts.models import Attachment
 from apps.moderation.serializers import (
     CreateModerationActionSerializer,
     CreateModerationNoteSerializer,
@@ -22,6 +23,8 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         status_value = self.request.GET.get("status")
+        severity = self.request.GET.get("severity", "").strip()
+        reason_category = self.request.GET.get("reason_category", "").strip()
         reason = self.request.GET.get("reason", "").strip()
         actor_q = self.request.GET.get("actor", "").strip()
         post_q = self.request.GET.get("post", "").strip()
@@ -37,6 +40,10 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
         ).prefetch_related("actions", "notes").order_by("-created_at")
         if status_value in {choice for choice, _ in Report.Status.choices}:
             reports = reports.filter(status=status_value)
+        if severity in {choice for choice, _ in Report.Severity.choices}:
+            reports = reports.filter(severity=severity)
+        if reason_category in {choice for choice, _ in Report.Reason.choices}:
+            reports = reports.filter(reason=reason_category)
         if reason:
             reports = reports.filter(reason__icontains=reason)
         if actor_q:
@@ -115,3 +122,48 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
             body=serializer.validated_data["body"].strip(),
         )
         return Response({"id": str(note.id)}, status=status.HTTP_201_CREATED)
+
+
+class ModerationAttachmentViewSet(viewsets.GenericViewSet):
+    permission_classes = [permissions.IsAdminUser]
+    queryset = Attachment.objects.select_related("post")
+
+    @action(detail=True, methods=["post"], url_path="state")
+    def update_state(self, request, pk=None):
+        attachment = self.get_object()
+        new_state = (request.data.get("moderation_state") or "").strip().lower()
+        valid = {
+            Attachment.ModerationState.NORMAL,
+            Attachment.ModerationState.FLAGGED,
+            Attachment.ModerationState.REMOVED,
+        }
+        if new_state not in valid:
+            return Response(
+                {"moderation_state": "Invalid moderation_state. Use one of: normal, flagged, removed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        attachment.moderation_state = new_state
+        attachment.save(update_fields=["moderation_state", "updated_at"])
+
+        action_type = (
+            ModerationAction.ActionType.POST_REMOVE
+            if new_state == Attachment.ModerationState.REMOVED
+            else ModerationAction.ActionType.POST_HIDE
+        )
+        notes = (request.data.get("notes") or "").strip()
+        ModerationAction.objects.create(
+            post_target=attachment.post,
+            moderator=request.user,
+            action_type=action_type,
+            notes=f"attachment_id={attachment.id}; state={new_state}; notes={notes}".strip(),
+        )
+
+        return Response(
+            {
+                "id": str(attachment.id),
+                "post_id": str(attachment.post_id),
+                "moderation_state": attachment.moderation_state,
+            },
+            status=status.HTTP_200_OK,
+        )

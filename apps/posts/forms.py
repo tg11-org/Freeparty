@@ -33,3 +33,15 @@ class PostForm(forms.ModelForm):
 
     def clean_attachment_caption(self):
         return (self.cleaned_data.get("attachment_caption") or "").strip()
+
+    def clean_content(self):
+        return (self.cleaned_data.get("content") or "").strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        content = (cleaned.get("content") or "").strip()
+        attachment = cleaned.get("attachment")
+        if not content and not attachment:
+            raise forms.ValidationError("Add text or attach media before publishing.")
+        cleaned["content"] = content
+        return cleaned

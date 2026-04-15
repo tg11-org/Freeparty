@@ -12,6 +12,8 @@ env = environ.Env(
     SECRET_KEY=(str, "change-me"),
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     REQUEST_SLOW_MS=(int, 700),
+    FEATURE_PM_E2E_ENABLED=(bool, False),
+    FEATURE_PM_DEV_CIPHERTEXT_PREVIEW=(bool, False),
     CORS_ALLOWED_ORIGINS=(list, []),
     CSRF_TRUSTED_ORIGINS=(list, []),
     EMAIL_VERIFICATION_REQUIRED=(bool, True),
@@ -45,6 +47,7 @@ INSTALLED_APPS = [
     "apps.federation",
     "apps.moderation",
     "apps.notifications",
+    "apps.private_messages",
     "apps.posts",
     "apps.profiles",
     "apps.social",
@@ -181,3 +184,5 @@ USE_X_FORWARDED_HOST = True
 
 EMAIL_VERIFICATION_REQUIRED = env("EMAIL_VERIFICATION_REQUIRED")
 REQUEST_SLOW_MS = env.int("REQUEST_SLOW_MS", default=700)
+FEATURE_PM_E2E_ENABLED = env.bool("FEATURE_PM_E2E_ENABLED", default=False)
+FEATURE_PM_DEV_CIPHERTEXT_PREVIEW = env.bool("FEATURE_PM_DEV_CIPHERTEXT_PREVIEW", default=False)

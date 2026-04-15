@@ -7,6 +7,22 @@ from apps.core.models import TimeStampedModel
 
 
 class Report(TimeStampedModel):
+	class Reason(models.TextChoices):
+		DMCA_IP = "dmca_ip", "DMCA / IP Complaint"
+		MINOR_SAFETY = "minor_safety", "Posting of a Minor"
+		GRAPHIC_DEATH_INJURY = "graphic_death_injury", "Death or Severe Injury Content"
+		NON_CONSENSUAL_INTIMATE_MEDIA = "non_consensual_intimate_media", "Non-Consensual Intimate Media"
+		IMPERSONATION = "impersonation", "Impersonation"
+		HARASSMENT = "harassment", "Harassment"
+		SPAM_SCAM = "spam_scam", "Spam / Scam"
+		OTHER = "other", "Other"
+
+	class Severity(models.TextChoices):
+		LOW = "low", "Low"
+		MEDIUM = "medium", "Medium"
+		HIGH = "high", "High"
+		CRITICAL = "critical", "Critical"
+
 	class Status(models.TextChoices):
 		OPEN = "open", "Open"
 		REVIEWING = "reviewing", "Reviewing (Legacy)"
@@ -19,11 +35,42 @@ class Report(TimeStampedModel):
 	reporter = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="reports_filed")
 	target_actor = models.ForeignKey("actors.Actor", on_delete=models.SET_NULL, null=True, blank=True, related_name="reports_received")
 	target_post = models.ForeignKey("posts.Post", on_delete=models.SET_NULL, null=True, blank=True, related_name="reports")
-	reason = models.CharField(max_length=128)
+	reason = models.CharField(max_length=128, choices=Reason.choices, default=Reason.OTHER)
+	severity = models.CharField(max_length=16, choices=Severity.choices, default=Severity.MEDIUM)
 	description = models.TextField(blank=True)
 	status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
 	reviewed_at = models.DateTimeField(null=True, blank=True)
 	reviewed_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_reports")
+
+	@classmethod
+	def normalize_reason(cls, reason: str) -> str:
+		value = (reason or "").strip().lower()
+		legacy_map = {
+			"spam": cls.Reason.SPAM_SCAM,
+			"scam": cls.Reason.SPAM_SCAM,
+			"abuse": cls.Reason.HARASSMENT,
+			"user_report": cls.Reason.OTHER,
+			"unspecified": cls.Reason.OTHER,
+		}
+		if value in legacy_map:
+			return legacy_map[value]
+		valid = {choice for choice, _ in cls.Reason.choices}
+		return value if value in valid else cls.Reason.OTHER
+
+	@classmethod
+	def severity_for_reason(cls, reason: str) -> str:
+		normalized = cls.normalize_reason(reason)
+		mapping = {
+			cls.Reason.DMCA_IP: cls.Severity.HIGH,
+			cls.Reason.MINOR_SAFETY: cls.Severity.CRITICAL,
+			cls.Reason.GRAPHIC_DEATH_INJURY: cls.Severity.HIGH,
+			cls.Reason.NON_CONSENSUAL_INTIMATE_MEDIA: cls.Severity.CRITICAL,
+			cls.Reason.IMPERSONATION: cls.Severity.HIGH,
+			cls.Reason.HARASSMENT: cls.Severity.MEDIUM,
+			cls.Reason.SPAM_SCAM: cls.Severity.LOW,
+			cls.Reason.OTHER: cls.Severity.MEDIUM,
+		}
+		return mapping[normalized]
 
 
 class ModerationAction(TimeStampedModel):

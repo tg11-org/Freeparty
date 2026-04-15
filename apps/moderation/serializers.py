@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.moderation.models import ModerationAction, ModerationNote, Report, TrustSignal, SecurityAuditEvent
 from apps.moderation.services import TrustSignalService
+from apps.posts.models import Attachment
 
 
 class ModerationActionSerializer(serializers.ModelSerializer):
@@ -85,6 +86,7 @@ class ReportListSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "reason",
+            "severity",
             "description",
             "status",
             "reporter",
@@ -101,6 +103,7 @@ class ReportDetailSerializer(ReportListSerializer):
     actions = ModerationActionSerializer(many=True, read_only=True)
     notes = ModerationNoteSerializer(many=True, read_only=True)
     target_actor_trust_signal = serializers.SerializerMethodField()
+    target_post_attachments = serializers.SerializerMethodField()
 
     def get_target_actor_trust_signal(self, obj):
         """Include trust signal for the target actor to help staff make decisions."""
@@ -109,8 +112,32 @@ class ReportDetailSerializer(ReportListSerializer):
         signal = TrustSignalService.get_trust_signal(obj.target_actor)
         return TrustSignalSerializer(signal).data
 
+    def get_target_post_attachments(self, obj):
+        if not obj.target_post:
+            return []
+        attachments = obj.target_post.attachments.all().order_by("created_at")
+        return [
+            {
+                "id": str(a.id),
+                "attachment_type": a.attachment_type,
+                "file": a.file.url if a.file else "",
+                "mime_type": a.mime_type,
+                "file_size": a.file_size,
+                "processing_state": a.processing_state,
+                "moderation_state": a.moderation_state,
+                "alt_text": a.alt_text,
+                "caption": a.caption,
+            }
+            for a in attachments
+        ]
+
     class Meta(ReportListSerializer.Meta):
-        fields = ReportListSerializer.Meta.fields + ["actions", "notes", "target_actor_trust_signal"]
+        fields = ReportListSerializer.Meta.fields + [
+            "actions",
+            "notes",
+            "target_actor_trust_signal",
+            "target_post_attachments",
+        ]
 
 
 class ReportStatusUpdateSerializer(serializers.Serializer):

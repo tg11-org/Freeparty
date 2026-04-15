@@ -1,9 +1,13 @@
 from django.test import Client, TestCase
+from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
+from unittest.mock import patch
 
 from apps.accounts.models import User
+from apps.core.models import AsyncTaskExecution, AsyncTaskFailure
 from apps.core.services.uris import post_uri
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
+from apps.posts.tasks import process_media_attachment
 from apps.social.models import Block, Follow
 
 
@@ -68,6 +72,36 @@ class PostTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Only image and video uploads are supported.")
 		self.assertFalse(Post.objects.filter(content="Bad attachment").exists())
+
+	def test_create_media_only_post_without_body(self):
+		client = Client()
+		client.force_login(self.user)
+		upload = SimpleUploadedFile("photo.jpg", b"fakejpegdata", content_type="image/jpeg")
+		response = client.post(
+			"/posts/new/",
+			{
+				"content": "",
+				"visibility": Post.Visibility.PUBLIC,
+				"attachment": upload,
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		post = Post.objects.order_by("-created_at").first()
+		self.assertIsNotNone(post)
+		self.assertEqual(post.content, "")
+
+	def test_create_post_rejects_empty_without_body_or_media(self):
+		client = Client()
+		client.force_login(self.user)
+		response = client.post(
+			"/posts/new/",
+			{
+				"content": "   ",
+				"visibility": Post.Visibility.PUBLIC,
+			},
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Add text or attach media before publishing.")
 
 
 class PostPermissionTests(TestCase):
@@ -326,3 +360,138 @@ class PostEditHistoryTests(TestCase):
 		self.assertIsNotNone(history)
 		self.assertEqual(history.previous_content, "Before")
 		self.assertEqual(history.new_content, "After")
+
+
+class MediaProcessingTaskTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(email="media-task@example.com", username="mediatask", password="secret123")
+		self.user.mark_email_verified()
+		self.post = Post.objects.create(
+			author=self.user.actor,
+			content="Media processing post",
+			canonical_uri=post_uri("media-processing-task"),
+		)
+
+	def test_media_processing_task_marks_attachment_processed_and_tracks_execution(self):
+		upload = SimpleUploadedFile("ok.png", b"fakepng", content_type="image/png")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+		)
+
+		process_media_attachment.run(str(attachment.id), correlation_id="corr-1")
+		attachment.refresh_from_db()
+		self.assertEqual(attachment.processing_state, Attachment.ProcessingState.PROCESSED)
+		execution = AsyncTaskExecution.objects.filter(task_name=process_media_attachment.name).first()
+		self.assertIsNotNone(execution)
+		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
+
+	def test_media_processing_task_marks_failed_and_records_failure(self):
+		upload = SimpleUploadedFile("bad.bin", b"x", content_type="application/octet-stream")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.FILE,
+			file=upload,
+			mime_type="application/octet-stream",
+			file_size=1,
+		)
+
+		with self.assertRaises(Exception):
+			process_media_attachment.run(str(attachment.id), correlation_id="corr-2")
+
+		attachment.refresh_from_db()
+		self.assertEqual(attachment.processing_state, Attachment.ProcessingState.FAILED)
+		failure = AsyncTaskFailure.objects.filter(task_name=process_media_attachment.name).first()
+		self.assertIsNotNone(failure)
+
+
+class MediaProcessingEnqueueTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="media-enqueue@example.com", username="mediaenqueue", password="secret123")
+		self.user.mark_email_verified()
+
+	@patch("apps.posts.views.process_media_attachment.delay")
+	def test_html_create_post_enqueues_media_processing(self, delay_mock):
+		self.client.force_login(self.user)
+		upload = SimpleUploadedFile("photo.jpg", b"fakejpegdata", content_type="image/jpeg")
+		response = self.client.post(
+			"/posts/new/",
+			{
+				"content": "Photo queue post",
+				"visibility": Post.Visibility.PUBLIC,
+				"attachment": upload,
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		delay_mock.assert_called_once()
+
+	@patch("apps.posts.api_views.process_media_attachment.delay")
+	def test_api_create_post_enqueues_media_processing(self, delay_mock):
+		self.client.force_login(self.user)
+		upload = SimpleUploadedFile("clip.mp4", b"fakevideodata", content_type="video/mp4")
+		response = self.client.post(
+			"/api/v1/posts/",
+			data={
+				"content": "API media queue",
+				"visibility": Post.Visibility.PUBLIC,
+				"attachment": upload,
+			},
+		)
+		self.assertEqual(response.status_code, 201)
+		delay_mock.assert_called_once()
+
+	def test_api_rejects_empty_post_without_body_or_media(self):
+		self.client.force_login(self.user)
+		response = self.client.post(
+			"/api/v1/posts/",
+			data={"content": "   ", "visibility": Post.Visibility.PUBLIC},
+		)
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("Add text or attach media before publishing.", str(response.json()))
+
+	@patch("apps.posts.api_views.process_media_attachment.delay")
+	def test_api_allows_media_only_post_without_body(self, delay_mock):
+		self.client.force_login(self.user)
+		upload = SimpleUploadedFile("image.png", b"fakepng", content_type="image/png")
+		response = self.client.post(
+			"/api/v1/posts/",
+			data={
+				"content": "",
+				"visibility": Post.Visibility.PUBLIC,
+				"attachment": upload,
+			},
+		)
+		self.assertEqual(response.status_code, 201)
+		delay_mock.assert_called_once()
+
+
+class ReprocessFailedMediaCommandTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(email="reprocess@example.com", username="reprocess", password="secret123")
+		self.user.mark_email_verified()
+		self.post = Post.objects.create(
+			author=self.user.actor,
+			content="Reprocess post",
+			canonical_uri=post_uri("reprocess-failed-media"),
+		)
+
+	@patch("apps.posts.management.commands.reprocess_failed_media.process_media_attachment.delay")
+	def test_command_requeues_failed_media(self, delay_mock):
+		failed_upload = SimpleUploadedFile("failed.mp4", b"abc", content_type="video/mp4")
+		attachment = Attachment.objects.create(
+			post=self.post,
+			attachment_type=Attachment.AttachmentType.VIDEO,
+			file=failed_upload,
+			mime_type="video/mp4",
+			file_size=3,
+			processing_state=Attachment.ProcessingState.FAILED,
+		)
+
+		call_command("reprocess_failed_media", "--limit", "10")
+		attachment.refresh_from_db()
+		self.assertEqual(attachment.processing_state, Attachment.ProcessingState.PENDING)
+		delay_mock.assert_called_once()

@@ -21,6 +21,7 @@ from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new, notify_mentions
 from apps.posts.forms import PostForm
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
+from apps.posts.tasks import process_media_attachment
 from apps.social.models import Bookmark, Like, Repost
 from apps.timelines.services import public_timeline
 
@@ -53,7 +54,7 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 				if content_type.startswith("image/")
 				else Attachment.AttachmentType.VIDEO
 			)
-			Attachment.objects.create(
+			attachment = Attachment.objects.create(
 				post=post,
 				attachment_type=attachment_type,
 				file=upload,
@@ -61,6 +62,10 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 				caption=form.cleaned_data.get("attachment_caption", ""),
 				mime_type=content_type,
 				file_size=getattr(upload, "size", 0),
+			)
+			process_media_attachment.delay(
+				str(attachment.id),
+				correlation_id=getattr(request, "request_id", ""),
 			)
 		messages.success(request, "Post published.")
 		notify_mentions(content=post.content, source_actor=actor, source_post=post)

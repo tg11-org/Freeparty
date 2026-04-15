@@ -158,7 +158,13 @@ def report_actor_view(request: HttpRequest, handle: str) -> HttpResponse:
 	if reporter.id == target.id:
 		messages.error(request, "You cannot report yourself.")
 		return redirect("actors:detail", handle=handle)
-	Report.objects.create(reporter=reporter, target_actor=target, reason=reason, description=description)
+	Report.objects.create(
+		reporter=reporter,
+		target_actor=target,
+		reason=Report.normalize_reason(reason),
+		severity=Report.severity_for_reason(reason),
+		description=description,
+	)
 	messages.success(request, "Report submitted. Thank you.")
 	return redirect("actors:detail", handle=handle)
 

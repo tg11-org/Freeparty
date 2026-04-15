@@ -146,12 +146,7 @@
           </button>
         </form>
         <a class="btn" href="/posts/{{ post.id }}/#share" title="Share">📤</a>
-        <form method="post" action="/moderation/report/">
-          {% csrf_token %}
-          <input type="hidden" name="target_post_id" value="{{ post.id }}">
-          <input type="hidden" name="reason" value="user_report">
-          <button class="btn btn-danger" type="submit" title="Report post">⚑</button>
-        </form>
+        <a class="btn btn-danger" href="/moderation/report/?target_post_id={{ post.id }}" title="Report post">⚑</a>
         {% if user.actor.id == post.author.id %}
           <a class="btn" href="/posts/{{ post.id }}/edit/" title="Edit post">Edit</a>
           <form method="post" action="/posts/{{ post.id }}/delete/" onsubmit="return confirm('Delete this post?');">

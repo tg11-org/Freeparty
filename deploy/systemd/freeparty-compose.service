@@ -1,0 +1,28 @@
+[Unit]
+Description=Freeparty Docker Compose Stack
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/var/www/Freeparty
+
+# Keep this stack definition in one place
+Environment=COMPOSE_FILE=/var/www/Freeparty/compose.yaml
+
+# Start/refresh stack
+ExecStart=/usr/bin/docker compose up --detach --build --remove-orphans
+
+# Stop stack without deleting volumes/data
+ExecStop=/usr/bin/docker compose stop
+
+# Refresh stack on reload
+ExecReload=/usr/bin/docker compose up --detach --build --remove-orphans
+
+# Let compose operations run to completion
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

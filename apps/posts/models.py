@@ -21,7 +21,7 @@ class Post(TimeStampedModel):
 	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 	canonical_uri = models.URLField(max_length=500, unique=True)
 	author = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="posts")
-	content = models.TextField(max_length=5000)
+	content = models.TextField(max_length=5000, blank=True)
 	spoiler_text = models.CharField(max_length=255, blank=True)
 	visibility = models.CharField(max_length=24, choices=Visibility.choices, default=Visibility.PUBLIC)
 

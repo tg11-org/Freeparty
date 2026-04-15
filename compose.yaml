@@ -7,6 +7,7 @@ services:
       - "${BIND_IP:-127.0.0.1}:${WEB_PORT:-8000}:8000"
     env_file:
       - .env
+    restart: unless-stopped
     depends_on:
       - db
       - redis
@@ -19,6 +20,7 @@ services:
       POSTGRES_DB: freeparty
       POSTGRES_USER: freeparty
       POSTGRES_PASSWORD: freeparty
+    restart: unless-stopped
     ports:
       - "${BIND_IP:-127.0.0.1}:${DB_PORT:-5432}:5432"
     volumes:
@@ -26,6 +28,7 @@ services:
 
   redis:
     image: redis:7
+    restart: unless-stopped
     ports:
       - "${BIND_IP:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
 
@@ -36,6 +39,7 @@ services:
     command: celery -A config worker -l info
     env_file:
       - .env
+    restart: unless-stopped
     depends_on:
       - db
       - redis
@@ -49,6 +53,7 @@ services:
     command: celery -A config beat -l info
     env_file:
       - .env
+    restart: unless-stopped
     depends_on:
       - db
       - redis
@@ -57,6 +62,7 @@ services:
 
   mailhog:
     image: mailhog/mailhog:latest
+    restart: unless-stopped
     ports:
       - "${BIND_IP:-127.0.0.1}:${SMTP_PORT:-1025}:1025"
       - "${BIND_IP:-127.0.0.1}:${MAILHOG_UI_PORT:-8025}:8025"

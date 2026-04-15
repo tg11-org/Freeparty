@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Report Content · Freeparty{% endblock %}
+{% block content %}
+<h2 style="margin-top:0;">Submit Report</h2>
+{% if target_actor %}
+  <p>Reporting actor: <strong>@{{ target_actor.handle }}</strong></p>
+{% endif %}
+{% if target_post %}
+  <p>Reporting post: <strong>{{ target_post.id }}</strong></p>
+{% endif %}
+
+<form method="post" style="display:grid;gap:0.85rem;max-width:680px;">
+  {% csrf_token %}
+  {% if target_actor %}<input type="hidden" name="target_actor_id" value="{{ target_actor.id }}">{% endif %}
+  {% if target_post %}<input type="hidden" name="target_post_id" value="{{ target_post.id }}">{% endif %}
+
+  <label for="reason"><strong>Reason</strong></label>
+  <select id="reason" name="reason">
+    {% for value, label in reason_choices %}
+      <option value="{{ value }}" {% if selected_reason == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <p style="margin:0;color:var(--text2);font-size:0.92rem;">Severity preview: <strong>{{ severity_preview|title }}</strong></p>
+
+  <label for="description"><strong>Details</strong></label>
+  <textarea id="description" name="description" rows="6" placeholder="Add context, evidence summary, timestamps, or URLs when relevant.">{{ description }}</textarea>
+
+  <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+    <button class="btn btn-danger" type="submit">Submit report</button>
+    <a class="btn" href="javascript:history.back()">Cancel</a>
+  </div>
+</form>
+{% endblock %}

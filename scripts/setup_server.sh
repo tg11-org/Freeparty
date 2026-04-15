@@ -6,12 +6,14 @@ set -euo pipefail
 #   ./scripts/setup_server.sh \
 #     --site-domain freeparty.tg11.org \
 #     --server-ip 127.5.0.0 \
-#     --app-port 18000
+#     --app-port 18000 \
+#     [--reset-db]
 
 SITE_DOMAIN="${SITE_DOMAIN:-freeparty.tg11.org}"
 SERVER_IP="${SERVER_IP:-127.5.0.0}"
 APP_PORT="${APP_PORT:-18000}"
 NON_INTERACTIVE="false"
+RESET_DB="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,6 +31,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --yes)
       NON_INTERACTIVE="true"
+      shift 1
+      ;;
+    --reset-db)
+      RESET_DB="true"
       shift 1
       ;;
     *)
@@ -65,6 +71,11 @@ if [[ "${COMPOSE_V1}" == "true" ]]; then
   "${COMPOSE_BIN[@]}" down --remove-orphans || true
 fi
 
+if [[ "${RESET_DB}" == "true" ]]; then
+  echo "Reset mode enabled: removing containers and DB volume before startup."
+  "${COMPOSE_BIN[@]}" down --volumes --remove-orphans || true
+fi
+
 echo "Configuring .env for deployment..."
 python3 - <<'PY' "$SITE_DOMAIN" "$SERVER_IP" "$APP_PORT"
 import pathlib
@@ -77,20 +88,16 @@ app_port = sys.argv[3]
 env_path = pathlib.Path('.env')
 text = env_path.read_text(encoding='utf-8')
 
-updates = {
+required_updates = {
     'DJANGO_SETTINGS_MODULE': 'config.settings.production',
     'DEBUG': 'False',
     'SITE_SCHEME': 'https',
     'SITE_DOMAIN': site_domain,
     'BIND_IP': server_ip,
     'WEB_PORT': app_port,
-    'DB_PORT': '5432',
-    'REDIS_PORT': '6379',
-    'SMTP_PORT': '1025',
-    'MAILHOG_UI_PORT': '8025',
 }
 
-for key, value in updates.items():
+for key, value in required_updates.items():
     pattern = re.compile(rf'^{re.escape(key)}=.*$', re.M)
     replacement = f'{key}={value}'
     if pattern.search(text):
@@ -99,6 +106,22 @@ for key, value in updates.items():
         if not text.endswith('\n'):
             text += '\n'
         text += replacement + '\n'
+
+    # Keep custom infra port overrides from existing .env (e.g. DB_PORT=5433).
+    # Only set these defaults if missing.
+    default_only = {
+      'DB_PORT': '5432',
+      'REDIS_PORT': '6379',
+      'SMTP_PORT': '1025',
+      'MAILHOG_UI_PORT': '8025',
+    }
+
+    for key, value in default_only.items():
+      pattern = re.compile(rf'^{re.escape(key)}=.*$', re.M)
+      if not pattern.search(text):
+        if not text.endswith('\n'):
+          text += '\n'
+        text += f'{key}={value}\n'
 
 for key in ('ALLOWED_HOSTS', 'CSRF_TRUSTED_ORIGINS', 'CORS_ALLOWED_ORIGINS'):
     text = re.sub(rf'^{re.escape(key)}=.*$', '', text, flags=re.M)
@@ -117,10 +140,19 @@ echo "Starting Docker stack..."
 "${COMPOSE_BIN[@]}" up --detach --build --remove-orphans
 
 echo "Running migrations..."
-"${COMPOSE_BIN[@]}" exec -T web python manage.py migrate
+if ! "${COMPOSE_BIN[@]}" exec -T web python manage.py migrate --fake-initial; then
+  echo "Migration failed."
+  echo "If this is a fresh server and data is disposable, re-run with --reset-db."
+  echo "If data must be preserved, inspect migration state in django_migrations before retrying."
+  exit 1
+fi
 
 echo "Collecting static files..."
-"${COMPOSE_BIN[@]}" exec -T web python manage.py collectstatic --noinput
+if ! "${COMPOSE_BIN[@]}" exec -T web python manage.py collectstatic --noinput --clear; then
+  echo "collectstatic failed. This is usually host bind-mount permissions on staticfiles/media."
+  echo "Run: sudo ./scripts/fix_permissions.sh --path $(pwd)"
+  exit 1
+fi
 
 if [[ "$NON_INTERACTIVE" != "true" ]]; then
   read -r -p "Create superuser now? [y/N] " CREATE_SUPERUSER

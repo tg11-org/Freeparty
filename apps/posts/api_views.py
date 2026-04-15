@@ -15,6 +15,7 @@ from apps.notifications.services import create_notification_if_new, notify_menti
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
 from apps.posts.selectors import visible_public_posts_for_actor
 from apps.posts.serializers import CommentSerializer, PostSerializer
+from apps.posts.tasks import process_media_attachment
 
 _ALLOWED_MIME_PREFIXES = ("image/", "video/")
 _MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -44,11 +45,15 @@ class PostViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         actor = self.request.user.actor
-        post = serializer.save(author=actor, canonical_uri=post_uri("pending"))
+        content = (serializer.validated_data.get("content") or "").strip()
+        upload = self.request.FILES.get("attachment")
+        if not content and not upload:
+            raise ValidationError({"content": "Add text or attach media before publishing."})
+
+        post = serializer.save(author=actor, canonical_uri=post_uri("pending"), content=content)
         post.canonical_uri = post_uri(post.id)
         post.save(update_fields=["canonical_uri", "updated_at"])
 
-        upload = self.request.FILES.get("attachment")
         if upload:
             content_type = getattr(upload, "content_type", "") or "application/octet-stream"
             if not any(content_type.startswith(p) for p in _ALLOWED_MIME_PREFIXES):
@@ -64,7 +69,7 @@ class PostViewSet(viewsets.ModelViewSet):
                 if content_type.startswith("image/")
                 else Attachment.AttachmentType.VIDEO
             )
-            Attachment.objects.create(
+            attachment = Attachment.objects.create(
                 post=post,
                 attachment_type=attachment_type,
                 file=upload,
@@ -72,6 +77,10 @@ class PostViewSet(viewsets.ModelViewSet):
                 caption=self.request.data.get("attachment_caption", ""),
                 mime_type=content_type,
                 file_size=upload.size,
+            )
+            process_media_attachment.delay(
+                str(attachment.id),
+                correlation_id=getattr(self.request, "request_id", ""),
             )
 
         notify_mentions(content=post.content, source_actor=actor, source_post=post)

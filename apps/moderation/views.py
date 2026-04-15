@@ -7,20 +7,31 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
 from apps.actors.models import Actor
 from apps.moderation.models import ModerationAction, ModerationNote, Report
-from apps.posts.models import Post
+from apps.posts.models import Attachment, Post
+
+
+def _build_report_context(*, target_actor=None, target_post=None, selected_reason: str = "", description: str = "") -> dict:
+	return {
+		"target_actor": target_actor,
+		"target_post": target_post,
+		"reason_choices": Report.Reason.choices,
+		"selected_reason": Report.normalize_reason(selected_reason),
+		"description": description,
+		"severity_preview": Report.severity_for_reason(selected_reason),
+	}
 
 
 @login_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def report_view(request: HttpRequest) -> HttpResponse:
 	actor = request.user.actor
-	target_actor_id = request.POST.get("target_actor_id")
-	target_post_id = request.POST.get("target_post_id")
-	reason = request.POST.get("reason", "unspecified")
+	target_actor_id = request.POST.get("target_actor_id") or request.GET.get("target_actor_id")
+	target_post_id = request.POST.get("target_post_id") or request.GET.get("target_post_id")
+	reason = request.POST.get("reason", Report.Reason.OTHER)
 	description = request.POST.get("description", "")
 
 	target_actor = Actor.objects.filter(id=target_actor_id).first() if target_actor_id else None
@@ -30,11 +41,18 @@ def report_view(request: HttpRequest) -> HttpResponse:
 		messages.error(request, "Please choose a report target.")
 		return redirect("home")
 
+	if request.method == "GET":
+		return render(request, "moderation/report_form.html", _build_report_context(target_actor=target_actor, target_post=target_post))
+
+	normalized_reason = Report.normalize_reason(reason)
+	severity = Report.severity_for_reason(normalized_reason)
+
 	Report.objects.create(
 		reporter=actor,
 		target_actor=target_actor,
 		target_post=target_post,
-		reason=reason,
+		reason=normalized_reason,
+		severity=severity,
 		description=description,
 	)
 	messages.success(request, "Report submitted.")
@@ -48,6 +66,8 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 		return redirect("home")
 
 	status = request.GET.get("status")
+	severity = request.GET.get("severity", "").strip()
+	reason_category = request.GET.get("reason_category", "").strip()
 	reason = request.GET.get("reason", "").strip()
 	actor_q = request.GET.get("actor", "").strip()
 	post_q = request.GET.get("post", "").strip()
@@ -57,6 +77,10 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 	reports = Report.objects.select_related("reporter", "target_actor", "target_post", "reviewed_by").order_by("-created_at")
 	if status in {choice for choice, _ in Report.Status.choices}:
 		reports = reports.filter(status=status)
+	if severity in {choice for choice, _ in Report.Severity.choices}:
+		reports = reports.filter(severity=severity)
+	if reason_category in {choice for choice, _ in Report.Reason.choices}:
+		reports = reports.filter(reason=reason_category)
 	if reason:
 		reports = reports.filter(reason__icontains=reason)
 	if actor_q:
@@ -85,6 +109,10 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 	return render(request, "moderation/dashboard.html", {
 		"reports": reports,
 		"selected_status": status,
+		"selected_severity": severity,
+		"selected_reason_category": reason_category,
+		"severity_choices": Report.Severity.choices,
+		"reason_choices": Report.Reason.choices,
 		"reason": reason,
 		"actor_q": actor_q,
 		"post_q": post_q,
@@ -104,7 +132,12 @@ def moderation_report_detail_view(request: HttpRequest, report_id: str) -> HttpR
 		Report.objects.select_related("reporter", "target_actor", "target_post", "reviewed_by").prefetch_related("actions", "notes"),
 		id=report_id,
 	)
-	return render(request, "moderation/report_detail.html", {"report": report, "action_choices": ModerationAction.ActionType.choices})
+	attachments = report.target_post.attachments.all().order_by("created_at") if report.target_post else []
+	return render(
+		request,
+		"moderation/report_detail.html",
+		{"report": report, "attachments": attachments, "action_choices": ModerationAction.ActionType.choices},
+	)
 
 
 @login_required
@@ -165,4 +198,48 @@ def moderation_quick_status_view(request: HttpRequest, report_id: str) -> HttpRe
 		messages.success(request, f"Report moved to {new_status}.")
 	else:
 		messages.error(request, "Invalid status value.")
+	return redirect("moderation:dashboard")
+
+
+@login_required
+@require_POST
+def moderation_attachment_state_view(request: HttpRequest, attachment_id: str) -> HttpResponse:
+	if not request.user.is_staff:
+		messages.error(request, "Moderator access required.")
+		return redirect("home")
+
+	attachment = get_object_or_404(Attachment.objects.select_related("post"), id=attachment_id)
+	new_state = request.POST.get("moderation_state", "").strip().lower()
+	report_id = request.POST.get("report_id", "").strip()
+	notes = request.POST.get("notes", "").strip()
+
+	valid_states = {
+		Attachment.ModerationState.NORMAL,
+		Attachment.ModerationState.FLAGGED,
+		Attachment.ModerationState.REMOVED,
+	}
+	if new_state not in valid_states:
+		messages.error(request, "Invalid attachment moderation state.")
+		if report_id:
+			return redirect("moderation:report-detail", report_id=report_id)
+		return redirect("moderation:dashboard")
+
+	attachment.moderation_state = new_state
+	attachment.save(update_fields=["moderation_state", "updated_at"])
+
+	action_type = (
+		ModerationAction.ActionType.POST_REMOVE
+		if new_state == Attachment.ModerationState.REMOVED
+		else ModerationAction.ActionType.POST_HIDE
+	)
+	ModerationAction.objects.create(
+		post_target=attachment.post,
+		moderator=request.user,
+		action_type=action_type,
+		notes=f"attachment_id={attachment.id}; state={new_state}; notes={notes}".strip(),
+	)
+	messages.success(request, f"Attachment state updated to {new_state}.")
+
+	if report_id:
+		return redirect("moderation:report-detail", report_id=report_id)
 	return redirect("moderation:dashboard")

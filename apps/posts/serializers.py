@@ -32,7 +32,15 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     author_handle = serializers.CharField(source="author.handle", read_only=True)
-    attachments = AttachmentSerializer(many=True, read_only=True)
+    attachments = serializers.SerializerMethodField()
+
+    def get_attachments(self, obj):
+        request = self.context.get("request")
+        is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+        qs = obj.attachments.all()
+        if not is_staff:
+            qs = qs.filter(moderation_state=Attachment.ModerationState.NORMAL)
+        return AttachmentSerializer(qs, many=True, context=self.context).data
 
     class Meta:
         model = Post
