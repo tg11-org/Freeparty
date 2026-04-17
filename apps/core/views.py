@@ -1,12 +1,41 @@
 from django.core.cache import cache
 from django.db import connections
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from apps.core.pagination import paginate_queryset
+from apps.notifications.models import Notification
+from apps.private_messages.models import EncryptedMessageEnvelope
+from apps.private_messages.services import (
+	get_conversation_queryset_for_actor,
+	get_unread_conversation_count,
+	is_private_messages_enabled,
+	populate_conversation_activity,
+)
 from apps.social.models import Bookmark, Like, Repost
 from apps.timelines.services import home_timeline, public_timeline
+
+
+def _notification_activity_summary(notification: Notification, actor_label: str) -> str:
+	custom_summary = notification.payload.get("summary") if isinstance(notification.payload, dict) else ""
+	if custom_summary:
+		return custom_summary
+
+	actor_prefix = actor_label or "Someone"
+	phrases = {
+		Notification.NotificationType.FOLLOW: f"{actor_prefix} followed you",
+		Notification.NotificationType.LIKE: f"{actor_prefix} liked your post",
+		Notification.NotificationType.REPLY: f"{actor_prefix} replied to your post",
+		Notification.NotificationType.MENTION: f"{actor_prefix} mentioned you",
+		Notification.NotificationType.REPOST: f"{actor_prefix} reposted your post",
+		Notification.NotificationType.VERIFICATION: "Verification update",
+		Notification.NotificationType.MODERATION: "Moderation update",
+		Notification.NotificationType.SYSTEM: "System update",
+	}
+	return phrases.get(notification.notification_type, f"{notification.get_notification_type_display()} activity")
 
 
 @require_http_methods(["GET"])
@@ -104,3 +133,147 @@ def me_redirect_view(request: HttpRequest) -> HttpResponse:
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		return redirect("actors:detail", handle=request.user.actor.handle)
 	return redirect("accounts:login")
+
+
+@login_required
+@require_http_methods(["GET"])
+def inbox_view(request: HttpRequest) -> HttpResponse:
+	actor = request.user.actor
+	section = request.GET.get("section", "all").strip().lower()
+	if section not in {"all", "messages", "notifications"}:
+		section = "all"
+	mode = request.GET.get("mode", "summary").strip().lower()
+	if mode not in {"summary", "activity"}:
+		mode = "summary"
+	filter_type = request.GET.get("filter", "all").strip().lower()
+	if filter_type not in {"all", "unread"}:
+		filter_type = "all"
+	show_unread_only = filter_type == "unread"
+
+	notifications_qs = Notification.objects.filter(recipient=actor).select_related("source_actor", "source_post")
+	if show_unread_only:
+		notifications_qs = notifications_qs.filter(read_at__isnull=True)
+	notifications = list(notifications_qs[:5]) if section in {"all", "notifications"} else []
+
+	pm_enabled = is_private_messages_enabled()
+	conversations = []
+	conversation_items = []
+	if pm_enabled and section in {"all", "messages"}:
+		conversation_items = populate_conversation_activity(
+			actor=actor,
+			conversations=get_conversation_queryset_for_actor(actor=actor),
+		)
+		if show_unread_only:
+			conversation_items = [conversation for conversation in conversation_items if conversation.unread_message_count > 0]
+		conversations = conversation_items[:5]
+
+	activity_items = []
+	if mode == "activity":
+		if section in {"all", "notifications"}:
+			for notification in notifications_qs:
+				actor_label = ""
+				if notification.source_actor_id:
+					display_name = notification.source_actor.user.display_name if notification.source_actor and notification.source_actor.user else ""
+					handle = notification.source_actor.handle if notification.source_actor else ""
+					actor_label = f"{display_name} (@{handle})" if display_name else (f"@{handle}" if handle else "")
+
+				post_snippet = ""
+				if notification.source_post_id and notification.source_post:
+					post_snippet = (notification.source_post.content or "").strip().replace("\n", " ")[:120]
+					if len((notification.source_post.content or "").strip()) > 120:
+						post_snippet += "..."
+
+				summary_text = _notification_activity_summary(notification, actor_label)
+				activity_items.append({
+					"kind": "notification",
+					"created_at": notification.created_at,
+					"is_unread": notification.read_at is None,
+					"title": notification.get_notification_type_display(),
+					"summary": summary_text,
+					"link_url": f"/posts/{notification.source_post_id}/" if notification.source_post_id else "/notifications/",
+					"link_label": "Open related post" if notification.source_post_id else "Open notifications",
+					"meta": f"{timezone.localtime(notification.created_at).strftime('%Y-%m-%d %H:%M')}",
+					"actor_label": actor_label,
+					"post_snippet": post_snippet,
+				})
+
+		if pm_enabled and section in {"all", "messages"}:
+			latest_envelope_by_conversation_id = {}
+			if conversation_items:
+				latest_envelopes = (
+					EncryptedMessageEnvelope.objects.filter(conversation__in=conversation_items)
+					.select_related("sender", "sender__user")
+					.order_by("conversation_id", "-created_at", "-id")
+				)
+				for envelope in latest_envelopes:
+					if envelope.conversation_id not in latest_envelope_by_conversation_id:
+						latest_envelope_by_conversation_id[envelope.conversation_id] = envelope
+
+			for conversation in conversation_items:
+				other_participant = next(
+					(participant.actor for participant in conversation.participants.all() if participant.actor_id != actor.id),
+					None,
+				)
+				other_name = "Unknown"
+				if other_participant is not None:
+					other_name = other_participant.user.display_name or f"@{other_participant.handle}"
+
+				latest_envelope = latest_envelope_by_conversation_id.get(conversation.id)
+				latest_sender_context = ""
+				if latest_envelope is not None:
+					if latest_envelope.sender_id == actor.id:
+						latest_sender_context = "Latest envelope sent by you"
+					elif latest_envelope.sender:
+						sender_display_name = latest_envelope.sender.user.display_name if latest_envelope.sender.user else ""
+						sender_handle = latest_envelope.sender.handle
+						sender_label = f"{sender_display_name} (@{sender_handle})" if sender_display_name else f"@{sender_handle}"
+						latest_sender_context = f"Latest envelope from {sender_label}"
+					else:
+						latest_sender_context = "Latest envelope sender unknown"
+
+				activity_items.append({
+					"kind": "message",
+					"created_at": conversation.latest_message_created_at or conversation.updated_at,
+					"is_unread": bool(conversation.unread_message_count),
+					"title": f"Message thread with {other_name}",
+					"summary": (
+						f"{conversation.unread_message_count} unread · {conversation.total_message_count} encrypted envelope"
+						f"{'s' if conversation.total_message_count != 1 else ''}"
+					),
+					"link_url": f"/messages/{conversation.id}/",
+					"link_label": "Open conversation",
+					"meta": f"{timezone.localtime(conversation.latest_message_created_at or conversation.updated_at).strftime('%Y-%m-%d %H:%M')}",
+					"latest_sender_context": latest_sender_context,
+				})
+
+		activity_items.sort(key=lambda item: item["created_at"], reverse=True)
+
+	query_parts = []
+	if section != "all":
+		query_parts.append(f"section={section}")
+	if show_unread_only:
+		query_parts.append("filter=unread")
+	if mode != "summary":
+		query_parts.append(f"mode={mode}")
+	activity_query_string = "&".join(query_parts)
+	activity_page_obj = paginate_queryset(request, activity_items, per_page=20, page_param="page") if mode == "activity" else None
+
+	unread_notification_count = Notification.objects.filter(recipient=actor, read_at__isnull=True).count()
+	unread_message_count = get_unread_conversation_count(actor=actor) if pm_enabled else 0
+	query_string = f"?{activity_query_string}" if activity_query_string else ""
+
+	return render(request, "core/inbox.html", {
+		"section": section,
+		"mode": mode,
+		"filter_type": filter_type,
+		"show_unread_only": show_unread_only,
+		"pm_enabled": pm_enabled,
+		"conversations": conversations,
+		"notifications": notifications,
+		"activity_items": list(activity_page_obj.object_list) if activity_page_obj else [],
+		"activity_page_obj": activity_page_obj,
+		"activity_query_string": activity_query_string,
+		"unread_notification_count": unread_notification_count,
+		"unread_message_count": unread_message_count,
+		"query_string": query_string,
+	})

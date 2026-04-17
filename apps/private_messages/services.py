@@ -1,7 +1,11 @@
+from datetime import timedelta
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 import hashlib
@@ -13,6 +17,167 @@ from apps.private_messages.models import Conversation, ConversationParticipant, 
 
 def is_private_messages_enabled() -> bool:
     return bool(getattr(settings, "FEATURE_PM_E2E_ENABLED", False))
+
+
+def is_private_message_websocket_enabled() -> bool:
+    return is_private_messages_enabled() and bool(getattr(settings, "FEATURE_PM_WEBSOCKET_ENABLED", False))
+
+
+def is_actor_pm_eligible(*, actor) -> bool:
+    """Check if actor is eligible for PM based on rollout policy and feature flag."""
+    if not is_private_messages_enabled():
+        return False
+
+    from apps.private_messages.models import PMRolloutPolicy
+
+    try:
+        policy = PMRolloutPolicy.get_default_instance()
+    except Exception:
+        # If policy cannot be retrieved, deny access
+        return False
+
+    if policy.stage == PMRolloutPolicy.RolloutStage.DISABLED:
+        return False
+    elif policy.stage == PMRolloutPolicy.RolloutStage.ALLOWLIST:
+        return policy.allowlisted_actors.filter(pk=actor.pk).exists()
+    elif policy.stage == PMRolloutPolicy.RolloutStage.BETA:
+        # BETA mode: all authenticated users can use PM
+        return True
+    elif policy.stage == PMRolloutPolicy.RolloutStage.GENERAL:
+        # GENERAL: all authenticated users can use PM
+        return True
+    else:
+        return False
+
+
+def serialize_encrypted_envelope(envelope: EncryptedMessageEnvelope) -> dict:
+    sender = envelope.sender
+    return {
+        "id": str(envelope.id),
+        "sender_id": str(envelope.sender_id or ""),
+        "sender_handle": sender.handle if sender else "unknown",
+        "sender_display_name": sender.user.display_name if sender and sender.user and sender.user.display_name else "",
+        "ciphertext": envelope.ciphertext,
+        "message_nonce": envelope.message_nonce,
+        "sender_key_id": envelope.sender_key_id,
+        "recipient_key_id": envelope.recipient_key_id,
+        "created_at": envelope.created_at.isoformat(),
+    }
+
+
+def publish_direct_message_event(envelope: EncryptedMessageEnvelope) -> None:
+    if not is_private_message_websocket_enabled():
+        return
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    payload = {
+        "ok": True,
+        "type": "dm.envelope",
+        "envelope": serialize_encrypted_envelope(envelope),
+    }
+    async_to_sync(channel_layer.group_send)(
+        f"dm_conversation_{envelope.conversation_id}",
+        {"type": "dm_envelope", "payload": payload},
+    )
+
+
+def get_conversation_queryset_for_actor(*, actor):
+    return (
+        Conversation.objects.filter(participants__actor=actor)
+        .prefetch_related("participants__actor", "participants__actor__profile")
+        .distinct()
+        .annotate(
+            total_message_count=Count("messages", distinct=True),
+            latest_message_created_at=Max("messages__created_at"),
+        )
+        .order_by("-latest_message_created_at", "-updated_at")
+    )
+
+
+def populate_conversation_activity(*, actor, conversations):
+    conversations = list(conversations)
+    if not conversations:
+        return conversations
+
+    participant_rows = ConversationParticipant.objects.filter(
+        actor=actor,
+        conversation__in=conversations,
+    ).values("conversation_id", "joined_at", "last_read_at")
+    participant_by_conversation_id = {row["conversation_id"]: row for row in participant_rows}
+    unread_counts: dict = {conversation.id: 0 for conversation in conversations}
+
+    incoming_rows = EncryptedMessageEnvelope.objects.filter(
+        conversation__in=conversations,
+        recipient_actor=actor,
+    ).values("conversation_id", "created_at")
+
+    for row in incoming_rows:
+        participant = participant_by_conversation_id.get(row["conversation_id"])
+        if participant is None:
+            continue
+        last_read_at = participant["last_read_at"]
+        cutoff = last_read_at or participant["joined_at"]
+        if cutoff is None:
+            unread_counts[row["conversation_id"]] += 1
+        elif last_read_at is None and row["created_at"] >= cutoff:
+            unread_counts[row["conversation_id"]] += 1
+        elif last_read_at is not None and row["created_at"] > cutoff:
+            unread_counts[row["conversation_id"]] += 1
+
+    for conversation in conversations:
+        conversation.unread_message_count = unread_counts.get(conversation.id, 0)
+
+    return conversations
+
+
+def get_unread_conversation_count(*, actor) -> int:
+    participant_rows = ConversationParticipant.objects.filter(actor=actor).values("conversation_id", "joined_at", "last_read_at")
+    participant_by_conversation_id = {row["conversation_id"]: row for row in participant_rows}
+    if not participant_by_conversation_id:
+        return 0
+
+    unread_conversation_ids = set()
+    incoming_rows = EncryptedMessageEnvelope.objects.filter(
+        conversation_id__in=participant_by_conversation_id.keys(),
+        recipient_actor=actor,
+    ).values("conversation_id", "created_at")
+    for row in incoming_rows:
+        participant = participant_by_conversation_id.get(row["conversation_id"])
+        if participant is None:
+            continue
+        last_read_at = participant["last_read_at"]
+        cutoff = last_read_at or participant["joined_at"]
+        if cutoff is None:
+            unread_conversation_ids.add(row["conversation_id"])
+        elif last_read_at is None and row["created_at"] >= cutoff:
+            unread_conversation_ids.add(row["conversation_id"])
+        elif last_read_at is not None and row["created_at"] > cutoff:
+            unread_conversation_ids.add(row["conversation_id"])
+
+    return len(unread_conversation_ids)
+
+
+def mark_conversation_read(*, conversation, actor, read_through=None):
+    participant = ConversationParticipant.objects.filter(conversation=conversation, actor=actor).first()
+    if participant is None:
+        return None
+
+    incoming_qs = EncryptedMessageEnvelope.objects.filter(conversation=conversation, recipient_actor=actor)
+    if read_through is not None:
+        incoming_qs = incoming_qs.filter(created_at__lte=read_through)
+
+    latest_incoming = incoming_qs.order_by("created_at", "id").last()
+    if latest_incoming is None:
+        return None
+
+    if participant.last_read_at is None or participant.last_read_at < latest_incoming.created_at:
+        participant.last_read_at = latest_incoming.created_at
+        participant.save(update_fields=["last_read_at", "updated_at"])
+
+    incoming_qs.filter(read_at__isnull=True).update(read_at=timezone.now())
+    return latest_incoming.created_at
 
 
 def require_private_messages_enabled() -> None:
@@ -39,6 +204,23 @@ def get_or_create_direct_conversation(*, created_by, participant_a, participant_
     require_private_messages_enabled()
     if participant_a == participant_b:
         raise ValidationError("Direct conversation requires two distinct participants.")
+
+    # Phase 7.1: Rate limit conversation creation per actor
+    conversation_creation_limit = max(1, int(getattr(settings, "PM_CONVERSATION_CREATION_LIMIT", 10)))
+    conversation_creation_window_seconds = max(
+        1,
+        int(getattr(settings, "PM_CONVERSATION_CREATION_WINDOW_SECONDS", 86400)),
+    )
+    recent_conversations = Conversation.objects.filter(
+        created_by=created_by,
+        created_at__gte=timezone.now() - timedelta(seconds=conversation_creation_window_seconds),
+    ).count()
+
+    if recent_conversations >= conversation_creation_limit:
+        raise ValidationError(
+            f"You have created {recent_conversations} conversations in the current safety window. "
+            f"Please wait before creating more conversations."
+        )
 
     existing = (
         Conversation.objects.filter(conversation_type=Conversation.ConversationType.DIRECT)
@@ -90,7 +272,7 @@ def store_encrypted_message(
     if missing:
         raise ValidationError(f"Encrypted message is missing required fields: {', '.join(missing)}")
 
-    return EncryptedMessageEnvelope.objects.create(
+    envelope = EncryptedMessageEnvelope.objects.create(
         conversation=conversation,
         sender=sender,
         recipient_actor=recipient_actor,
@@ -103,10 +285,20 @@ def store_encrypted_message(
         encryption_scheme=encryption_scheme,
         client_message_id=client_message_id,
     )
+    publish_direct_message_event(envelope)
+    return envelope
 
 
 def send_direct_encrypted_message(*, conversation, sender, ciphertext: str, message_nonce: str, client_message_id: str = "") -> EncryptedMessageEnvelope:
     require_private_messages_enabled()
+
+    # Phase 7.1: Check if conversation is compromised
+    if conversation.is_compromised():
+        raise ValidationError(
+            "This conversation has been marked as compromised. "
+            "Messages sent to this conversation are not considered secure. "
+            "Start a new conversation to reset the security context."
+        )
 
     participants = list(conversation.participants.select_related("actor").all())
     sender_participant = next((participant for participant in participants if participant.actor_id == sender.id), None)
@@ -123,6 +315,25 @@ def send_direct_encrypted_message(*, conversation, sender, ciphertext: str, mess
     recipient_key = UserIdentityKey.objects.filter(actor=recipient_participant.actor, is_active=True).order_by("-created_at").first()
     if sender_key is None or recipient_key is None:
         raise ValidationError("Both participants need active identity keys before sending encrypted messages.")
+
+    # Phase 7.1: Verify sender's key is valid (not compromised, not revoked, not expired)
+    if not sender_key.is_valid():
+        raise ValidationError("Your active key is invalid (compromised or revoked). Rotate your key before sending messages.")
+
+    # Phase 7.1: Verify recipient's key is valid
+    if not recipient_key.is_valid():
+        raise ValidationError(
+            "Recipient's active key is invalid (compromised or revoked). "
+            "Wait for recipient to rotate their key before sending messages."
+        )
+
+    # Phase 7.2: Require recipient to have acknowledged sender's current key (optional, disabled for Phase 7.1)
+    # This will be a future Phase 7.2 hardening when client-side key exchange UI is ready
+    # if sender_participant.acknowledged_remote_key_id != sender_key.key_id:
+    #     raise ValidationError(
+    #         "Recipient has not yet acknowledged your current safety key. "
+    #         "They must verify your fingerprint before you can send encrypted messages."
+    #     )
 
     return store_encrypted_message(
         conversation=conversation,
@@ -163,6 +374,78 @@ def ensure_active_identity_key(*, actor, rotate: bool = False) -> tuple[UserIden
     return new_key, True
 
 
+def validate_public_key_format(*, public_key: str, algorithm: str = "ed25519") -> None:
+    """Validate public key format based on algorithm. Enforce minimum length and structure."""
+    from base64 import b64decode
+
+    public_key = (public_key or "").strip()
+    if not public_key:
+        raise ValidationError("public_key cannot be empty.")
+
+    # Check for reasonable length (32+ bytes for ED25519, 32+ for CURVE25519)
+    try:
+        if public_key.startswith("local-bootstrap:"):
+            # Allow local bootstrap keys for development
+            if len(public_key) < 20:
+                raise ValidationError("Bootstrap public_key is too short.")
+        else:
+            # Expect base64-encoded key (decode and check length)
+            # Note: Allow shorter keys for testing/development
+            try:
+                decoded = b64decode(public_key, validate=True)
+                min_key_bytes = max(1, int(getattr(settings, "PM_PUBLIC_KEY_MIN_BYTES", 8)))
+                if len(decoded) < min_key_bytes:
+                    raise ValidationError(
+                        f"Public key is too short ({len(decoded)} bytes). Expected >= {min_key_bytes} bytes."
+                    )
+            except TypeError as e:
+                raise ValidationError(f"Public key must be valid base64: {str(e)}")
+    except ValidationError:
+        raise
+    except Exception as e:
+        raise ValidationError(f"Invalid public_key format: {str(e)}")
+
+
+def check_rotation_cooldown(*, actor) -> None:
+    """Enforce minimum cooldown period between key rotations to prevent abuse."""
+    rotation_cooldown_seconds = max(1, int(getattr(settings, "PM_KEY_ROTATION_COOLDOWN_SECONDS", 300)))
+    recent_rotation = (
+        UserIdentityKey.objects.filter(actor=actor, rotated_at__isnull=False)
+        .order_by("-rotated_at")
+        .first()
+    )
+
+    if recent_rotation and recent_rotation.rotated_at:
+        elapsed = timezone.now() - recent_rotation.rotated_at
+        cooldown_window = timedelta(seconds=rotation_cooldown_seconds)
+        if elapsed < cooldown_window:
+            remaining = cooldown_window - elapsed
+            raise ValidationError(
+                f"Please wait {max(1, int(remaining.total_seconds()))} seconds before rotating keys again. "
+                f"This helps prevent abuse of the key rotation system."
+            )
+
+
+def audit_key_event(*, actor, event_type: str, key=None, reason: str = "", triggered_by: str = "user_action", conversation_id=None) -> None:
+    """Log key lifecycle events for audit trail and security investigation."""
+    from apps.private_messages.models import KeyLifecycleAuditLog
+
+    try:
+        KeyLifecycleAuditLog.objects.create(
+            actor=actor,
+            key=key,
+            event_type=event_type,
+            reason=reason,
+            triggered_by=triggered_by,
+            related_conversation_id=conversation_id,
+        )
+    except Exception as e:
+        # Log audit events are best-effort; don't block operations if audit fails
+        import logging
+        logger = logging.getLogger("apps.private_messages")
+        logger.warning(f"Failed to log key lifecycle event: {str(e)}")
+
+
 def register_browser_identity_key(*, actor, key_id: str, public_key: str, fingerprint_hex: str) -> tuple[UserIdentityKey, bool]:
     """Register a browser-generated public identity key and rotate previous active keys.
 
@@ -170,6 +453,11 @@ def register_browser_identity_key(*, actor, key_id: str, public_key: str, finger
     """
 
     require_private_messages_enabled()
+    
+    # Phase 7.1: Validate public key format and enforce rotation cooldown
+    validate_public_key_format(public_key=public_key)
+    check_rotation_cooldown(actor=actor)
+    
     key_id = (key_id or "").strip()
     public_key = (public_key or "").strip()
     fingerprint_hex = (fingerprint_hex or "").strip().lower()
@@ -191,6 +479,7 @@ def register_browser_identity_key(*, actor, key_id: str, public_key: str, finger
                 existing.is_active = True
                 existing.rotated_at = None
                 existing.save(update_fields=["is_active", "rotated_at", "updated_at"])
+                audit_key_event(actor=actor, event_type="activated", key=existing, reason="Reactivated previously rotated key")
             return existing, False
 
         UserIdentityKey.objects.filter(actor=actor, is_active=True).update(

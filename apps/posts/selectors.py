@@ -27,7 +27,7 @@ def visible_public_posts_for_actor(actor=None) -> QuerySet[Post]:
         blocked_by_me = Block.objects.filter(blocker=actor).values_list("blocked_id", flat=True)
         blocked_me = Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True)
         qs = qs.exclude(author_id__in=blocked_by_me).exclude(author_id__in=blocked_me)
-    return qs.select_related("author", "author__profile").prefetch_related("attachments").order_by("-created_at")
+    return qs.select_related("author", "author__profile", "link_preview").prefetch_related("attachments").order_by("-created_at")
 
 
 def visible_home_posts_for_actor(actor) -> QuerySet[Post]:
@@ -47,7 +47,7 @@ def visible_home_posts_for_actor(actor) -> QuerySet[Post]:
         .exclude(moderation_state__in=[Post.ModerationState.HIDDEN, Post.ModerationState.TAKEN_DOWN])
         .exclude(author_id__in=blocked_by_me)
         .exclude(author_id__in=blocked_me)
-        .select_related("author", "author__profile")
+        .select_related("author", "author__profile", "link_preview")
         .prefetch_related("attachments")
         .order_by("-created_at")
     )

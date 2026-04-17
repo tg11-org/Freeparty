@@ -2,58 +2,130 @@
 {% block title %}Conversation · Freeparty{% endblock %}
 {% block content %}
 <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-  <h2 style="margin:0;">
-    {% for participant in other_participants %}@{{ participant.handle }}{% if not forloop.last %}, {% endif %}{% endfor %}
-  </h2>
+  <div style="display:flex;flex-wrap:wrap;gap:0.9rem;align-items:flex-start;">
+    {% for participant in other_participants %}
+      <div class="identity-stack">
+        {% with display_name=participant.user.display_name %}
+          <h2 style="margin:0;font-size:1.25rem;">{{ display_name|default:participant.handle }}</h2>
+          {% if display_name %}
+            <div class="identity-handle">@{{ participant.handle }}</div>
+          {% endif %}
+        {% endwith %}
+      </div>
+    {% endfor %}
+  </div>
   <a class="btn" href="{% url 'private_messages:list' %}">Back to messages</a>
 </div>
 
 {% if safety_fingerprint %}
   <section style="margin-top:1rem;padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
-    <h3 style="margin-top:0;">Safety Fingerprint</h3>
-    <p style="margin:0 0 0.45rem;font-family:monospace;word-break:break-all;">{{ safety_fingerprint }}</p>
-    <p style="margin:0;color:var(--text2);font-size:0.92rem;">Identicon seed contract: <span style="font-family:monospace;">{{ identicon_seed }}</span></p>
-    <div id="fingerprint-validate-panel" style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px dashed var(--border);">
-      <button class="btn" id="validate-fingerprint-btn" type="button">Validate fingerprint</button>
-      <p id="validate-fingerprint-status" style="margin:0.5rem 0 0;color:var(--text2);font-size:0.92rem;">Generate a deterministic check code and visual marker for this contract.</p>
-      <div id="validate-fingerprint-output" style="display:none;margin-top:0.55rem;align-items:flex-start;gap:0.7rem;flex-wrap:wrap;">
-        <canvas id="validate-fingerprint-identicon" width="84" height="84" style="width:84px;height:84px;border:1px solid var(--border);border-radius:8px;"></canvas>
-        <div style="min-width:220px;">
-          <p style="margin:0 0 0.25rem;font-size:0.9rem;"><strong>Validation code</strong></p>
-          <p id="validate-fingerprint-code" style="margin:0;font-family:monospace;word-break:break-all;font-size:0.9rem;"></p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+      <h3 style="margin:0;">Safety Fingerprint</h3>
+      <button class="btn" id="toggle-fingerprint-panel" type="button" aria-expanded="true" aria-controls="fingerprint-panel-body">Hide fingerprint details</button>
+    </div>
+    <div id="fingerprint-panel-body" style="margin-top:0.8rem;">
+      <p style="margin:0 0 0.45rem;font-family:monospace;word-break:break-all;">{{ safety_fingerprint }}</p>
+      <p style="margin:0;color:var(--text2);font-size:0.92rem;">Identicon seed contract: <span style="font-family:monospace;">{{ identicon_seed }}</span></p>
+      <div id="fingerprint-validate-panel" style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px dashed var(--border);">
+        <button class="btn" id="validate-fingerprint-btn" type="button">Validate fingerprint</button>
+        <p id="validate-fingerprint-status" style="margin:0.5rem 0 0;color:var(--text2);font-size:0.92rem;">Generate a deterministic check code and visual marker for this contract.</p>
+        <div id="validate-fingerprint-output" style="display:none;margin-top:0.55rem;align-items:flex-start;gap:0.7rem;flex-wrap:wrap;">
+          <canvas id="validate-fingerprint-identicon" width="84" height="84" style="width:84px;height:84px;border:1px solid var(--border);border-radius:8px;"></canvas>
+          <div style="min-width:220px;">
+            <p style="margin:0 0 0.25rem;font-size:0.9rem;"><strong>Validation code</strong></p>
+            <p id="validate-fingerprint-code" style="margin:0;font-family:monospace;word-break:break-all;font-size:0.9rem;"></p>
+          </div>
         </div>
       </div>
+      {% if key_change_warning %}
+        <div style="margin-top:0.75rem;padding:0.8rem;border:1px solid var(--danger);border-radius:8px;background:color-mix(in srgb, var(--danger) 8%, var(--surface));">
+          <p style="margin:0 0 0.5rem;"><strong>Key change warning:</strong> {{ key_change_warning }}</p>
+          <p style="margin:0 0 0.65rem;color:var(--text2);font-size:0.92rem;">Current remote key id: <span style="font-family:monospace;">{{ current_remote_key_id }}</span></p>
+          <form method="post" action="{% url 'private_messages:acknowledge-key' conversation.id %}">
+            {% csrf_token %}
+            <button class="btn" type="submit">I verified this new key</button>
+          </form>
+        </div>
+      {% endif %}
     </div>
-    {% if key_change_warning %}
-      <div style="margin-top:0.75rem;padding:0.8rem;border:1px solid var(--danger);border-radius:8px;background:color-mix(in srgb, var(--danger) 8%, var(--surface));">
-        <p style="margin:0 0 0.5rem;"><strong>Key change warning:</strong> {{ key_change_warning }}</p>
-        <p style="margin:0 0 0.65rem;color:var(--text2);font-size:0.92rem;">Current remote key id: <span style="font-family:monospace;">{{ current_remote_key_id }}</span></p>
-        <form method="post" action="{% url 'private_messages:acknowledge-key' conversation.id %}">
-          {% csrf_token %}
-          <button class="btn" type="submit">I verified this new key</button>
-        </form>
-      </div>
-    {% endif %}
   </section>
 {% else %}
   <p style="margin-top:1rem;color:var(--text2);">Safety fingerprint will appear once both participants have active identity keys.</p>
 {% endif %}
 
+<section style="margin-top:1rem;padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
+  <h3 style="margin:0 0 0.65rem;">Device &amp; Key Inventory</h3>
+  <p style="margin:0 0 0.55rem;color:var(--text2);font-size:0.92rem;">Compare server-side active keys with this browser's local key state before sending encrypted messages.</p>
+  <p id="local-device-key-inventory-status" style="margin:0 0 0.55rem;color:var(--text2);font-size:0.92rem;">Checking browser private-key availability...</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.75rem;">
+    <article style="padding:0.7rem;border:1px dashed var(--border);border-radius:8px;">
+      <p style="margin:0 0 0.35rem;"><strong>Your server keys</strong></p>
+      {% if local_identity_keys %}
+        <ul style="margin:0;padding-left:1rem;display:grid;gap:0.25rem;">
+          {% for key in local_identity_keys %}
+            <li style="font-size:0.9rem;">
+              <span style="font-family:monospace;">{{ key.key_id }}</span>
+              {% if key.is_active %}<span style="color:var(--accent);">(active)</span>{% endif %}
+              <span style="color:var(--text2);">· {{ key.algorithm }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p style="margin:0;color:var(--text2);font-size:0.9rem;">No registered keys yet.</p>
+      {% endif %}
+    </article>
+    <article style="padding:0.7rem;border:1px dashed var(--border);border-radius:8px;">
+      <p style="margin:0 0 0.35rem;"><strong>Remote server keys</strong></p>
+      {% if remote_identity_keys %}
+        <ul style="margin:0;padding-left:1rem;display:grid;gap:0.25rem;">
+          {% for key in remote_identity_keys %}
+            <li style="font-size:0.9rem;">
+              <span style="font-family:monospace;">{{ key.key_id }}</span>
+              {% if key.is_active %}<span style="color:var(--accent);">(active)</span>{% endif %}
+              <span style="color:var(--text2);">· {{ key.algorithm }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p style="margin:0;color:var(--text2);font-size:0.9rem;">No remote key inventory available yet.</p>
+      {% endif %}
+    </article>
+  </div>
+  <p style="margin:0.75rem 0 0;color:var(--text2);font-size:0.92rem;">Acknowledged remote key id: <span style="font-family:monospace;">{{ acknowledged_remote_key_id|default:"(none)" }}</span></p>
+  <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;"><strong>Recovery:</strong> if this browser is missing your private key, use "Generate browser keypair for this device" to rotate and recover this device. You will need to re-verify the safety fingerprint after key rotation.</p>
+</section>
+
 <section style="margin-top:1rem;">
-  <h3>Encrypted Envelopes</h3>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+    <h3 style="margin:0;">Encrypted Envelopes</h3>
+    <span id="dm-live-status" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.2rem 0.6rem;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:0.78rem;">Live updates: polling</span>
+  </div>
   {{ envelope_payloads|json_script:"pm-envelope-payloads" }}
   {{ public_keys_by_key_id|json_script:"pm-public-keys" }}
+  {{ latest_updates_cursor|json_script:"pm-updates-cursor" }}
+  {{ websocket_enabled|yesno:"1,0"|json_script:"pm-websocket-enabled" }}
+  {{ websocket_url|json_script:"pm-websocket-url" }}
   <div id="envelope-list" style="display:grid;gap:0.65rem;">
     {% if envelopes %}
       {% for message in envelopes %}
         <article data-envelope-id="{{ message.id }}" style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
-          <p style="margin:0 0 0.3rem;"><strong>@{{ message.sender.handle|default:'unknown' }}</strong> · {{ message.created_at }}</p>
+          {% with display_name=message.sender.user.display_name %}
+            <div style="display:flex;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;margin:0 0 0.3rem;">
+              <span class="identity-stack">
+                <strong class="identity-name">{{ display_name|default:message.sender.handle|default:'unknown' }}</strong>
+                {% if display_name %}
+                  <span class="identity-handle">@{{ message.sender.handle }}</span>
+                {% endif %}
+              </span>
+              <span style="color:var(--text2);">· {{ message.created_at }}</span>
+            </div>
+          {% endwith %}
           <p data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</p>
           {% if show_ciphertext_preview %}
             <p style="margin:0 0 0.35rem;color:var(--text2);font-size:0.92rem;">Dev preview enabled (DEBUG only): raw ciphertext below.</p>
             <pre style="margin:0;padding:0.65rem;border:1px dashed var(--border);border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:color-mix(in srgb, var(--surface) 85%, black 2%);">{{ message.ciphertext }}</pre>
           {% else %}
-            <p style="margin:0;color:var(--text2);font-size:0.62rem;display:none;">This message is E2E Encrypted.</p>
+            <p style="margin:0;color:var(--text2);font-size:0.82rem;">Ciphertext is not rendered in the HTML view.</p>
           {% endif %}
         </article>
       {% endfor %}
@@ -65,12 +137,17 @@
   <div style="position:sticky;bottom:0;margin-top:0.9rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);z-index:5;">
     {% if can_send_encrypted %}
       <div style="margin-bottom:0.8rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
-        <p style="margin:0 0 0.45rem;"><strong>Browser E2E mode:</strong> this page encrypts in your browser and only uploads ciphertext.</p>
-        <p id="e2ee-key-status" style="margin:0;color:var(--text2);font-size:0.92rem;">Checking local key availability...</p>
-        <button class="btn" type="button" id="register-browser-key" style="margin-top:0.6rem;">Generate browser keypair for this device</button>
-        {% if remote_active_key_algorithm != "curve25519" %}
-          <p style="margin:0.6rem 0 0;color:var(--text2);font-size:0.92rem;">@{{ remote_handle }} still needs a browser-registered keypair before decrypt-on-read can succeed consistently.</p>
-        {% endif %}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+          <p style="margin:0;"><strong>Browser E2E mode:</strong> this page encrypts in your browser and only uploads ciphertext.</p>
+          <button class="btn" id="toggle-browser-e2ee-panel" type="button" aria-expanded="true" aria-controls="browser-e2ee-panel-body">Hide E2E details</button>
+        </div>
+        <div id="browser-e2ee-panel-body" style="margin-top:0.65rem;">
+          <p id="e2ee-key-status" style="margin:0;color:var(--text2);font-size:0.92rem;">Checking local key availability...</p>
+          <button class="btn" type="button" id="register-browser-key" style="margin-top:0.6rem;">Generate browser keypair for this device</button>
+          {% if remote_active_key_algorithm != "curve25519" %}
+            <p style="margin:0.6rem 0 0;color:var(--text2);font-size:0.92rem;">@{{ remote_handle }} still needs a browser-registered keypair before decrypt-on-read can succeed consistently.</p>
+          {% endif %}
+        </div>
       </div>
       <form id="e2ee-send-form" method="post" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;">
         {% csrf_token %}
@@ -108,6 +185,9 @@
   (function () {
     const envelopePayloads = JSON.parse(document.getElementById("pm-envelope-payloads").textContent || "[]");
     const publicKeysById = JSON.parse(document.getElementById("pm-public-keys").textContent || "{}");
+    const initialUpdatesCursor = JSON.parse(document.getElementById("pm-updates-cursor").textContent || '""');
+    const websocketEnabled = JSON.parse(document.getElementById("pm-websocket-enabled").textContent || '"0"') === "1";
+    const websocketPath = JSON.parse(document.getElementById("pm-websocket-url").textContent || '""');
     const knownEnvelopeIds = new Set(envelopePayloads.map(function (item) { return item.id; }));
     const envelopeListNode = document.getElementById("envelope-list");
     const noEnvelopesHint = document.getElementById("no-envelopes-hint");
@@ -118,11 +198,14 @@
     const remoteActiveKeyAlgorithm = "{{ remote_active_key_algorithm }}";
     const updatesUrl = "{{ updates_url }}";
     const showCiphertextPreview = "{{ show_ciphertext_preview|yesno:'1,0' }}" === "1";
+    const ciphertextPreviewHint = "{% if show_ciphertext_preview %}Dev preview enabled (DEBUG only): raw ciphertext below.{% endif %}";
     const registerUrl = "{% url 'private_messages:register-key' %}";
     const csrfTokenInput = document.querySelector("#e2ee-send-form input[name='csrfmiddlewaretoken']");
     const csrfToken = csrfTokenInput ? csrfTokenInput.value : "";
     const registerBtn = document.getElementById("register-browser-key");
     const registerBtnDefaultText = registerBtn ? registerBtn.textContent : "";
+    const localInventoryStatusNode = document.getElementById("local-device-key-inventory-status");
+    const liveStatusNode = document.getElementById("dm-live-status");
     const statusNode = document.getElementById("e2ee-key-status");
     const sendStatusNode = document.getElementById("e2ee-send-status");
     const sendForm = document.getElementById("e2ee-send-form");
@@ -133,8 +216,33 @@
     const validateFingerprintOutput = document.getElementById("validate-fingerprint-output");
     const validateFingerprintCode = document.getElementById("validate-fingerprint-code");
     const validateFingerprintCanvas = document.getElementById("validate-fingerprint-identicon");
+    const fingerprintToggleBtn = document.getElementById("toggle-fingerprint-panel");
+    const fingerprintPanelBody = document.getElementById("fingerprint-panel-body");
+    const browserE2eeToggleBtn = document.getElementById("toggle-browser-e2ee-panel");
+    const browserE2eePanelBody = document.getElementById("browser-e2ee-panel-body");
     const safetyFingerprint = "{{ safety_fingerprint|default:'' }}";
     const identiconSeed = "{{ identicon_seed|default:'' }}";
+    const panelStoragePrefix = "freeparty.dm.panel.{{ conversation.id }}.";
+    let pollCursor = initialUpdatesCursor || "";
+    let pollDelayMs = 5000;
+    let pollTimer = null;
+    let pollInFlight = false;
+    let dmSocket = null;
+
+    function setLiveStatus(mode, detail) {
+      if (!liveStatusNode) {
+        return;
+      }
+      var label = "Live updates: polling";
+      if (mode === "connecting") {
+        label = "Live updates: connecting";
+      } else if (mode === "socket") {
+        label = "Live updates: live";
+      } else if (mode === "fallback") {
+        label = "Live updates: fallback polling";
+      }
+      liveStatusNode.textContent = detail ? (label + " · " + detail) : label;
+    }
 
     function toBase64(buffer) {
       const bytes = new Uint8Array(buffer);
@@ -180,6 +288,29 @@
       }
     }
 
+    function setPanelExpanded(button, panel, expanded, labels) {
+      if (!button || !panel) {
+        return;
+      }
+      button.setAttribute("aria-expanded", expanded ? "true" : "false");
+      button.textContent = expanded ? labels.hide : labels.show;
+      panel.style.display = expanded ? "block" : "none";
+    }
+
+    function initTogglePanel(button, panel, storageKey, labels) {
+      if (!button || !panel) {
+        return;
+      }
+      const stored = window.localStorage.getItem(storageKey);
+      const expanded = stored !== "collapsed";
+      setPanelExpanded(button, panel, expanded, labels);
+      button.addEventListener("click", function () {
+        const nextExpanded = button.getAttribute("aria-expanded") !== "true";
+        setPanelExpanded(button, panel, nextExpanded, labels);
+        window.localStorage.setItem(storageKey, nextExpanded ? "expanded" : "collapsed");
+      });
+    }
+
     function buildEnvelopeNode(envelope, plaintextText) {
       const article = document.createElement("article");
       article.setAttribute("data-envelope-id", envelope.id);
@@ -187,12 +318,34 @@
       article.style.border = "1px solid var(--border)";
       article.style.borderRadius = "10px";
 
-      const header = document.createElement("p");
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.alignItems = "flex-start";
+      header.style.gap = "0.5rem";
+      header.style.flexWrap = "wrap";
       header.style.margin = "0 0 0.3rem";
-      const strong = document.createElement("strong");
-      strong.textContent = "@" + (envelope.sender_handle || "unknown");
-      header.appendChild(strong);
-      header.appendChild(document.createTextNode(" · " + formatEnvelopeTime(envelope.created_at)));
+
+      const identity = document.createElement("span");
+      identity.className = "identity-stack";
+
+      const displayName = document.createElement("strong");
+      displayName.className = "identity-name";
+      displayName.textContent = envelope.sender_display_name || envelope.sender_handle || "unknown";
+      identity.appendChild(displayName);
+
+      if (envelope.sender_display_name) {
+        const handle = document.createElement("span");
+        handle.className = "identity-handle";
+        handle.textContent = "@" + (envelope.sender_handle || "unknown");
+        identity.appendChild(handle);
+      }
+
+      header.appendChild(identity);
+
+      const timestamp = document.createElement("span");
+      timestamp.style.color = "var(--text2)";
+      timestamp.textContent = "· " + formatEnvelopeTime(envelope.created_at);
+      header.appendChild(timestamp);
       article.appendChild(header);
 
       const body = document.createElement("p");
@@ -206,7 +359,7 @@
         hint.style.margin = "0 0 0.35rem";
         hint.style.color = "var(--text2)";
         hint.style.fontSize = "0.92rem";
-        hint.textContent = "Dev preview enabled (DEBUG only): raw ciphertext below.";
+        hint.textContent = ciphertextPreviewHint;
         article.appendChild(hint);
 
         const pre = document.createElement("pre");
@@ -451,43 +604,118 @@
       envelopeListNode.appendChild(node);
     }
 
+    async function handleIncomingEnvelope(envelope) {
+      if (!envelope || knownEnvelopeIds.has(envelope.id)) {
+        return;
+      }
+      knownEnvelopeIds.add(envelope.id);
+      envelopePayloads.push(envelope);
+      pollCursor = (envelope.created_at && envelope.id) ? (envelope.created_at + "|" + envelope.id) : pollCursor;
+      await appendEnvelopeToDom(envelope);
+    }
+
+    function scheduleNextPoll(delayOverride) {
+      if (pollTimer) {
+        window.clearTimeout(pollTimer);
+      }
+      const nextDelay = typeof delayOverride === "number"
+        ? delayOverride
+        : (document.hidden ? Math.min(pollDelayMs * 2, 30000) : pollDelayMs);
+      if (!dmSocket || dmSocket.readyState !== window.WebSocket.OPEN) {
+        setLiveStatus(dmSocket ? "fallback" : "polling", document.hidden ? "background" : "active");
+      }
+      pollTimer = window.setTimeout(function () {
+        pollConversationUpdates().catch(function () {
+          pollDelayMs = Math.min(pollDelayMs * 2, 30000);
+          setLiveStatus("fallback", "recovering");
+          scheduleNextPoll();
+        });
+      }, nextDelay);
+    }
+
     async function pollConversationUpdates() {
-      if (!updatesUrl) {
+      if (!updatesUrl || pollInFlight) {
         return;
       }
-      const lastEnvelope = envelopePayloads.length ? envelopePayloads[envelopePayloads.length - 1] : null;
-      const after = lastEnvelope ? (lastEnvelope.created_at || "") : "";
+      pollInFlight = true;
       const sep = updatesUrl.indexOf("?") === -1 ? "?" : "&";
-      const response = await window.fetch(updatesUrl + (after ? (sep + "after=" + encodeURIComponent(after)) : ""), {
-        method: "GET",
-        credentials: "same-origin",
-        headers: {
-          "X-Requested-With": "XMLHttpRequest",
-        },
-      });
-      if (!response.ok) {
-        return;
-      }
-      const payload = await response.json();
-      if (!payload.ok) {
-        return;
-      }
-
-      const keyMap = payload.public_keys_by_key_id || {};
-      Object.keys(keyMap).forEach(function (keyId) {
-        publicKeysById[keyId] = keyMap[keyId];
-      });
-
-      const incoming = payload.envelopes || [];
-      for (let i = 0; i < incoming.length; i += 1) {
-        const envelope = incoming[i];
-        if (knownEnvelopeIds.has(envelope.id)) {
-          continue;
+      const requestUrl = updatesUrl + (pollCursor ? (sep + "cursor=" + encodeURIComponent(pollCursor)) : "");
+      try {
+        const response = await window.fetch(requestUrl, {
+          method: "GET",
+          credentials: "same-origin",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+        if (!response.ok) {
+          throw new Error("Update request failed.");
         }
-        knownEnvelopeIds.add(envelope.id);
-        envelopePayloads.push(envelope);
-        await appendEnvelopeToDom(envelope);
+        const payload = await response.json();
+        if (!payload.ok) {
+          throw new Error(payload.error || "Update payload failed.");
+        }
+        if (!dmSocket || dmSocket.readyState !== window.WebSocket.OPEN) {
+          setLiveStatus(dmSocket ? "fallback" : "polling", payload.has_more ? "catching up" : "synced");
+        }
+
+        const keyMap = payload.public_keys_by_key_id || {};
+        Object.keys(keyMap).forEach(function (keyId) {
+          publicKeysById[keyId] = keyMap[keyId];
+        });
+
+        const incoming = payload.envelopes || [];
+        for (let i = 0; i < incoming.length; i += 1) {
+          await handleIncomingEnvelope(incoming[i]);
+        }
+        if (payload.next_cursor) {
+          pollCursor = payload.next_cursor;
+        }
+        pollDelayMs = payload.poll_interval_ms || 5000;
+        scheduleNextPoll(payload.has_more ? 50 : undefined);
+      } finally {
+        pollInFlight = false;
       }
+    }
+
+    function connectDmSocket() {
+      if (!websocketEnabled || !websocketPath || !("WebSocket" in window)) {
+        setLiveStatus("polling", websocketEnabled ? "socket unsupported" : "feature off");
+        return;
+      }
+      setLiveStatus("connecting", "socket");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      dmSocket = new window.WebSocket(protocol + "//" + window.location.host + websocketPath);
+      dmSocket.addEventListener("message", function (event) {
+        try {
+          const payload = JSON.parse(event.data || "{}");
+          if (payload.type === "dm.socket.ready") {
+            setLiveStatus("socket", "connected");
+            return;
+          }
+          if (payload.type === "dm.envelope" && payload.envelope) {
+            handleIncomingEnvelope(payload.envelope).catch(function () {});
+            setLiveStatus("socket", "receiving");
+          }
+        } catch (_err) {
+          // Fall back to polling recovery.
+        }
+      });
+      dmSocket.addEventListener("close", function () {
+        dmSocket = null;
+        pollDelayMs = 5000;
+        setLiveStatus("fallback", "socket closed");
+        scheduleNextPoll(500);
+      });
+      dmSocket.addEventListener("open", function () {
+        pollDelayMs = 30000;
+        setLiveStatus("socket", "connected");
+        scheduleNextPoll(1000);
+      });
+      dmSocket.addEventListener("error", function () {
+        pollDelayMs = 5000;
+        setLiveStatus("fallback", "socket error");
+      });
     }
 
     async function registerBrowserKeypair() {
@@ -536,25 +764,40 @@
       }
       if (!localActiveKeyId) {
         statusNode.textContent = "No active local key is registered yet.";
+        if (localInventoryStatusNode) {
+          localInventoryStatusNode.textContent = "Browser private key status: no active server key is registered for this account yet.";
+        }
         updateRegisterButtonLabel("default");
         return;
       }
       if (localActiveKeyAlgorithm !== "curve25519") {
         statusNode.textContent = "Active local key is legacy/bootstrap type. Generate a browser keypair to enable local decrypt/encrypt.";
+        if (localInventoryStatusNode) {
+          localInventoryStatusNode.textContent = "Browser private key status: active key is legacy/bootstrap and has no browser private-key material.";
+        }
         updateRegisterButtonLabel("default");
         return;
       }
       if (!window.localStorage.getItem(privateKeyStorageKey(localActiveKeyId))) {
         statusNode.textContent = "Active local key exists on server, but private key is missing on this browser/device. Use the recovery button below to create and register a new device keypair.";
+        if (localInventoryStatusNode) {
+          localInventoryStatusNode.textContent = "Browser private key status: missing for active server key on this device.";
+        }
         updateRegisterButtonLabel("recover");
         return;
       }
       if (!remoteActiveKeyId || remoteActiveKeyAlgorithm !== "curve25519") {
         statusNode.textContent = "Local browser key is ready. Waiting for the other participant to register a browser keypair.";
+        if (localInventoryStatusNode) {
+          localInventoryStatusNode.textContent = "Browser private key status: available for active server key on this device.";
+        }
         updateRegisterButtonLabel("ready");
         return;
       }
       statusNode.textContent = "Browser key material ready. Messages will be encrypted before upload and decrypted on read when compatible.";
+      if (localInventoryStatusNode) {
+        localInventoryStatusNode.textContent = "Browser private key status: available for active server key on this device.";
+      }
       updateRegisterButtonLabel("ready");
     }
 
@@ -615,12 +858,24 @@
 
     updateKeyStatus();
     updateSendAvailability();
+    initTogglePanel(
+      fingerprintToggleBtn,
+      fingerprintPanelBody,
+      panelStoragePrefix + "fingerprint",
+      { show: "Show fingerprint details", hide: "Hide fingerprint details" }
+    );
+    initTogglePanel(
+      browserE2eeToggleBtn,
+      browserE2eePanelBody,
+      panelStoragePrefix + "browser-e2ee",
+      { show: "Show E2E details", hide: "Hide E2E details" }
+    );
     renderDecryptedMessages();
-    window.setInterval(function () {
-      pollConversationUpdates().catch(function () {
-        // Keep polling on next tick even if one request fails.
-      });
-    }, 5000);
+    connectDmSocket();
+    scheduleNextPoll();
+    document.addEventListener("visibilitychange", function () {
+      scheduleNextPoll(document.hidden ? Math.min(pollDelayMs * 2, 30000) : 1000);
+    });
   })();
 </script>
 {% endblock %}

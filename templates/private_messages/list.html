@@ -13,19 +13,40 @@
     </form>
   </div>
 {% elif conversations %}
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+    <a class="btn {% if filter_type == 'all' %}active{% endif %}" href="/messages/">All threads</a>
+    <a class="btn {% if filter_type == 'unread' %}active{% endif %}" href="/messages/?filter=unread">Unread threads</a>
+  </div>
   <div style="display:grid;gap:0.75rem;">
     {% for conversation in conversations %}
       <article class="card" style="padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
-        <a href="{% url 'private_messages:detail' conversation.id %}" style="font-weight:700;text-decoration:none;">
+        <div style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:space-between;align-items:flex-start;">
+          <div style="display:flex;flex-wrap:wrap;gap:0.75rem;">
           {% for participant in conversation.participants.all %}
-            {% if participant.actor.id != viewer.id %}@{{ participant.actor.handle }}{% if not forloop.last %}, {% endif %}{% endif %}
+            {% if participant.actor.id != viewer.id %}
+              {% with display_name=participant.actor.user.display_name %}
+                <a href="{% url 'private_messages:detail' conversation.id %}" class="identity-stack" style="text-decoration:none;">
+                  <span class="identity-name">{{ display_name|default:participant.actor.handle }}</span>
+                  <span class="identity-handle">@{{ participant.actor.handle }}</span>
+                </a>
+              {% endwith %}
+            {% endif %}
           {% endfor %}
-        </a>
-        <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;">{{ conversation.messages.count }} encrypted envelope{{ conversation.messages.count|pluralize }} stored</p>
+          </div>
+          {% if conversation.unread_message_count %}
+            <span class="nav-badge">{{ conversation.unread_message_count }} new</span>
+          {% endif %}
+        </div>
+        <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;">{{ conversation.total_message_count }} encrypted envelope{{ conversation.total_message_count|pluralize }} stored</p>
       </article>
     {% endfor %}
   </div>
+  {% include "partials/pagination.html" with page_obj=page_obj page_param="page" query_string=conversations_query_string %}
 {% else %}
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+    <a class="btn {% if filter_type == 'all' %}active{% endif %}" href="/messages/">All threads</a>
+    <a class="btn {% if filter_type == 'unread' %}active{% endif %}" href="/messages/?filter=unread">Unread threads</a>
+  </div>
   <p style="color:var(--text2);">No conversations yet. Visit a profile and use the DM button to start one.</p>
 {% endif %}
 {% endblock %}

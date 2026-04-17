@@ -1,6 +1,38 @@
 {% extends "base.html" %}
 {% load tz mention_tags %}
 {% block title %}Post by @{{ post.author.handle }} · Freeparty{% endblock %}
+
+{% block og_meta %}
+{% if not post.is_nsfw and not post.is_18plus %}
+  {# Rich OG embed — safe posts only #}
+  {% with display=post.author.user.display_name|default:post.author.handle post_url=request.build_absolute_uri %}
+    <meta property="og:site_name" content="Freeparty">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="{{ post_url }}">
+    <meta property="og:title" content="{{ display }} on Freeparty">
+    <meta property="og:description" content="{{ post.content|truncatechars:200 }}">
+    {% if og_image_url %}
+      <meta property="og:image" content="{{ og_image_url }}">
+      <meta name="twitter:image" content="{{ og_image_url }}">
+      <meta name="twitter:card" content="summary_large_image">
+    {% else %}
+      <meta name="twitter:card" content="summary">
+    {% endif %}
+    <meta name="twitter:title" content="{{ display }} on Freeparty">
+    <meta name="twitter:description" content="{{ post.content|truncatechars:200 }}">
+    <meta property="article:published_time" content="{{ post.created_at|date:'c' }}">
+    <meta property="article:author" content="{{ display }}">
+  {% endwith %}
+{% else %}
+  {# NSFW/18+ — minimal safe fallback, no image #}
+  <meta property="og:site_name" content="Freeparty">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.build_absolute_uri }}">
+  <meta property="og:title" content="Post on Freeparty (age-restricted content)">
+  <meta name="twitter:card" content="summary">
+{% endif %}
+{% endblock %}
+
 {% block content %}
 
 {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
@@ -26,7 +58,14 @@
     {% endif %}
     <div style="flex:1;min-width:0;">
       <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.2rem;">
-        <a href="/actors/{{ comment.author.handle }}/" style="font-weight:600;color:var(--accent);">@{{ comment.author.handle }}</a>
+        {% with display_name=comment.author.user.display_name %}
+          <span class="identity-stack" style="vertical-align:top;">
+            <a href="/actors/{{ comment.author.handle }}/" class="identity-name">{{ display_name|default:comment.author.handle }}</a>
+            {% if display_name %}
+              <a href="/actors/{{ comment.author.handle }}/" class="identity-handle">@{{ comment.author.handle }}</a>
+            {% endif %}
+          </span>
+        {% endwith %}
         &middot;
         <span>{{ comment.created_at|timesince }} ago</span>
         {% if comment.is_edited %}

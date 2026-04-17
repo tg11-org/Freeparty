@@ -41,6 +41,7 @@ def process_notification_fanout(self, notification_id: str, correlation_id: str 
                 execution=execution,
                 error=exc,
                 is_terminal=retries >= max_retries,
+                terminal_reason="max_retries_exceeded" if retries >= max_retries else "",
                 task_name=self.name,
                 task_id=getattr(self.request, "id", ""),
                 correlation_id=correlation_id,

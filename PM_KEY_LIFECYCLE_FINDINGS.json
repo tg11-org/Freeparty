@@ -1,0 +1,552 @@
+{
+  "analysis_date": "2026-04-16",
+  "analysis_scope": "Private Messages Key Lifecycle (apps/private_messages)",
+  "executive_summary": {
+    "status": "Phase 5 Bootstrap Implementation",
+    "key_management_stage": "Basic key rotation implemented; Missing abuse protections, rate limiting, and compromise handling",
+    "risk_level": "MEDIUM - Current implementation allows key registration without rate limiting or validation of duplicate registrations across time periods"
+  },
+  "section_1_key_management_functions": {
+    "location": "apps/private_messages/services.py",
+    "functions": [
+      {
+        "name": "ensure_active_identity_key",
+        "purpose": "Create or rotate a local bootstrap identity key (Phase 5 utility)",
+        "signature": "ensure_active_identity_key(*, actor, rotate: bool = False) -> tuple[UserIdentityKey, bool]",
+        "code_logic": "1. Check for existing active key\n2. If rotate=True, mark all active keys as inactive with rotated_at timestamp\n3. Generate new key with local-bootstrap:{random_token} format\n4. Create UserIdentityKey with ED25519 algorithm\n5. Return (key, created_flag)",
+        "key_observations": [
+          "Generate randomized key_id: f'{actor.handle}-{uuid.uuid4().hex[:12]}'",
+          "Public key format: local-bootstrap:{secrets.token_urlsafe(32)}",
+          "Fingerprint computed as: SHA256(public_key.encode())",
+          "No expiration tracking - key persists indefinitely unless rotated",
+          "Rotation marks previous keys inactive but does NOT delete conversation context"
+        ],
+        "code_snippet": "def ensure_active_identity_key(*, actor, rotate: bool = False) -> tuple[UserIdentityKey, bool]:\n    require_private_messages_enabled()\n    existing_active = UserIdentityKey.objects.filter(actor=actor, is_active=True).order_by(\"-created_at\").first()\n    if existing_active is not None and not rotate:\n        return existing_active, False\n\n    if rotate:\n        UserIdentityKey.objects.filter(actor=actor, is_active=True).update(\n            is_active=False, rotated_at=timezone.now(), updated_at=timezone.now()\n        )\n\n    public_key = f\"local-bootstrap:{secrets.token_urlsafe(32)}\"\n    fingerprint_hex = hashlib.sha256(public_key.encode(\"utf-8\")).hexdigest()\n    new_key = UserIdentityKey.objects.create(\n        actor=actor,\n        key_id=f\"{actor.handle}-{uuid.uuid4().hex[:12]}\",\n        public_key=public_key,\n        fingerprint_hex=fingerprint_hex,\n        algorithm=UserIdentityKey.Algorithm.ED25519,\n        is_active=True,\n    )\n    return new_key, True"
+      },
+      {
+        "name": "register_browser_identity_key",
+        "purpose": "Register a browser-generated public key and rotate previous active keys",
+        "signature": "register_browser_identity_key(*, actor, key_id: str, public_key: str, fingerprint_hex: str) -> tuple[UserIdentityKey, bool]",
+        "code_logic": "1. Validate key_id, public_key, and fingerprint_hex (64-char hex string)\n2. Check if key_id already exists and belongs to different actor -> reject\n3. In atomic transaction:\n   - If existing key found with same key_id, reactivate it\n   - Otherwise, deactivate all active keys for this actor\n   - Create or reactivate new key with CURVE25519 algorithm\n4. Return (key, created_flag)",
+        "key_observations": [
+          "Key ID must be globally unique (UNIQUE constraint in DB)",
+          "Uses model-level select_for_update() for transaction safety",
+          "No validation of public_key format or content",
+          "No check for duplicate key registrations within time window",
+          "Fingerprint validation only checks length (64 chars) and lowercase hex",
+          "Algorithm hardcoded to CURVE25519 for browser keys (vs ED25519 for bootstrap)"
+        ],
+        "code_snippet": "def register_browser_identity_key(*, actor, key_id: str, public_key: str, fingerprint_hex: str) -> tuple[UserIdentityKey, bool]:\n    require_private_messages_enabled()\n    key_id = (key_id or \"\").strip()\n    public_key = (public_key or \"\").strip()\n    fingerprint_hex = (fingerprint_hex or \"\").strip().lower()\n    if not key_id or not public_key or len(fingerprint_hex) != 64:\n        raise ValidationError(\"key_id, public_key, and 64-char fingerprint_hex are required.\")\n\n    with transaction.atomic():\n        existing = UserIdentityKey.objects.filter(key_id=key_id).select_related(\"actor\").select_for_update().first()\n        if existing is not None and existing.actor.pk != actor.pk:\n            raise ValidationError(\"Identity key id is already registered to another actor.\")\n\n        if existing is not None:\n            if not existing.is_active:\n                UserIdentityKey.objects.filter(actor=actor, is_active=True).exclude(pk=existing.pk).update(\n                    is_active=False, rotated_at=timezone.now(), updated_at=timezone.now()\n                )\n                existing.is_active = True\n                existing.rotated_at = None\n                existing.save(update_fields=[\"is_active\", \"rotated_at\", \"updated_at\"])\n            return existing, False\n\n        UserIdentityKey.objects.filter(actor=actor, is_active=True).update(\n            is_active=False, rotated_at=timezone.now(), updated_at=timezone.now()\n        )\n        created = UserIdentityKey.objects.create(\n            actor=actor,\n            key_id=key_id,\n            public_key=public_key,\n            fingerprint_hex=fingerprint_hex,\n            algorithm=UserIdentityKey.Algorithm.CURVE25519,\n            is_active=True,\n        )\n    return created, True"
+      },
+      {
+        "name": "send_direct_encrypted_message",
+        "purpose": "Send encrypted message using active keys from both participants",
+        "signature": "send_direct_encrypted_message(*, conversation, sender, ciphertext: str, message_nonce: str, client_message_id: str = \"\") -> EncryptedMessageEnvelope",
+        "code_logic": "1. Verify sender is conversation participant\n2. Verify conversation is DIRECT type\n3. Find recipient participant\n4. Fetch active keys for both sender and recipient (order by -created_at)\n5. Validate both have active keys\n6. Store message with key IDs from active keys",
+        "key_observations": [
+          "No validation that key is compatible with message type",
+          "Uses most recent active key (order_by '-created_at')",
+          "Does NOT verify recipient has acknowledged sender's current key",
+          "No check for revoked or compromised key IDs",
+          "Key ID stored as text - no cryptographic verification at envelope level"
+        ],
+        "code_snippet": "sender_key = UserIdentityKey.objects.filter(actor=sender, is_active=True).order_by(\"-created_at\").first()\nrecipient_key = UserIdentityKey.objects.filter(actor=recipient_participant.actor, is_active=True).order_by(\"-created_at\").first()\nif sender_key is None or recipient_key is None:\n    raise ValidationError(\"Both participants need active identity keys before sending encrypted messages.\")\n\nreturn store_encrypted_message(\n    conversation=conversation,\n    sender=sender,\n    recipient_actor=recipient_participant.actor,\n    ciphertext=ciphertext,\n    message_nonce=message_nonce,\n    sender_key_id=sender_key.key_id,\n    recipient_key_id=recipient_key.key_id,\n    client_message_id=client_message_id,\n)"
+      }
+    ]
+  },
+  "section_2_useridentitykey_model_constraints": {
+    "location": "apps/private_messages/models.py",
+    "model_definition": {
+      "primary_key": "id (UUIDField, auto-generated)",
+      "fields": {
+        "actor": "ForeignKey(Actor, on_delete=CASCADE)",
+        "key_id": "CharField(max_length=128, unique=True)",
+        "public_key": "TextField (no size limit, no format validation)",
+        "algorithm": "CharField (choices: ED25519, CURVE25519)",
+        "fingerprint_hex": "CharField(max_length=64, no validation of format)",
+        "is_active": "BooleanField (default=True)",
+        "rotated_at": "DateTimeField (nullable - only set on rotation)",
+        "created_at": "DateTimeField (auto_now_add, inherited from TimeStampedModel)",
+        "updated_at": "DateTimeField (auto_now, inherited from TimeStampedModel)"
+      }
+    },
+    "indexes": [
+      "Index(fields=['actor', 'is_active']) - queries active key per actor",
+      "Index(fields=['fingerprint_hex']) - lookups by fingerprint"
+    ],
+    "constraints": [
+      "UniqueConstraint on key_id - prevents global key ID collision",
+      "No unique constraint on (actor, is_active) - allows multiple active keys per actor (inherent limitation)",
+      "No unique constraint on actor + fingerprint - could register duplicate fingerprints"
+    ],
+    "gaps_identified": [
+      "No expiration_date field - keys never expire automatically",
+      "No revaoked_at or revocation_reason - no revocation tracking",
+      "No compromise_detected_at - no forensic trail for key compromise",
+      "No creation_source field - cannot distinguish bootstrap vs browser vs federation keys",
+      "No max_age_days or rotation_required_at - no forced rotation policy"
+    ]
+  },
+  "section_3_abuse_protections": {
+    "location": "apps/private_messages/views.py + services.py",
+    "current_protections": [
+      {
+        "protection": "Feature Flag Gating",
+        "implementation": "FEATURE_PM_E2E_ENABLED setting + is_private_messages_enabled() check",
+        "scope": "All PM operations blocked if disabled",
+        "effectiveness": "Prevents mass registration if feature disabled globally"
+      },
+      {
+        "protection": "Rollout Policy Stages",
+        "implementation": "PMRolloutPolicy with DISABLED/ALLOWLIST/BETA/GENERAL stages",
+        "scope": "Controls who can use PM per environment",
+        "effectiveness": "Allows gradual rollout but does NOT prevent per-actor abuse"
+      },
+      {
+        "protection": "Unique Key ID Constraint",
+        "implementation": "key_id CharField(unique=True) at DB level",
+        "scope": "Prevents two actors registering same key_id",
+        "effectiveness": "Prevents ID collision attacks but NOT rapid-fire registration"
+      },
+      {
+        "protection": "Conversation Participant Uniqueness",
+        "implementation": "UniqueConstraint(fields=['conversation', 'actor'])",
+        "scope": "Prevents duplicate participation in single conversation",
+        "effectiveness": "Prevents duplicate join but NOT spam via conversation creation"
+      }
+    ],
+    "missing_protections": [
+      {
+        "gap": "Rate Limiting on Key Registration",
+        "severity": "HIGH",
+        "scenario": "Attacker registers 1000 keys per minute per account",
+        "current_defense": "NONE",
+        "recommendation": "Implement throttle: max 5 keys per 24 hours per actor"
+      },
+      {
+        "gap": "Rate Limiting on Message Send",
+        "severity": "HIGH",
+        "scenario": "Attacker sends 10000 messages per minute in conversation",
+        "current_defense": "NONE",
+        "recommendation": "Implement throttle: max 100 messages per minute per actor per conversation"
+      },
+      {
+        "gap": "Rate Limiting on Key Acknowledgment",
+        "severity": "MEDIUM",
+        "scenario": "Attacker acknowledges/unacknowledges key 1000 times seeking feedback timing",
+        "current_defense": "NONE",
+        "recommendation": "Implement cooldown: min 10 seconds between ack updates per conversation"
+      },
+      {
+        "gap": "Duplicate Fingerprint Detection",
+        "severity": "MEDIUM",
+        "scenario": "Two keys with same fingerprint registered (collision or reuse)",
+        "current_defense": "NONE",
+        "recommendation": "Add validation: fingerprint must be unique per conversation + check against rotated keys"
+      },
+      {
+        "gap": "Public Key Format Validation",
+        "severity": "MEDIUM",
+        "scenario": "Arbitrary string stored as 'public_key' without validation",
+        "current_defense": "NONE",
+        "recommendation": "Validate CURVE25519 keys are valid base64-encoded pubkeys"
+      },
+      {
+        "gap": "Rapid Key Rotation Spam",
+        "severity": "MEDIUM",
+        "scenario": "Attacker rotates key every second triggering notifications",
+        "current_defense": "NONE",
+        "recommendation": "Implement cooldown: min 30 seconds between rotations per actor"
+      },
+      {
+        "gap": "Message Enrollment Without Verification",
+        "severity": "MEDIUM",
+        "scenario": "Attacker sends 'fake' encrypted messages before key exchange completes",
+        "current_defense": "NONE",
+        "recommendation": "Require acknowledged_remote_key_id to match sender's active key before accepting message"
+      },
+      {
+        "gap": "Conversation Spam",
+        "severity": "LOW",
+        "scenario": "Attacker creates 10000 conversations with same target",
+        "current_defense": "NONE",
+        "recommendation": "Implement throttle: max 10 new conversations per 24 hours per actor"
+      }
+    ]
+  },
+  "section_4_trust_reset_mechanisms": {
+    "location": "apps/private_messages/models.py (ConversationParticipant) + views.py",
+    "current_mechanisms": [
+      {
+        "mechanism": "acknowledged_remote_key_id / acknowledged_remote_key_at",
+        "fields": [
+          "acknowledged_remote_key_id: CharField(max_length=128, blank=True)",
+          "acknowledged_remote_key_at: DateTimeField(null=True, blank=True)"
+        ],
+        "purpose": "Track which remote key ID the participant has verified",
+        "implementation": "In acknowledge_remote_key_view(), updates both fields to current timestamp + remote key ID",
+        "flow": "1. User clicks 'Validate Fingerprint' button\n2. acknowledge_remote_key_view() called\n3. Fetches active remote key\n4. Stores remote_key_id in acknowledged_remote_key_id\n5. Sets acknowledged_remote_key_at = timezone.now()",
+        "key_observations": [
+          "Acknowledgment is ONE-WAY - only stores recipient's acknowledgment of the other party's key",
+          "No bidirectional handshake - both parties can have different acknowledged states",
+          "Does NOT invalidate old messages sent with unacknowledged key",
+          "acknowledged_remote_key_id compared to has_remote_key_changed() for warning UI"
+        ],
+        "code_location": "views.py::acknowledge_remote_key_view()"
+      },
+      {
+        "mechanism": "Key Change Detection",
+        "function": "has_remote_key_changed(*, acknowledged_remote_key_id: str, remote_key_id: str) -> bool",
+        "implementation": "Normalizes both strings and checks if they differ",
+        "purpose": "Detect when participant has not acknowledged the current active key",
+        "usage_location": "views.py::_build_conversation_detail_context()",
+        "code_snippet": "key_change_acknowledged = not has_remote_key_changed(\n    acknowledged_remote_key_id=self_participant.acknowledged_remote_key_id,\n    remote_key_id=remote_key.key_id,\n)\nif not key_change_acknowledged:\n    key_change_warning = f\"@{other_participants[0].handle} has a new active safety key. Verify the fingerprint before trusting new messages.\""
+      }
+    ],
+    "gaps_in_trust_reset": [
+      {
+        "gap": "No Key Revocation Mechanism",
+        "severity": "CRITICAL",
+        "current_state": "No way to mark a compromised key as revoked",
+        "scenario": "If a browser is compromised, user has no way to revoke its public key - it remains valid for new messages",
+        "needed_field": "revoked_at: DateTimeField(null=True) on UserIdentityKey model"
+      },
+      {
+        "gap": "No Revocation Validation in Send",
+        "severity": "CRITICAL",
+        "current_state": "send_direct_encrypted_message() does NOT check if recipient_key is revoked",
+        "scenario": "Message can be sent using a key that was marked revoked",
+        "validation_needed": "if recipient_key.revoked_at is not None: raise ValidationError('Key revoked')"
+      },
+      {
+        "gap": "No Historical Key Verification",
+        "severity": "HIGH",
+        "current_state": "Old messages remain encrypted with rotated/revoked keys permanently",
+        "scenario": "Old messages cannot be re-verified after key compromise - no key history linked to messages",
+        "needed": "Store message.key_epoch + ability to retrieve historical keys for forensics"
+      },
+      {
+        "gap": "No Compromise Notification",
+        "severity": "MEDIUM",
+        "current_state": "No audit log when key is revoked or rotated",
+        "scenario": "User cannot see timeline of key changes for forensic investigation",
+        "needed": "Add compromise_detected_at + compromise_reason fields to track incidents"
+      },
+      {
+        "gap": "No Automated Key Expiration",
+        "severity": "MEDIUM",
+        "current_state": "Keys never expire - can be used indefinitely if never rotated",
+        "scenario": "Attacker can replay old messages using expired-but-still-active keys",
+        "needed": "Add max_age_days + rotation_required_at fields"
+      },
+      {
+        "gap": "No Conversation-Level Rekey",
+        "severity": "MEDIUM",
+        "current_state": "Cannot bulk-invalidate all keys for a conversation",
+        "scenario": "If conversation is compromised, no mechanism to invalidate all past+future messages",
+        "needed": "Conversation.compromised_at field + cascade to rekey all participants"
+      },
+      {
+        "gap": "One-Way Acknowledgment Only",
+        "severity": "MEDIUM",
+        "current_state": "acknowledged_remote_key_id is stored per ConversationParticipant, not symmetric",
+        "scenario": "Alice acknowledges Bob's key but Bob doesn't acknowledge Alice's - asymmetric trust state",
+        "needed": "Require explicit cross-acknowledgment before any message can be sent"
+      }
+    ]
+  },
+  "section_5_tests_related_to_key_lifecycle": {
+    "location": "apps/private_messages/tests.py",
+    "test_coverage": {
+      "key_registration": [
+        {
+          "test": "test_register_browser_identity_key_endpoint_creates_active_curve_key",
+          "purpose": "Verifies registration creates CURVE25519 key + deactivates old key",
+          "checks": [
+            "POST /messages/keys/register/ with key_id, public_key, fingerprint_hex",
+            "Validates response has ok=True",
+            "Checks new key is_active=True",
+            "Verifies old_key.is_active=False"
+          ]
+        },
+        {
+          "test": "test_register_browser_identity_key_endpoint_rejects_invalid_payload",
+          "purpose": "Validates input validation",
+          "checks": ["Rejects empty key_id, public_key, invalid fingerprint_hex"]
+        }
+      ],
+      "bootstrap_key": [
+        {
+          "test": "test_bootstrap_identity_key_creates_active_key",
+          "purpose": "Verifies bootstrap endpoint creates initial ED25519 key",
+          "checks": ["POST /messages/keys/bootstrap/ creates active UserIdentityKey"]
+        },
+        {
+          "test": "test_bootstrap_identity_key_updates_endpoint_returns_to_conversation",
+          "purpose": "Tests redirect after bootstrap",
+          "checks": ["Redirect includes 'next' parameter"]
+        }
+      ],
+      "key_acknowledgment": [
+        {
+          "test": "test_acknowledge_remote_key_clears_warning_contract",
+          "purpose": "Tests acknowledge_remote_key_view updates ConversationParticipant",
+          "checks": [
+            "acknowledged_remote_key_id set to remote key ID",
+            "acknowledged_remote_key_at set to timestamp"
+          ]
+        },
+        {
+          "test": "test_conversation_detail_shows_key_change_warning_for_unacknowledged_remote_key",
+          "purpose": "Tests warning shows when key ID differs from acknowledged ID",
+          "checks": [
+            "Sets acknowledged_remote_key_id to 'old-bob-key'",
+            "Creates new active key with 'bob-key-2'",
+            "Verifies warning contains 'Key change warning' and 'bob-key-2'"
+          ]
+        }
+      ],
+      "safety_fingerprint": [
+        {
+          "test": "test_safety_fingerprint_hex_is_deterministic",
+          "purpose": "Verifies fingerprint hash is deterministic",
+          "checks": [
+            "compute_safety_fingerprint_hex() returns same value for same inputs",
+            "Returns 64-char hex string"
+          ]
+        },
+        {
+          "test": "test_safety_fingerprint_hex_is_order_invariant",
+          "purpose": "Verifies fingerprint is symmetric (same for AB and BA)",
+          "checks": ["compute_safety_fingerprint_hex('alice', 'bob') == compute_safety_fingerprint_hex('bob', 'alice')"]
+        },
+        {
+          "test": "test_identicon_seed_is_deterministic_prefix_contract",
+          "purpose": "Verifies seed contract for visual fingerprint",
+          "checks": ["seed = fingerprint[:32]"]
+        }
+      ],
+      "missing_test_coverage": [
+        {
+          "gap": "No test for key compromise/revocation",
+          "needed": "Test marking key as revoked and validating send blocks revoked keys"
+        },
+        {
+          "gap": "No test for rate limiting on key registration",
+          "needed": "Test registering 10 keys in succession is blocked"
+        },
+        {
+          "gap": "No test for rate limiting on message send",
+          "needed": "Test sending 200 messages per minute is throttled"
+        },
+        {
+          "gap": "No test for duplicate fingerprint detection",
+          "needed": "Test registering same fingerprint twice is rejected"
+        },
+        {
+          "gap": "No test for key expiration",
+          "needed": "Test key older than X days cannot be used"
+        },
+        {
+          "gap": "No test for asymmetric acknowledgment scenarios",
+          "needed": "Test behavior when Alice acknowledges but Bob sends unacknowledged messages"
+        },
+        {
+          "gap": "No test for key rotation during active conversation",
+          "needed": "Test seamless key rotation without invalidating in-flight messages"
+        }
+      ]
+    }
+  },
+  "section_6_security_gaps_and_hardening_recommendations": {
+    "critical_gaps": [
+      {
+        "id": "GAP-001",
+        "title": "No Key Revocation Mechanism",
+        "severity": "CRITICAL",
+        "description": "No way to mark a key as compromised or revoked. A compromised browser can continue to send valid-looking messages.",
+        "current_code": "is_active: BooleanField (only TRUE/FALSE, no revoked_at field)",
+        "recommended_fix": "1. Add revoked_at: DateTimeField on UserIdentityKey\n2. Add revocation_reason: TextField\n3. In send_direct_encrypted_message(), check: if recipient_key.revoked_at: raise ValidationError('Key revoked')\n4. In receive flow, add warning if message uses revoked key",
+        "implementation_priority": "URGENT (Phase 6)",
+        "estimated_effort": "3-4 hours"
+      },
+      {
+        "id": "GAP-002",
+        "title": "No Rate Limiting on Key Registration",
+        "severity": "CRITICAL",
+        "description": "Attacker can register unlimited keys per actor per time window, enabling enumeration and replay attacks.",
+        "current_code": "register_browser_identity_key() has no throttle checks",
+        "recommended_fix": "1. Add RedisCache-based counter: f'pm_key_reg:{actor.id}:24h'\n2. Check count >= 5: reject with 429 Too Many Requests\n3. Log to abuse monitoring: log_interaction_metric(...,detail='key_registration_rate_limit_exceeded')",
+        "implementation_priority": "URGENT (Phase 6)",
+        "estimated_effort": "2-3 hours"
+      },
+      {
+        "id": "GAP-003",
+        "title": "No Rate Limiting on Message Send",
+        "severity": "CRITICAL",
+        "description": "Attacker can flood conversation with encrypted messages, causing DoS.",
+        "current_code": "store_encrypted_message() / send_direct_encrypted_message() has no throttle",
+        "recommended_fix": "1. Add counter: f'pm_msg_send:{actor.id}:{conversation.id}:1m'\n2. Check count >= 100: reject with 429\n3. Include message in EncryptedMessageEnvelope for rate-limit audit",
+        "implementation_priority": "URGENT (Phase 6)",
+        "estimated_effort": "2-3 hours"
+      },
+      {
+        "id": "GAP-004",
+        "title": "No Validation of Public Key Format",
+        "severity": "HIGH",
+        "description": "Arbitrary strings stored as public_key without cryptographic validation.",
+        "current_code": "public_key: TextField (no validation in register_browser_identity_key())",
+        "recommended_fix": "1. For CURVE25519 keys: validate base64 format + length\n2. Create validator: validate_curve25519_public_key(key_str)\n3. In register_browser_identity_key(): call validator before create\n4. Reject invalid keys with ValidationError",
+        "implementation_priority": "HIGH (Phase 6)",
+        "estimated_effort": "1-2 hours"
+      }
+    ],
+    "high_priority_gaps": [
+      {
+        "id": "GAP-005",
+        "title": "No Conversation-Level Key Management",
+        "severity": "HIGH",
+        "description": "Cannot revoke all keys for a conversation or mark it as compromised.",
+        "current_code": "No Conversation.compromised_at or .key_epoch_invalid_before field",
+        "recommended_fix": "1. Add Conversation.compromised_at: DateTimeField\n2. Add Conversation.rekey_required: BooleanField\n3. When set, invalidate all pending EncryptedMessageEnvelope with old key_epochs\n4. Notify all participants to rotate keys",
+        "implementation_priority": "HIGH (Phase 6-7)",
+        "estimated_effort": "4-6 hours"
+      },
+      {
+        "id": "GAP-006",
+        "title": "No Automatic Key Rotation/Expiration Policy",
+        "severity": "HIGH",
+        "description": "Keys never expire, allowing indefinite reuse even if rotated.",
+        "current_code": "UserIdentityKey has no max_age_days or rotation_required_at",
+        "recommended_fix": "1. Add max_age_days: PositiveIntegerField (default=90)\n2. Add rotation_required_at: DateTimeField (auto-computed in save())\n3. In send_direct_encrypted_message(), check: if key.rotation_required_at <= now(): warning\n4. Background task to mark keys rotation_required and notify users",
+        "implementation_priority": "HIGH (Phase 7)",
+        "estimated_effort": "3-4 hours"
+      },
+      {
+        "id": "GAP-007",
+        "title": "No Forensic Audit Trail for Key Changes",
+        "severity": "HIGH",
+        "description": "Cannot investigate timeline of key rotations during incident response.",
+        "current_code": "rotated_at is set but no reason/context recorded",
+        "recommended_fix": "1. Add UserIdentityKeyAuditLog model:\n   - actor, key_id, action (CREATED, ROTATED, REVOKED, COMPROMISED)\n   - reason, ip_address, user_agent, timestamp\n2. In ensure_active_identity_key() and register_browser_identity_key(): create audit entry\n3. Implement /messages/keys/audit/ endpoint for user to view history",
+        "implementation_priority": "HIGH (Phase 7)",
+        "estimated_effort": "5-6 hours"
+      },
+      {
+        "id": "GAP-008",
+        "title": "Asymmetric Key Acknowledgment",
+        "severity": "MEDIUM",
+        "description": "One participant can acknowledge a key while the other hasn't, leading to trust confusion.",
+        "current_code": "acknowledged_remote_key_id stored per ConversationParticipant (per-side, not shared)",
+        "recommended_fix": "1. Consider circular acknowledgment: require cross-verification before send\n2. OR: improve UI to show 'Bob has NOT yet acknowledged your key'\n3. Store: local.acknowledged_remote_key + remote.acknowledged_local_key (symmetric)\n4. In send, check if recipient has acknowledged sender's key",
+        "implementation_priority": "MEDIUM (Phase 6-7)",
+        "estimated_effort": "3-4 hours"
+      }
+    ],
+    "medium_priority_gaps": [
+      {
+        "id": "GAP-009",
+        "title": "Lack of Message Integrity Verification at Envelope Level",
+        "severity": "MEDIUM",
+        "description": "Envelope fields (key IDs, nonce) not cryptographically bound to plaintext.",
+        "current_code": "aad_hash stored but not validated on receive",
+        "recommended_fix": "1. On send: compute MAC(ciphertext || key_ids || nonce) using shared secret\n2. Store in aad_hash field\n3. On receive: validate MAC matches - reject if tampering detected",
+        "implementation_priority": "MEDIUM (Phase 7)",
+        "estimated_effort": "2-3 hours"
+      },
+      {
+        "id": "GAP-010",
+        "title": "No Cooldown Between Key Rotations",
+        "severity": "MEDIUM",
+        "description": "Attacker can trigger key rotation notifications repeatedly to probe user behavior.",
+        "current_code": "No throttle on ensure_active_identity_key(rotate=True)",
+        "recommended_fix": "1. Add last_rotation_requested_at to UserIdentityKey\n2. Check: if now() - last_rotation_requested_at < 30 seconds: reject\n3. Return existing key instead",
+        "implementation_priority": "MEDIUM (Phase 7)",
+        "estimated_effort": "1-2 hours"
+      },
+      {
+        "id": "GAP-011",
+        "title": "No Duplicate Fingerprint Detection Across Rotations",
+        "severity": "MEDIUM",
+        "description": "User could register same fingerprint multiple times by rotating back.",
+        "current_code": "No uniqueness check on fingerprint_hex per actor",
+        "recommended_fix": "1. Query UserIdentityKey.objects.filter(actor=actor, fingerprint_hex=fingerprint)\n2. Reject if active key exists with same fingerprint\n3. Warn if recently-rotated key has same fingerprint (30-day window)",
+        "implementation_priority": "MEDIUM (Phase 7)",
+        "estimated_effort": "1-2 hours"
+      },
+      {
+        "id": "GAP-012",
+        "title": "Conversation Spam - Unlimited New Conversations",
+        "severity": "LOW",
+        "description": "Attacker can create 1000s of conversations to spam a target.",
+        "current_code": "get_or_create_direct_conversation() has no spam check",
+        "recommended_fix": "1. Add counter: f'pm_conv_create:{actor.id}:24h'\n2. Limit to 10 new conversations per 24h per actor\n3. Return existing if already in conversation with target",
+        "implementation_priority": "LOW (Phase 7+)",
+        "estimated_effort": "1 hour"
+      }
+    ]
+  },
+  "section_7_implementation_roadmap": {
+    "phase_6_focus": "Critical security hardening",
+    "recommended_order": [
+      {
+        "step": 1,
+        "task": "Add Key Revocation Fields + Enum",
+        "affected_models": "UserIdentityKey",
+        "migration": "Add revoked_at, revocation_reason fields",
+        "priority": "URGENT"
+      },
+      {
+        "step": 2,
+        "task": "Implement Rate Limiting Layer",
+        "affected_files": "services.py, views.py",
+        "implementation": "Redis-based throttling decorator + rate_limit_check() helper",
+        "priority": "URGENT"
+      },
+      {
+        "step": 3,
+        "task": "Validate Public Key Format",
+        "affected_files": "services.py, forms.py",
+        "implementation": "Add crypto validators for CURVE25519 keys",
+        "priority": "URGENT"
+      },
+      {
+        "step": 4,
+        "task": "Revocation Validation in Send Path",
+        "affected_files": "services.py",
+        "implementation": "Add revocation check in send_direct_encrypted_message()",
+        "priority": "URGENT"
+      },
+      {
+        "step": 5,
+        "task": "Add Audit Logging",
+        "affected_models": "UserIdentityKeyAuditLog (new)",
+        "implementation": "Create audit trail model + logging in key management flows",
+        "priority": "HIGH"
+      },
+      {
+        "step": 6,
+        "task": "Conversation-Level Key Management",
+        "affected_models": "Conversation",
+        "implementation": "Add compromised_at field + rekey flow",
+        "priority": "HIGH"
+      }
+    ]
+  },
+  "appendix_a_code_references": {
+    "key_files_for_hardening": [
+      "apps/private_messages/services.py - primary key management logic",
+      "apps/private_messages/models.py - schema + indexes",
+      "apps/private_messages/views.py - HTTP/API endpoints for key ops",
+      "apps/private_messages/forms.py - input validation",
+      "apps/private_messages/security.py - fingerprint computation"
+    ],
+    "config_settings_needed": [
+      "PM_KEY_REGISTRATION_MAX_PER_24H = 5",
+      "PM_MESSAGE_SEND_MAX_PER_MINUTE = 100",
+      "PM_KEY_MAX_AGE_DAYS = 90",
+      "PM_KEY_ROTATION_COOLDOWN_SECONDS = 30",
+      "PM_CONVERSATION_CREATE_MAX_PER_24H = 10"
+    ]
+  }
+}

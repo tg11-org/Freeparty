@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Inbox · Freeparty{% endblock %}
+{% block content %}
+<h2 style="margin-top:0;">Inbox</h2>
+<p style="margin-top:0;color:var(--text2);">A single place to review unread DM threads and social notifications.</p>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin:0 0 1rem;">
+  <article style="padding:0.85rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);">
+    <p style="margin:0;color:var(--text2);font-size:0.82rem;">Inbox unread</p>
+    <p style="margin:0.2rem 0 0;font-size:1.4rem;font-weight:700;">{{ unread_notification_count|add:unread_message_count }}</p>
+  </article>
+  <article style="padding:0.85rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);">
+    <p style="margin:0;color:var(--text2);font-size:0.82rem;">DM threads unread</p>
+    <p style="margin:0.2rem 0 0;font-size:1.4rem;font-weight:700;">{{ unread_message_count }}</p>
+  </article>
+  <article style="padding:0.85rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);">
+    <p style="margin:0;color:var(--text2);font-size:0.82rem;">Notifications unread</p>
+    <p style="margin:0.2rem 0 0;font-size:1.4rem;font-weight:700;">{{ unread_notification_count }}</p>
+  </article>
+</div>
+
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+  <a class="btn {% if mode == 'summary' %}active{% endif %}" href="/inbox/{% if section != 'all' or show_unread_only %}?{% if section != 'all' %}section={{ section }}{% if show_unread_only %}&{% endif %}{% endif %}{% if show_unread_only %}filter=unread{% endif %}{% endif %}">Summary</a>
+  <a class="btn {% if mode == 'activity' %}active{% endif %}" href="/inbox/?mode=activity{% if section != 'all' %}&section={{ section }}{% endif %}{% if show_unread_only %}&filter=unread{% endif %}">Activity feed</a>
+</div>
+
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+  <a class="btn {% if section == 'all' %}active{% endif %}" href="/inbox/{% if show_unread_only %}?filter=unread{% endif %}">All</a>
+  <a class="btn {% if section == 'messages' %}active{% endif %}" href="/inbox/?section=messages{% if show_unread_only %}&filter=unread{% endif %}">Messages</a>
+  <a class="btn {% if section == 'notifications' %}active{% endif %}" href="/inbox/?section=notifications{% if show_unread_only %}&filter=unread{% endif %}">Notifications</a>
+  <a class="btn {% if show_unread_only %}active{% endif %}" href="/inbox/{% if section != 'all' %}?section={{ section }}&filter=unread{% else %}?filter=unread{% endif %}">Unread only</a>
+</div>
+
+{% if mode == 'activity' %}
+  <section style="margin-bottom:1rem;">
+    <h3 style="margin:0 0 0.65rem;">Activity feed</h3>
+    {% if activity_items %}
+      <div style="display:grid;gap:0.65rem;">
+        {% for item in activity_items %}
+          <article style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);">
+            <p style="margin:0 0 0.2rem;">
+              <strong>{{ item.title }}</strong>
+              {% if item.is_unread %}<span style="color:var(--accent);font-weight:600;">(new)</span>{% endif %}
+            </p>
+            <p style="margin:0;color:var(--text2);">{{ item.summary }}</p>
+            {% if item.kind == 'notification' and item.actor_label %}
+              <p style="margin:0.25rem 0 0;color:var(--text2);font-size:0.9rem;">From {{ item.actor_label }}</p>
+            {% endif %}
+            {% if item.kind == 'notification' and item.post_snippet %}
+              <p style="margin:0.2rem 0 0;color:var(--text2);font-size:0.9rem;">Post preview: {{ item.post_snippet }}</p>
+            {% endif %}
+            {% if item.kind == 'message' and item.latest_sender_context %}
+              <p style="margin:0.2rem 0 0;color:var(--text2);font-size:0.9rem;">{{ item.latest_sender_context }}</p>
+            {% endif %}
+            <p style="margin:0.3rem 0 0;font-size:0.84rem;color:var(--text2);">{{ item.meta }}</p>
+            <p style="margin:0.35rem 0 0;"><a href="{{ item.link_url }}">{{ item.link_label }}</a></p>
+          </article>
+        {% endfor %}
+      </div>
+      {% include "partials/pagination.html" with page_obj=activity_page_obj page_param="page" query_string=activity_query_string %}
+    {% else %}
+      <p style="color:var(--text2);margin:0.6rem 0 0;">No activity for this filter yet.</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+{% if mode == 'summary' and section != 'notifications' %}
+  <section style="margin-bottom:1.1rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+      <h3 style="margin:0;">Messages</h3>
+      <a class="btn" href="/messages/{% if show_unread_only %}?filter=unread{% endif %}">Open message list</a>
+    </div>
+    {% if not pm_enabled %}
+      <p style="color:var(--text2);">Private messaging is disabled in this environment.</p>
+    {% elif conversations %}
+      <div style="display:grid;gap:0.65rem;margin-top:0.65rem;">
+        {% for conversation in conversations %}
+          <article style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
+            <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;">
+              <div>
+                {% for participant in conversation.participants.all %}
+                  {% if participant.actor.id != user.actor.id %}
+                    {% with display_name=participant.actor.user.display_name %}
+                      <a href="{% url 'private_messages:detail' conversation.id %}" class="identity-stack" style="text-decoration:none;">
+                        <span class="identity-name">{{ display_name|default:participant.actor.handle }}</span>
+                        <span class="identity-handle">@{{ participant.actor.handle }}</span>
+                      </a>
+                    {% endwith %}
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% if conversation.unread_message_count %}
+                <span class="nav-badge">{{ conversation.unread_message_count }} new</span>
+              {% endif %}
+            </div>
+            <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.9rem;">{{ conversation.total_message_count }} encrypted envelope{{ conversation.total_message_count|pluralize }} stored</p>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="color:var(--text2);margin-top:0.65rem;">No message activity for this filter yet.</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+{% if mode == 'summary' and section != 'messages' %}
+  <section>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+      <h3 style="margin:0;">Notifications</h3>
+      <a class="btn" href="/notifications/{% if show_unread_only %}?type=unread{% endif %}">Open notifications</a>
+    </div>
+    {% if notifications %}
+      <div style="display:grid;gap:0.65rem;margin-top:0.65rem;">
+        {% for item in notifications %}
+          <article style="padding:0.8rem;border-left:3px solid {% if item.read_at %}var(--border){% else %}var(--accent){% endif %};background:var(--surface2);border-radius:10px;">
+            <p style="margin:0 0 0.25rem;"><strong>{{ item.notification_type }}</strong> · {{ item.created_at|timesince }} ago {% if not item.read_at %}<span style="color:var(--accent);font-weight:600;">(new)</span>{% endif %}</p>
+            {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
+            {% if item.source_post %}<p style="margin:0.35rem 0 0;"><a href="/posts/{{ item.source_post.id }}/">Open related post</a></p>{% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="color:var(--text2);margin-top:0.65rem;">No notifications for this filter yet.</p>
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

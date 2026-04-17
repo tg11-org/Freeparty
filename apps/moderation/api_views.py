@@ -29,6 +29,7 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
         actor_q = self.request.GET.get("actor", "").strip()
         post_q = self.request.GET.get("post", "").strip()
         target_type = self.request.GET.get("target", "").strip()
+        owner_state = self.request.GET.get("owner_state", "").strip()
         date_from = self.request.GET.get("date_from", "").strip()
         date_to = self.request.GET.get("date_to", "").strip()
 
@@ -68,6 +69,10 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
             reports = reports.filter(target_actor__isnull=False)
         elif target_type == "post":
             reports = reports.filter(target_post__isnull=False)
+        if owner_state == "assigned":
+            reports = reports.filter(assigned_to__isnull=False)
+        elif owner_state == "unassigned":
+            reports = reports.filter(assigned_to__isnull=True)
         return reports
 
     def get_serializer_class(self):
@@ -81,12 +86,39 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = ReportStatusUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        if report.severity in {Report.Severity.HIGH, Report.Severity.CRITICAL} and not report.evidence_hash:
+            return Response({"detail": "High-severity reports require evidence before status changes."}, status=status.HTTP_400_BAD_REQUEST)
+
         report.status = serializer.validated_data["status"]
         report.reviewed_at = timezone.now()
         report.reviewed_by = request.user
-        report.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
+        if report.responded_at is None:
+            report.responded_at = timezone.now()
+        report.save(update_fields=["status", "reviewed_at", "reviewed_by", "responded_at", "updated_at"])
 
         return Response(ReportDetailSerializer(report).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="analytics/sla")
+    def sla_analytics(self, request):
+        reports = self.get_queryset().exclude(first_assigned_at__isnull=True)
+        completed = [
+            int((report.responded_at - report.first_assigned_at).total_seconds() / 60)
+            for report in reports
+            if report.responded_at and report.first_assigned_at
+        ]
+        completed.sort()
+        p50 = completed[len(completed) // 2] if completed else 0
+        p95_index = int(len(completed) * 0.95) - 1 if completed else -1
+        p95 = completed[max(p95_index, 0)] if completed else 0
+        return Response(
+            {
+                "completed_count": len(completed),
+                "p50_response_minutes": p50,
+                "p95_response_minutes": p95,
+                "sla_breached_count": sum(1 for report in reports if report.sla_breached()),
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="actions")
     def create_action(self, request, pk=None):
@@ -94,19 +126,25 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = CreateModerationActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        notes = serializer.validated_data.get("notes", "")
+        if notes.strip():
+            report.stamp_evidence_hash(report.description, notes)
+
         action = ModerationAction.objects.create(
             report=report,
             actor_target=report.target_actor,
             post_target=report.target_post,
             moderator=request.user,
             action_type=serializer.validated_data["action_type"],
-            notes=serializer.validated_data.get("notes", ""),
+            notes=notes,
         )
 
         report.status = Report.Status.ACTIONED
         report.reviewed_at = timezone.now()
         report.reviewed_by = request.user
-        report.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
+        if report.responded_at is None:
+            report.responded_at = timezone.now()
+        report.save(update_fields=["status", "reviewed_at", "reviewed_by", "responded_at", "evidence_hash", "updated_at"])
 
         return Response({"id": str(action.id)}, status=status.HTTP_201_CREATED)
 

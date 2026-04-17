@@ -1,9 +1,10 @@
 from datetime import datetime, time
+from statistics import median
 from uuid import UUID
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -72,6 +73,8 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 	actor_q = request.GET.get("actor", "").strip()
 	post_q = request.GET.get("post", "").strip()
 	target_type = request.GET.get("target", "").strip()
+	owner_state = request.GET.get("owner_state", "").strip()
+	sla_breached = request.GET.get("sla_breached", "").strip().lower()
 	date_from = request.GET.get("date_from", "").strip()
 	date_to = request.GET.get("date_to", "").strip()
 	reports = Report.objects.select_related("reporter", "target_actor", "target_post", "reviewed_by").order_by("-created_at")
@@ -105,6 +108,12 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 		reports = reports.filter(target_actor__isnull=False)
 	elif target_type == "post":
 		reports = reports.filter(target_post__isnull=False)
+	if owner_state == "assigned":
+		reports = reports.filter(assigned_to__isnull=False)
+	elif owner_state == "unassigned":
+		reports = reports.filter(assigned_to__isnull=True)
+	if sla_breached == "true":
+		reports = [report for report in reports if report.sla_breached()]
 
 	return render(request, "moderation/dashboard.html", {
 		"reports": reports,
@@ -117,6 +126,8 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 		"actor_q": actor_q,
 		"post_q": post_q,
 		"target_type": target_type,
+		"owner_state": owner_state,
+		"sla_breached": sla_breached,
 		"date_from": date_from,
 		"date_to": date_to,
 	})
@@ -152,14 +163,33 @@ def moderation_report_update_view(request: HttpRequest, report_id: str) -> HttpR
 	action_type = request.POST.get("action_type")
 	notes = request.POST.get("notes", "")
 	internal_note = request.POST.get("internal_note", "")
+	assigned_to = request.POST.get("assigned_to", "").strip()
+
+	if assigned_to:
+		from apps.accounts.models import User
+
+		report.assigned_to = User.objects.filter(id=assigned_to, is_staff=True).first()
+		if report.assigned_to and report.first_assigned_at is None:
+			report.first_assigned_at = timezone.now()
+
+	if new_status and report.severity in {Report.Severity.HIGH, Report.Severity.CRITICAL}:
+		if not report.evidence_hash and not notes.strip() and not internal_note.strip():
+			messages.error(request, "High-severity reports require evidence notes before status changes.")
+			return redirect("moderation:report-detail", report_id=report.id)
 
 	if new_status in {choice for choice, _ in Report.Status.choices}:
+		if notes.strip() or internal_note.strip():
+			report.stamp_evidence_hash(report.description, notes, internal_note)
 		report.status = new_status
 		report.reviewed_at = timezone.now()
 		report.reviewed_by = request.user
-		report.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
+		if report.responded_at is None:
+			report.responded_at = timezone.now()
+		report.save(update_fields=["status", "reviewed_at", "reviewed_by", "assigned_to", "first_assigned_at", "responded_at", "evidence_hash", "updated_at"])
 
 	if action_type in {choice for choice, _ in ModerationAction.ActionType.choices}:
+		if notes.strip() or internal_note.strip():
+			report.stamp_evidence_hash(report.description, notes, internal_note)
 		ModerationAction.objects.create(
 			report=report,
 			actor_target=report.target_actor,
@@ -172,13 +202,47 @@ def moderation_report_update_view(request: HttpRequest, report_id: str) -> HttpR
 			report.status = Report.Status.ACTIONED
 			report.reviewed_at = timezone.now()
 			report.reviewed_by = request.user
-			report.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
+			if report.responded_at is None:
+				report.responded_at = timezone.now()
+			report.save(update_fields=["status", "reviewed_at", "reviewed_by", "responded_at", "evidence_hash", "updated_at"])
 
 	if internal_note.strip():
 		ModerationNote.objects.create(report=report, author=request.user, body=internal_note.strip())
 
 	messages.success(request, "Moderation update saved.")
 	return redirect("moderation:report-detail", report_id=report.id)
+
+
+@login_required
+def moderation_sla_analytics_view(request: HttpRequest) -> HttpResponse:
+	if not request.user.is_staff:
+		messages.error(request, "Moderator access required.")
+		return redirect("home")
+
+	severity = request.GET.get("severity", "").strip()
+	reports = Report.objects.exclude(first_assigned_at__isnull=True)
+	if severity in {choice for choice, _ in Report.Severity.choices}:
+		reports = reports.filter(severity=severity)
+
+	completed = [
+		int((report.responded_at - report.first_assigned_at).total_seconds() / 60)
+		for report in reports
+		if report.responded_at and report.first_assigned_at
+	]
+	sorted_minutes = sorted(completed)
+	p50 = median(sorted_minutes) if sorted_minutes else 0
+	p95_index = int(len(sorted_minutes) * 0.95) - 1 if sorted_minutes else -1
+	p95 = sorted_minutes[max(p95_index, 0)] if sorted_minutes else 0
+	breached = sum(1 for report in reports if report.sla_breached())
+	return JsonResponse(
+		{
+			"severity": severity or "all",
+			"completed_count": len(sorted_minutes),
+			"p50_response_minutes": p50,
+			"p95_response_minutes": p95,
+			"sla_breached_count": breached,
+		}
+	)
 
 
 @login_required

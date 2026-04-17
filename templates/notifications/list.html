@@ -24,7 +24,16 @@
     {% for item in group.items %}
       <article style="padding:0.6rem 0.65rem;border-left:3px solid {% if item.read_at %}var(--border){% else %}var(--accent){% endif %};background:var(--surface2);border-radius:8px;margin-bottom:0.55rem;">
         <p style="margin:0 0 0.25rem;"><strong>{{ item.notification_type }}</strong> · {{ item.created_at|timesince }} ago {% if not item.read_at %}<span style="color:var(--accent);font-weight:600;">(new)</span>{% endif %}</p>
-        {% if item.source_actor %}<p>From @{{ item.source_actor.handle }}</p>{% endif %}
+        {% if item.source_actor %}
+          {% with display_name=item.source_actor.user.display_name %}
+            <div class="identity-stack" style="margin:0 0 0.35rem;">
+              <span class="identity-name">{{ display_name|default:item.source_actor.handle }}</span>
+              {% if display_name %}
+                <span class="identity-handle">@{{ item.source_actor.handle }}</span>
+              {% endif %}
+            </div>
+          {% endwith %}
+        {% endif %}
         {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post.content|truncatechars:80 }}</a></p>{% endif %}
         {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
         {% if not item.read_at %}
@@ -41,7 +50,16 @@
   {% for item in notifications %}
     <article style="padding:0.6rem 0.65rem;border-left:3px solid {% if item.read_at %}var(--border){% else %}var(--accent){% endif %};background:var(--surface2);border-radius:8px;margin-bottom:0.55rem;">
       <p style="margin:0 0 0.25rem;"><strong>{{ item.notification_type }}</strong> · {{ item.created_at|timesince }} ago {% if not item.read_at %}<span style="color:var(--accent);font-weight:600;">(new)</span>{% endif %}</p>
-      {% if item.source_actor %}<p>From @{{ item.source_actor.handle }}</p>{% endif %}
+      {% if item.source_actor %}
+        {% with display_name=item.source_actor.user.display_name %}
+          <div class="identity-stack" style="margin:0 0 0.35rem;">
+            <span class="identity-name">{{ display_name|default:item.source_actor.handle }}</span>
+            {% if display_name %}
+              <span class="identity-handle">@{{ item.source_actor.handle }}</span>
+            {% endif %}
+          </div>
+        {% endwith %}
+      {% endif %}
       {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post.content|truncatechars:80 }}</a></p>{% endif %}
       {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
       {% if not item.read_at %}

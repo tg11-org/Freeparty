@@ -1,4 +1,5 @@
 import uuid
+import hashlib
 
 from django.db import models
 from django.utils import timezone
@@ -41,6 +42,11 @@ class Report(TimeStampedModel):
 	status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
 	reviewed_at = models.DateTimeField(null=True, blank=True)
 	reviewed_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_reports")
+	assigned_to = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_reports")
+	first_assigned_at = models.DateTimeField(null=True, blank=True)
+	responded_at = models.DateTimeField(null=True, blank=True)
+	sla_target_minutes = models.PositiveIntegerField(default=0)
+	evidence_hash = models.CharField(max_length=64, blank=True)
 
 	@classmethod
 	def normalize_reason(cls, reason: str) -> str:
@@ -71,6 +77,44 @@ class Report(TimeStampedModel):
 			cls.Reason.OTHER: cls.Severity.MEDIUM,
 		}
 		return mapping[normalized]
+
+	@classmethod
+	def sla_target_for_severity(cls, severity: str) -> int:
+		mapping = {
+			cls.Severity.LOW: 24 * 60,
+			cls.Severity.MEDIUM: 8 * 60,
+			cls.Severity.HIGH: 2 * 60,
+			cls.Severity.CRITICAL: 30,
+		}
+		return mapping.get(severity, 8 * 60)
+
+	def stamp_evidence_hash(self, *parts: str) -> str:
+		joined = "|".join((part or "").strip() for part in parts if (part or "").strip())
+		if not joined:
+			return self.evidence_hash
+		self.evidence_hash = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+		return self.evidence_hash
+
+	def sla_breached(self) -> bool:
+		if not self.sla_target_minutes:
+			return False
+		if self.responded_at is not None:
+			return False
+		deadline_anchor = self.first_assigned_at or self.created_at
+		if deadline_anchor is None:
+			return False
+		deadline = deadline_anchor + timezone.timedelta(minutes=self.sla_target_minutes)
+		return timezone.now() > deadline
+
+	def save(self, *args, **kwargs):
+		self.reason = self.normalize_reason(self.reason)
+		self.severity = self.severity_for_reason(self.reason)
+		if not self.sla_target_minutes:
+			self.sla_target_minutes = self.sla_target_for_severity(self.severity)
+		update_fields = kwargs.get("update_fields")
+		if update_fields is not None:
+			kwargs["update_fields"] = set(update_fields) | {"reason", "severity", "sla_target_minutes"}
+		super().save(*args, **kwargs)
 
 
 class ModerationAction(TimeStampedModel):

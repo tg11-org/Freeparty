@@ -18,11 +18,11 @@ class ImmutableAdminMixin:
 
 @admin.register(Report)
 class ReportAdmin(admin.ModelAdmin):
-	list_display = ("id", "reporter", "reason", "status", "reviewed_by", "reviewed_at")
-	list_filter = ("status", "reason", "reviewed_by")
+	list_display = ("id", "reporter", "reason", "severity", "status", "assigned_to", "reviewed_by", "reviewed_at")
+	list_filter = ("status", "reason", "severity", "reviewed_by", "assigned_to")
 	search_fields = ("reason", "description", "reporter__handle", "target_actor__handle", "target_post__id")
 	ordering = ("-created_at",)
-	readonly_fields = ("id", "reporter", "target_actor", "target_post", "reason", "severity", "description", "created_at", "updated_at")
+	readonly_fields = ("id", "reporter", "target_actor", "target_post", "reason", "severity", "description", "evidence_hash", "created_at", "updated_at")
 	fields = (
 		"id",
 		"reporter",
@@ -32,6 +32,11 @@ class ReportAdmin(admin.ModelAdmin):
 		"severity",
 		"description",
 		"status",
+		"assigned_to",
+		"first_assigned_at",
+		"responded_at",
+		"sla_target_minutes",
+		"evidence_hash",
 		"reviewed_by",
 		"reviewed_at",
 		"created_at",

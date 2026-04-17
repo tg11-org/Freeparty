@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
+import re
+import socket
+from urllib.parse import quote, urlparse
+
 from celery import shared_task
+from django.conf import settings
 
 from apps.core.services.task_observability import observe_celery_task
 from apps.core.services.task_reliability import (
@@ -77,6 +83,203 @@ def process_media_attachment(
                 correlation_id=correlation_id,
                 idempotency_key=idempotency_key,
                 payload={"attachment_id": attachment_id},
+                attempt=retries + 1,
+                max_retries=max_retries,
+            )
+            raise
+
+
+# ── Link unfurl helpers ────────────────────────────────────────────────────────
+
+_URL_RE = re.compile(r'https?://[^\s"\'<>]{10,}', re.IGNORECASE)
+_PRIVATE_NETS = [
+    ipaddress.ip_network(net) for net in (
+        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "127.0.0.0/8", "169.254.0.0/16", "::1/128", "fc00::/7",
+    )
+]
+# Cloud metadata endpoints that must be blocked
+_BLOCKED_HOSTS = {"169.254.169.254", "metadata.google.internal", "metadata.internal"}
+_OEMBED_PROVIDERS = {
+    "youtube.com": "https://www.youtube.com/oembed",
+    "youtu.be": "https://www.youtube.com/oembed",
+    "vimeo.com": "https://vimeo.com/api/oembed.json",
+}
+
+
+def _is_ssrf_target(url: str) -> bool:
+    """Return True if the URL resolves to a private/reserved address."""
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if not host or host in _BLOCKED_HOSTS:
+        return True
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(host))
+        return any(addr in net for net in _PRIVATE_NETS)
+    except (socket.gaierror, ValueError):
+        return True  # unresolvable → block
+
+
+def _fetch_unfurl(url: str) -> dict:
+    """Fetch OG/oEmbed metadata for *url*. Returns a dict of fields."""
+    import urllib.request
+
+    if _is_ssrf_target(url):
+        return {"fetch_error": "SSRF blocked"}
+
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().lstrip("www.")
+
+    headers = {
+        "User-Agent": "Freepartybot/1.0 (+https://freeparty.local; link preview)",
+        "Accept": "text/html,application/json;q=0.9,*/*;q=0.5",
+    }
+
+    # ── oEmbed path for known video providers ───────────────────────────────
+    for provider_host, oembed_endpoint in _OEMBED_PROVIDERS.items():
+        if host.endswith(provider_host):
+            try:
+                import json
+                oembed_url = f"{oembed_endpoint}?url={quote(url, safe='')}&format=json&maxwidth=680"
+                req = urllib.request.Request(oembed_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read(256 * 1024))
+                result: dict = {
+                    "url": url,
+                    "title": data.get("title", "")[:500],
+                    "site_name": data.get("provider_name", "")[:200],
+                    "description": "",
+                    "thumbnail_url": data.get("thumbnail_url", "")[:2000],
+                    "embed_html": "",
+                }
+                # Only embed iframe for YouTube/Vimeo — sanitise to avoid XSS
+                if data.get("type") in ("video", "rich") and data.get("html"):
+                    html = data["html"]
+                    if "<iframe" in html and "javascript" not in html.lower():
+                        result["embed_html"] = html
+                return result
+            except Exception as exc:  # noqa: BLE001
+                return {"fetch_error": f"oEmbed error: {exc}"[:500]}
+
+    # ── Generic OG scrape ───────────────────────────────────────────────────
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            content_type = resp.headers.get("Content-Type", "")
+            if "text/html" not in content_type:
+                return {"fetch_error": "Non-HTML content-type"}
+            html = resp.read(128 * 1024).decode("utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        return {"fetch_error": f"HTTP error: {exc}"[:500]}
+
+    def _meta(prop: str) -> str:
+        m = re.search(
+            rf'<meta[^>]+(?:property|name)=["\']og:{prop}["\'][^>]+content=["\']([^"\']*)["\']',
+            html, re.IGNORECASE
+        ) or re.search(
+            rf'<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']og:{prop}["\']',
+            html, re.IGNORECASE
+        )
+        return m.group(1).strip() if m else ""
+
+    title = _meta("title") or re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
+    if hasattr(title, "group"):
+        title = title.group(1).strip()
+    title = (title or "")[:500]
+
+    return {
+        "url": url,
+        "title": title,
+        "description": _meta("description")[:2000],
+        "thumbnail_url": _meta("image")[:2000],
+        "site_name": _meta("site_name")[:200],
+        "embed_html": "",
+    }
+
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def unfurl_post_link(self, post_id: str, correlation_id: str | None = None) -> None:
+    """Fetch link preview metadata for the first URL in a post."""
+    if not getattr(settings, "FEATURE_LINK_UNFURL_ENABLED", False):
+        return
+
+    idempotency_key = f"link_unfurl:{post_id}"
+    execution, should_skip = start_task_execution(
+        task_name=self.name,
+        idempotency_key=idempotency_key,
+        task_id=getattr(self.request, "id", ""),
+        correlation_id=correlation_id,
+        payload={
+            "post_id": post_id,
+            "correlation_id": correlation_id or "",
+            "args": [post_id],
+            "kwargs": {"correlation_id": correlation_id} if correlation_id else {},
+        },
+    )
+    if should_skip:
+        return
+
+    with observe_celery_task(self, correlation_id=correlation_id):
+        from apps.posts.models import LinkPreview, Post
+
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            mark_task_execution_succeeded(execution)
+            return
+
+        # Skip if preview already fetched
+        if LinkPreview.objects.filter(post_id=post_id).exists():
+            mark_task_execution_succeeded(execution)
+            return
+
+        match = _URL_RE.search(post.content or "")
+        if not match:
+            mark_task_execution_succeeded(execution)
+            return
+
+        try:
+            url = match.group(0).rstrip(".,;:!?)")
+            data = _fetch_unfurl(url)
+
+            LinkPreview.objects.update_or_create(
+                post_id=post_id,
+                defaults={
+                    "url": url,
+                    "title": data.get("title", ""),
+                    "description": data.get("description", ""),
+                    "thumbnail_url": data.get("thumbnail_url", ""),
+                    "site_name": data.get("site_name", ""),
+                    "embed_html": data.get("embed_html", ""),
+                    "fetch_error": data.get("fetch_error", ""),
+                },
+            )
+            mark_task_execution_succeeded(execution)
+        except Exception as exc:
+            retries = int(getattr(self.request, "retries", 0))
+            max_retries = int(getattr(self, "max_retries", 0))
+            mark_task_execution_failed(
+                execution=execution,
+                error=exc,
+                is_terminal=retries >= max_retries,
+                terminal_reason="max_retries_exceeded" if retries >= max_retries else "",
+                task_name=self.name,
+                task_id=getattr(self.request, "id", ""),
+                correlation_id=correlation_id,
+                idempotency_key=idempotency_key,
+                payload={
+                    "post_id": post_id,
+                    "correlation_id": correlation_id or "",
+                    "args": [post_id],
+                    "kwargs": {"correlation_id": correlation_id} if correlation_id else {},
+                },
                 attempt=retries + 1,
                 max_retries=max_retries,
             )

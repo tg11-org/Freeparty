@@ -1,10 +1,27 @@
 # Freeparty Project Status
 
-Last Updated: 2026-04-14 (Phase 4 - Increment 4.5 PM/E2E Foundation Slice 1)
+Last Updated: 2026-04-16 (Phase 6 complete, Phase 7 kickoff ready)
 
 ## Snapshot
 
 Freeparty is a centralized-first, federation-ready Django social platform with working auth, actor profiles, posting, social interactions, moderation, notifications, timeline rendering, Docker operations, and major accessibility controls.
+
+## Phase 6 Progress
+
+- Mailcow SMTP baseline is in place with environment-driven settings, an SMTP connectivity/auth check command, and production notes for DNS and sender validation.
+- Transactional account email now runs through Celery-backed SMTP tasks (verification, password-reset links, and system notices) with retry/backoff and sender-metadata validation coverage.
+- High-frequency social actions now support async follow/unfollow and private follow-request approval flows without forcing full-page reloads.
+- DM live updates now use deterministic cursor polling with backlog recovery and an optional feature-flagged websocket path, while retaining polling as fallback.
+- Post sharing now supports outbound OpenGraph and Twitter card metadata, and inbound link unfurling with SSRF safeguards and preview-card rendering behind a feature flag.
+- Inbox unification slice 3 enriches activity cards with source actor/post previews for notifications and latest-sender context for DM thread events.
+- Device/key UX now includes explicit DM-side key inventory (server local/remote key lists, acknowledged key marker, browser-private-key status) with recovery guidance.
+- Observability expansion now includes structured SMTP delivery attempt/failure/retry logs and structured async interaction/DM polling latency+failure metrics.
+
+## Current Focus (Phase 7)
+
+- Phase 7 roadmap is now authored in `phases_phase_7.md` with increments 7.0 through 7.7.
+- Initial execution focus is PM security-gate closure, async dead-letter maturity, moderation escalation workflow, and federation allowlist pilot readiness.
+- Operational readiness work is now centered on dashboard ownership, alert tuning, and failure drill playbooks before broader beta exposure.
 
 ## Runtime and Infrastructure
 

@@ -3,6 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# Per-page OpenGraph / Twitter Card override slot #}
+    {% block og_meta %}
+      <meta property="og:site_name" content="Freeparty">
+      <meta property="og:type" content="website">
+      <meta property="og:url" content="{{ request.build_absolute_uri }}">
+      <meta property="og:title" content="{% block og_title %}Freeparty{% endblock %}">
+      <meta name="twitter:card" content="summary">
+      <meta name="twitter:site" content="@freeparty">
+    {% endblock %}
     <title>{% block title %}Freeparty{% endblock %}</title>
     <script>
       (function () {
@@ -102,6 +111,26 @@
       header h1 { margin: 0 0 0.5rem; font-size: 1.4rem; letter-spacing: 0.01em; }
       nav { display: flex; flex-wrap: wrap; gap: 0.3rem 0.75rem; align-items: center; }
       nav a { color: #fff; text-decoration: underline; text-underline-offset: 3px; font-size: 0.9rem; }
+      .nav-link-with-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+      .nav-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.4rem;
+        padding: 0.1rem 0.38rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.45);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
       .search-bar { display: flex; gap: 0.4rem; margin-top: 0.7rem; }
       .search-bar input {
         flex: 1; padding: 0.3rem 0.6rem; border-radius: 999px;
@@ -181,6 +210,30 @@
       .post-meta { font-size: 0.82rem; color: var(--text2); margin-bottom: 0.3rem; }
       .post-meta a { color: var(--text); font-weight: 700; text-decoration: none; }
       .post-meta a:hover { text-decoration: underline; }
+      .identity-stack {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.05rem;
+        min-width: 0;
+      }
+      .identity-name {
+        color: var(--text);
+        font-weight: 700;
+        text-decoration: none;
+        line-height: 1.2;
+      }
+      .identity-name:hover { text-decoration: underline; }
+      .identity-handle {
+        color: var(--text2);
+        font-size: 0.82rem;
+        text-decoration: none;
+        line-height: 1.2;
+      }
+      .identity-handle:hover {
+        color: var(--accent);
+        text-decoration: underline;
+      }
       .post-content { margin: 0 0 0.5rem; word-break: break-word; white-space: pre-wrap; }
       .post-content a { color: var(--accent); }
       .post-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
@@ -263,10 +316,11 @@
         {% if user.is_authenticated %}
           <a href="/posts/new/">Post</a>
           <a href="/actors/{{ user.actor.handle }}/">My Profile</a>
-          <a href="/messages/">Messages</a>
+          <a class="nav-link-with-badge" href="/inbox/">Inbox{% if nav_unread_inbox_count %}<span class="nav-badge">{{ nav_unread_inbox_count }}</span>{% endif %}</a>
+          <a class="nav-link-with-badge" href="/messages/">Messages{% if nav_unread_message_count %}<span class="nav-badge">{{ nav_unread_message_count }}</span>{% endif %}</a>
           <a href="/social/bookmarks/">Bookmarks</a>
           <a href="/social/follow-requests/">Requests</a>
-          <a href="/notifications/">Notifications</a>
+          <a class="nav-link-with-badge" href="/notifications/">Notifications{% if nav_unread_notification_count %}<span class="nav-badge">{{ nav_unread_notification_count }}</span>{% endif %}</a>
           {% if user.is_staff %}<a href="/moderation/">Moderation</a>{% endif %}
           {% if user.is_staff %}<a href="/admin/">Django Admin</a>{% endif %}
           <a href="/accounts/logout/">Logout</a>
@@ -459,9 +513,9 @@
 
       function updatePostActionUI(form, actionType, payload) {
         var button = form.querySelector("[data-action-button='" + actionType + "']");
-        if (!button) return;
-        var icon = button.querySelector("[data-action-icon='" + actionType + "']");
-        var count = button.querySelector("[data-action-count='" + actionType + "']");
+        if (!button && actionType !== "follow-request") return;
+        var icon = button ? button.querySelector("[data-action-icon='" + actionType + "']") : null;
+        var count = button ? button.querySelector("[data-action-count='" + actionType + "']") : null;
 
         if (actionType === "like") {
           var liked = !!payload.liked;
@@ -480,13 +534,37 @@
           var bookmarked = !!payload.bookmarked;
           button.classList.toggle("active", bookmarked);
           if (icon) icon.textContent = bookmarked ? "📌" : "🔖";
+          return;
+        }
+        if (actionType === "follow") {
+          button.classList.toggle("active", !!payload.button_active);
+          if (payload.button_label) button.textContent = payload.button_label;
+          if (payload.next_action) {
+            var handle = form.getAttribute("data-target-handle") || "";
+            form.action = "/social/" + payload.next_action + "/" + handle + "/";
+          }
+          return;
+        }
+        if (actionType === "follow-request") {
+          if (!payload.remove_request_row) return;
+          var followId = form.getAttribute("data-follow-id") || payload.follow_id || "";
+          var row = document.querySelector("[data-follow-request-row='" + followId + "']");
+          if (row) row.remove();
+          var remaining = document.querySelectorAll("[data-follow-request-row]");
+          if (!remaining.length) {
+            var emptyNode = document.getElementById("follow-request-empty");
+            if (emptyNode) {
+              emptyNode.style.display = "block";
+              if (payload.empty_message) emptyNode.textContent = payload.empty_message;
+            }
+          }
         }
       }
 
       document.addEventListener("submit", function (evt) {
         var form = evt.target;
         if (!(form instanceof HTMLFormElement)) return;
-        if (form.getAttribute("data-async-post-action") !== "1") return;
+        if (form.getAttribute("data-async-post-action") !== "1" && form.getAttribute("data-async-action") !== "1") return;
         evt.preventDefault();
 
         var actionType = form.getAttribute("data-action-type") || "";
@@ -516,12 +594,118 @@
               return;
             }
             updatePostActionUI(form, actionType, result.payload);
-            statusNode.textContent = "";
+            statusNode.textContent = result.payload.message || "";
           })
           .catch(function () {
             statusNode.textContent = "Network error while updating.";
           });
       });
+    })();
+    </script>
+
+    {# ── Share Sheet ──────────────────────────────────────────────── #}
+    <div id="share-sheet-overlay" role="dialog" aria-modal="true" aria-label="Share post"
+      style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.45);align-items:flex-end;justify-content:center;">
+      <div id="share-sheet-panel"
+        style="background:var(--surface);border-radius:1rem 1rem 0 0;padding:1.25rem 1rem 2rem;width:100%;max-width:480px;box-shadow:0 -4px 24px rgba(0,0,0,0.18);position:relative;">
+        <button type="button" onclick="closeShareSheet()"
+          style="position:absolute;top:0.75rem;right:1rem;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--text2);" aria-label="Close">✕</button>
+        <p style="margin:0 0 1rem;font-weight:700;font-size:1.05rem;">Share post</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:0.75rem;">
+          <button type="button" id="share-copy-btn" onclick="shareSheetCopyLink()"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;cursor:pointer;font-size:0.82rem;color:var(--text);">
+            🔗<span>Copy link</span>
+          </button>
+          <a id="share-email-btn" href="#"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;font-size:0.82rem;color:var(--text);text-decoration:none;">
+            ✉️<span>Email</span>
+          </a>
+          <a id="share-sms-btn" href="#"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;font-size:0.82rem;color:var(--text);text-decoration:none;">
+            💬<span>SMS</span>
+          </a>
+          <a id="share-dm-btn" href="#"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;font-size:0.82rem;color:var(--text);text-decoration:none;">
+            📩<span>DM on Freeparty</span>
+          </a>
+          <a id="share-twitter-btn" href="#" target="_blank" rel="noopener noreferrer"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;font-size:0.82rem;color:var(--text);text-decoration:none;">
+            𝕏<span>X / Twitter</span>
+          </a>
+          <a id="share-facebook-btn" href="#" target="_blank" rel="noopener noreferrer"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;font-size:0.82rem;color:var(--text);text-decoration:none;">
+            📘<span>Facebook</span>
+          </a>
+          <a id="share-reddit-btn" href="#" target="_blank" rel="noopener noreferrer"
+            style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;font-size:0.82rem;color:var(--text);text-decoration:none;">
+            🟠<span>Reddit</span>
+          </a>
+          <button type="button" id="share-native-btn" onclick="shareSheetNative()" style="display:none;flex-direction:column;align-items:center;gap:0.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:0.75rem;padding:0.75rem 0.5rem;cursor:pointer;font-size:0.82rem;color:var(--text);">
+            📤<span>More…</span>
+          </button>
+        </div>
+        <p id="share-copy-status" style="margin:0.75rem 0 0;font-size:0.8rem;color:var(--accent);text-align:center;min-height:1rem;"></p>
+      </div>
+    </div>
+    <script>
+    (function () {
+      var _shareUrl = "", _shareTitle = "", _shareDmUrl = "";
+      function openShareSheet(btn) {
+        _shareUrl = btn.dataset.shareUrl || location.href;
+        _shareTitle = btn.dataset.shareTitle || document.title;
+        _shareDmUrl = btn.dataset.dmUrl || "";
+        var enc = encodeURIComponent;
+        document.getElementById("share-email-btn").href =
+          "mailto:?subject=" + enc(_shareTitle) + "&body=" + enc(_shareTitle + "\n\n" + _shareUrl);
+        document.getElementById("share-sms-btn").href =
+          "sms:?body=" + enc(_shareTitle + " " + _shareUrl);
+        document.getElementById("share-dm-btn").href = _shareDmUrl || "#";
+        document.getElementById("share-dm-btn").style.display = _shareDmUrl ? "" : "none";
+        document.getElementById("share-twitter-btn").href =
+          "https://twitter.com/intent/tweet?text=" + enc(_shareTitle + " " + _shareUrl);
+        document.getElementById("share-facebook-btn").href =
+          "https://www.facebook.com/sharer/sharer.php?u=" + enc(_shareUrl);
+        document.getElementById("share-reddit-btn").href =
+          "https://www.reddit.com/submit?url=" + enc(_shareUrl) + "&title=" + enc(_shareTitle);
+        var nativeBtn = document.getElementById("share-native-btn");
+        nativeBtn.style.display = navigator.share ? "flex" : "none";
+        document.getElementById("share-copy-status").textContent = "";
+        var overlay = document.getElementById("share-sheet-overlay");
+        overlay.style.display = "flex";
+        overlay.addEventListener("click", _overlayClick);
+        document.addEventListener("keydown", _escClose);
+      }
+      function closeShareSheet() {
+        var overlay = document.getElementById("share-sheet-overlay");
+        overlay.style.display = "none";
+        overlay.removeEventListener("click", _overlayClick);
+        document.removeEventListener("keydown", _escClose);
+      }
+      function _overlayClick(e) {
+        if (e.target === document.getElementById("share-sheet-overlay")) closeShareSheet();
+      }
+      function _escClose(e) { if (e.key === "Escape") closeShareSheet(); }
+      function shareSheetCopyLink() {
+        if (!_shareUrl) return;
+        navigator.clipboard.writeText(_shareUrl).then(function () {
+          document.getElementById("share-copy-status").textContent = "Link copied!";
+        }).catch(function () {
+          var ta = document.createElement("textarea");
+          ta.value = _shareUrl; ta.style.position = "fixed"; ta.style.opacity = "0";
+          document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+          document.body.removeChild(ta);
+          document.getElementById("share-copy-status").textContent = "Link copied!";
+        });
+      }
+      function shareSheetNative() {
+        if (navigator.share) {
+          navigator.share({ title: _shareTitle, url: _shareUrl }).catch(function () {});
+        }
+      }
+      window.openShareSheet = openShareSheet;
+      window.closeShareSheet = closeShareSheet;
+      window.shareSheetCopyLink = shareSheetCopyLink;
+      window.shareSheetNative = shareSheetNative;
     })();
     </script>
   </body>

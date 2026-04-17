@@ -4,11 +4,12 @@ from django.contrib.auth import login
 from django.contrib.auth.views import LoginView, LogoutView, PasswordResetView, PasswordResetConfirmView
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_http_methods
 from django_ratelimit.decorators import ratelimit
 
-from apps.accounts.forms import SignUpForm
+from apps.accounts.forms import AsyncPasswordResetForm, SignUpForm
 from apps.accounts.services import VerificationService
 from apps.accounts.tasks import send_verification_email
 from apps.moderation.services import SecurityAuditService
@@ -72,6 +73,8 @@ class RateLimitedLogoutView(LogoutView):
 class RateLimitedPasswordResetView(PasswordResetView):
 	template_name = "accounts/password_reset_form.html"
 	email_template_name = "accounts/password_reset_email.txt"
+	form_class = AsyncPasswordResetForm
+	success_url = reverse_lazy("accounts:password-reset-done")
 
 	def form_valid(self, form):
 		"""Log password reset request."""

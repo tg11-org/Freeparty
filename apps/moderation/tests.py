@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
@@ -149,8 +149,79 @@ class ModerationWorkflowTests(TestCase):
 		report = Report.objects.order_by("-created_at").first()
 		self.assertEqual(report.reason, Report.Reason.MINOR_SAFETY)
 		self.assertEqual(report.severity, Report.Severity.CRITICAL)
+		self.assertEqual(report.assigned_to_id, self.staff.id)
+		self.assertIsNotNone(report.first_assigned_at)
+
+	def test_high_severity_status_change_requires_evidence(self):
+		self.client.force_login(self.staff)
+		self.post_report.reason = Report.Reason.DMCA_IP
+		self.post_report.save(update_fields=["reason", "updated_at"])
+
+		response = self.client.post(
+			f"/moderation/reports/{self.post_report.id}/update/",
+			{"status": Report.Status.UNDER_REVIEW},
+		)
+
+		self.assertEqual(response.status_code, 302)
+		self.post_report.refresh_from_db()
+		self.assertEqual(self.post_report.status, Report.Status.OPEN)
+
+	def test_dashboard_filters_for_sla_breached_reports(self):
+		self.client.force_login(self.staff)
+		breached = Report.objects.create(
+			reporter=self.reporter.actor,
+			target_post=self.post,
+			reason=Report.Reason.DMCA_IP,
+			description="breached",
+			assigned_to=self.staff,
+			first_assigned_at=timezone.now() - timedelta(hours=4),
+		)
+		within_sla = Report.objects.create(
+			reporter=self.reporter.actor,
+			target_post=self.post,
+			reason=Report.Reason.DMCA_IP,
+			description="within sla",
+			assigned_to=self.staff,
+			first_assigned_at=timezone.now() - timedelta(minutes=30),
+		)
+
+		response = self.client.get("/moderation/?sla_breached=true")
+
+		self.assertEqual(response.status_code, 200)
+		report_ids = {item.id for item in response.context["reports"]}
+		self.assertIn(breached.id, report_ids)
+		self.assertNotIn(within_sla.id, report_ids)
+
+	def test_sla_analytics_returns_response_percentiles(self):
+		self.client.force_login(self.staff)
+		report = Report.objects.create(
+			reporter=self.reporter.actor,
+			target_post=self.post,
+			reason=Report.Reason.DMCA_IP,
+			description="analytics",
+			assigned_to=self.staff,
+			first_assigned_at=timezone.now() - timedelta(minutes=90),
+			responded_at=timezone.now(),
+		)
+		report.save(update_fields=["responded_at", "updated_at"])
+
+		response = self.client.get("/moderation/reports/analytics/sla/?severity=high")
+
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertEqual(payload["severity"], "high")
+		self.assertEqual(payload["completed_count"], 1)
+		self.assertGreaterEqual(payload["p50_response_minutes"], 89)
 
 
+@override_settings(
+	CACHES={
+		"default": {
+			"BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+			"LOCATION": "moderation-api-tests",
+		}
+	}
+)
 class ModerationApiTests(TestCase):
 	def setUp(self):
 		self.client = Client()
@@ -189,6 +260,8 @@ class ModerationApiTests(TestCase):
 
 	def test_staff_can_update_report_status(self):
 		self.client.force_login(self.staff)
+		self.report.stamp_evidence_hash(self.report.description, "api evidence")
+		self.report.save(update_fields=["evidence_hash", "updated_at"])
 		response = self.client.post(
 			f"/api/v1/moderation/reports/{self.report.id}/status/",
 			data={"status": "under_review"},
@@ -197,6 +270,36 @@ class ModerationApiTests(TestCase):
 		self.report.refresh_from_db()
 		self.assertEqual(self.report.status, Report.Status.UNDER_REVIEW)
 		self.assertEqual(self.report.reviewed_by_id, self.staff.id)
+		self.assertIsNotNone(self.report.responded_at)
+
+	def test_staff_cannot_update_high_severity_report_without_evidence(self):
+		self.client.force_login(self.staff)
+		self.report.reason = Report.Reason.DMCA_IP
+		self.report.save(update_fields=["reason", "updated_at"])
+
+		response = self.client.post(
+			f"/api/v1/moderation/reports/{self.report.id}/status/",
+			data={"status": Report.Status.UNDER_REVIEW},
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.report.refresh_from_db()
+		self.assertEqual(self.report.status, Report.Status.OPEN)
+
+	def test_staff_can_fetch_sla_analytics(self):
+		self.client.force_login(self.staff)
+		self.report.assigned_to = self.staff
+		self.report.first_assigned_at = timezone.now() - timedelta(minutes=45)
+		self.report.responded_at = timezone.now()
+		self.report.stamp_evidence_hash(self.report.description, "api evidence")
+		self.report.save(update_fields=["assigned_to", "first_assigned_at", "responded_at", "evidence_hash", "updated_at"])
+
+		response = self.client.get("/api/v1/moderation/reports/analytics/sla/")
+
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertEqual(payload["completed_count"], 1)
+		self.assertGreaterEqual(payload["p50_response_minutes"], 44)
 
 	def test_staff_can_create_action_and_note(self):
 		self.client.force_login(self.staff)
@@ -454,6 +557,12 @@ class SecurityAuditTests(TestCase):
 		"""Audit events should be ordered by created_at descending."""
 		SecurityAuditService.log_login_success(self.user)
 		SecurityAuditService.log_login_failure(self.user)
+
+		# Ensure deterministic ordering even on low timestamp precision backends.
+		SecurityAuditEvent.objects.filter(
+			user=self.user,
+			event_type=SecurityAuditEvent.EventType.LOGIN_SUCCESS,
+		).update(created_at=timezone.now() - timedelta(minutes=1))
 		
 		events = SecurityAuditEvent.objects.filter(user=self.user)
 		self.assertEqual(events.count(), 2)

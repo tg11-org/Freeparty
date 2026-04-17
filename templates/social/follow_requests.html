@@ -4,8 +4,9 @@
 <h2>Follow Requests</h2>
 <p style="color:var(--text2);margin-top:0;">Approve or reject pending requests for your private account.</p>
 
+<div id="follow-request-list">
 {% for relation in pending_requests %}
-  <article style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:0.75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);margin-bottom:0.65rem;">
+  <article data-follow-request-row="{{ relation.id }}" style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:0.75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);margin-bottom:0.65rem;">
     <div style="display:flex;align-items:center;gap:0.65rem;min-width:0;">
       {% if relation.follower.profile.avatar %}
         <img class="post-avatar" src="{{ relation.follower.profile.avatar.url }}" alt="@{{ relation.follower.handle }} avatar">
@@ -13,20 +14,27 @@
         <div class="post-avatar-placeholder">{{ relation.follower.handle|first|upper }}</div>
       {% endif %}
       <div style="min-width:0;">
-        <a href="/actors/{{ relation.follower.handle }}/" style="font-weight:600;color:var(--accent);">@{{ relation.follower.handle }}</a>
+        {% with display_name=relation.follower.user.display_name %}
+          <div class="identity-stack">
+            <a href="/actors/{{ relation.follower.handle }}/" class="identity-name">{{ display_name|default:relation.follower.handle }}</a>
+            {% if display_name %}
+              <a href="/actors/{{ relation.follower.handle }}/" class="identity-handle">@{{ relation.follower.handle }}</a>
+            {% endif %}
+          </div>
+        {% endwith %}
         <p style="margin:0;font-size:0.82rem;color:var(--text2);">Requested {{ relation.created_at|timesince }} ago</p>
       </div>
     </div>
     <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
-      <form method="post" action="/social/follow-requests/{{ relation.id }}/approve/">{% csrf_token %}
-        <button class="btn" type="submit">Approve</button>
+      <form method="post" action="/social/follow-requests/{{ relation.id }}/approve/" data-async-action="1" data-action-type="follow-request" data-follow-id="{{ relation.id }}">{% csrf_token %}
+        <button class="btn" type="submit" data-action-button="follow-request">Approve</button>
       </form>
-      <form method="post" action="/social/follow-requests/{{ relation.id }}/reject/">{% csrf_token %}
-        <button class="btn btn-danger" type="submit">Reject</button>
+      <form method="post" action="/social/follow-requests/{{ relation.id }}/reject/" data-async-action="1" data-action-type="follow-request" data-follow-id="{{ relation.id }}">{% csrf_token %}
+        <button class="btn btn-danger" type="submit" data-action-button="follow-request">Reject</button>
       </form>
     </div>
   </article>
-{% empty %}
-  <p style="color:var(--text2);">No pending follow requests.</p>
 {% endfor %}
+</div>
+<p id="follow-request-empty" style="color:var(--text2);display:{% if pending_requests %}none{% else %}block{% endif %};">No pending follow requests.</p>
 {% endblock %}

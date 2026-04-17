@@ -1,4 +1,4 @@
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import patch
@@ -6,8 +6,8 @@ from unittest.mock import patch
 from apps.accounts.models import User
 from apps.core.models import AsyncTaskExecution, AsyncTaskFailure
 from apps.core.services.uris import post_uri
-from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
-from apps.posts.tasks import process_media_attachment
+from apps.posts.models import Attachment, Comment, CommentEditHistory, LinkPreview, Post, PostEditHistory
+from apps.posts.tasks import _fetch_unfurl, process_media_attachment, unfurl_post_link
 from apps.social.models import Block, Follow
 
 
@@ -104,6 +104,7 @@ class PostTests(TestCase):
 		self.assertContains(response, "Add text or attach media before publishing.")
 
 
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class PostPermissionTests(TestCase):
 	def setUp(self):
 		self.client = Client()
@@ -193,6 +194,30 @@ class PostPermissionTests(TestCase):
 		self.client.force_login(self.viewer)
 		response = self.client.get(f"/posts/{post.id}/")
 		self.assertEqual(response.status_code, 200)
+
+	def test_post_detail_renders_rich_og_meta_for_safe_post(self):
+		post = self._create_post(content="OG ready post")
+		upload = SimpleUploadedFile("image.png", b"fakepng", content_type="image/png")
+		Attachment.objects.create(
+			post=post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=upload,
+			mime_type="image/png",
+			file_size=len(b"fakepng"),
+			moderation_state=Attachment.ModerationState.NORMAL,
+		)
+		response = self.client.get(f"/posts/{post.id}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'property="og:type" content="article"')
+		self.assertContains(response, 'property="og:image"')
+		self.assertContains(response, 'name="twitter:image"')
+
+	def test_post_detail_uses_safe_meta_for_nsfw_post(self):
+		post = self._create_post(content="Restricted post", is_nsfw=True)
+		response = self.client.get(f"/posts/{post.id}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Post on Freeparty (age-restricted content)')
+		self.assertNotContains(response, 'property="og:image"')
 
 
 class CommentApiParityTests(TestCase):
@@ -308,6 +333,52 @@ class HomeMediaTabTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Public media post")
 		self.assertNotContains(response, "Public text only")
+
+
+class LinkPreviewTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="preview@example.com", username="previewer", password="secret123")
+		self.user.mark_email_verified()
+		self.post = Post.objects.create(
+			author=self.user.actor,
+			content="Watch this https://example.com/demo",
+			canonical_uri=post_uri("preview-post"),
+		)
+
+	def test_fetch_unfurl_blocks_ssrf_targets(self):
+		with patch("urllib.request.urlopen") as mocked_urlopen:
+			data = _fetch_unfurl("http://127.0.0.1/internal")
+		self.assertEqual(data["fetch_error"], "SSRF blocked")
+		mocked_urlopen.assert_not_called()
+
+	@override_settings(FEATURE_LINK_UNFURL_ENABLED=True)
+	@patch("apps.posts.tasks._fetch_unfurl")
+	def test_unfurl_task_is_idempotent(self, mocked_fetch_unfurl):
+		mocked_fetch_unfurl.return_value = {
+			"title": "Example title",
+			"description": "Example description",
+			"thumbnail_url": "https://cdn.example.com/thumb.png",
+			"site_name": "Example",
+			"embed_html": "",
+		}
+		unfurl_post_link.run(str(self.post.id))
+		unfurl_post_link.run(str(self.post.id))
+		self.assertEqual(LinkPreview.objects.filter(post=self.post).count(), 1)
+		mocked_fetch_unfurl.assert_called_once()
+
+	def test_public_timeline_renders_link_preview_card(self):
+		LinkPreview.objects.create(
+			post=self.post,
+			url="https://example.com/demo",
+			title="Example preview",
+			description="Preview description",
+			site_name="Example",
+		)
+		response = self.client.get("/posts/public/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Example preview")
+		self.assertContains(response, "Preview description")
 
 
 class CommentEditedBadgeTests(TestCase):

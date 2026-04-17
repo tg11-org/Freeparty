@@ -1,10 +1,19 @@
 from django.http import HttpResponse
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
+from unittest.mock import patch
 
 from apps.accounts.models import User
+from apps.core.models import AsyncTaskExecution, AsyncTaskFailure
+from apps.core.services.email_observability import log_smtp_delivery_event
+from apps.notifications.models import Notification
+from apps.posts.models import LinkPreview, Post
+from apps.private_messages.models import ConversationParticipant
+from apps.private_messages.services import create_direct_conversation, store_encrypted_message
 
 from apps.core.middleware import RequestObservabilityMiddleware
 from apps.core.services.task_observability import observe_celery_task
+from apps.posts.tasks import unfurl_post_link
 
 
 class RequestObservabilityMiddlewareTests(SimpleTestCase):
@@ -106,6 +115,24 @@ class TaskObservabilityTests(SimpleTestCase):
         self.assertIn("task_id=task-999", joined)
         self.assertIn("correlation_id=req-999", joined)
 
+    def test_smtp_delivery_event_logs_structured_fields(self):
+        with self.assertLogs("apps.core.services.email_observability", level="INFO") as logs:
+            log_smtp_delivery_event(
+                event="retry_scheduled",
+                task_name="apps.accounts.tasks.send_verification_email",
+                task_id="task-smtp-1",
+                correlation_id="req-smtp-1",
+                recipient_count=1,
+                attempt=2,
+                max_retries=5,
+                will_retry=True,
+                error="SMTPServerDisconnected",
+            )
+        joined = "\n".join(logs.output)
+        self.assertIn("smtp_delivery", joined)
+        self.assertIn("event=retry_scheduled", joined)
+        self.assertIn("will_retry=True", joined)
+
 
 class RootPathAndHealthStatusTests(TestCase):
     def setUp(self):
@@ -138,3 +165,320 @@ class RootPathAndHealthStatusTests(TestCase):
         self.assertEqual(self.client.get("/accounts/").status_code, 200)
         self.assertEqual(self.client.get("/profiles/").status_code, 200)
         self.assertEqual(self.client.get("/social/").status_code, 302)
+
+
+class DeadLetterReplayCommandTests(TestCase):
+    @patch("apps.core.management.commands.dead_letter_inspect.current_app")
+    def test_replay_failure_requeues_task(self, mocked_current_app):
+        from django.core.management import call_command
+
+        task = mocked_current_app.tasks.get.return_value
+        failure = AsyncTaskFailure.objects.create(
+            task_name="apps.posts.tasks.unfurl_post_link",
+            correlation_id="corr-replay-1",
+            is_terminal=True,
+            terminal_reason="max_retries_exceeded",
+            error_message="boom",
+            payload={"post_id": "post-1", "args": ["post-1"], "kwargs": {"correlation_id": "corr-replay-1"}},
+        )
+
+        call_command("dead_letter_inspect", replay=str(failure.id))
+
+        task.apply_async.assert_called_once_with(args=["post-1"], kwargs={"correlation_id": "corr-replay-1"})
+        failure.refresh_from_db()
+        self.assertEqual(failure.terminal_reason, "manual_replay")
+        self.assertEqual(failure.payload["replay_count"], 1)
+
+
+@override_settings(FEATURE_LINK_UNFURL_ENABLED=True)
+class LinkUnfurlReliabilityTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="unfurl-core@example.com", username="unfurlcore", password="secret123")
+        self.user.mark_email_verified()
+        with patch("apps.posts.tasks.unfurl_post_link.delay"):
+            self.post = Post.objects.create(
+                author=self.user.actor,
+                canonical_uri="https://example.com/posts/unfurl-core-test",
+                content="Look https://example.com/demo now",
+            )
+
+    @patch("apps.posts.tasks._fetch_unfurl")
+    def test_unfurl_task_records_reliable_execution(self, mocked_fetch_unfurl):
+        mocked_fetch_unfurl.return_value = {
+            "title": "Example",
+            "description": "Desc",
+            "thumbnail_url": "",
+            "site_name": "Example",
+            "embed_html": "",
+        }
+
+        unfurl_post_link.run(str(self.post.id), correlation_id="corr-unfurl-1")
+
+        self.assertTrue(LinkPreview.objects.filter(post=self.post).exists())
+        execution = AsyncTaskExecution.objects.get(
+            task_name="apps.posts.tasks.unfurl_post_link",
+            idempotency_key=f"link_unfurl:{self.post.id}",
+        )
+        self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
+
+    @patch("apps.posts.tasks._fetch_unfurl")
+    def test_unfurl_task_is_idempotent_under_reliability_wrapper(self, mocked_fetch_unfurl):
+        mocked_fetch_unfurl.return_value = {
+            "title": "Example",
+            "description": "Desc",
+            "thumbnail_url": "",
+            "site_name": "Example",
+            "embed_html": "",
+        }
+
+        unfurl_post_link.run(str(self.post.id), correlation_id="corr-unfurl-2")
+        unfurl_post_link.run(str(self.post.id), correlation_id="corr-unfurl-2")
+
+        self.assertEqual(LinkPreview.objects.filter(post=self.post).count(), 1)
+        execution = AsyncTaskExecution.objects.get(
+            task_name="apps.posts.tasks.unfurl_post_link",
+            idempotency_key=f"link_unfurl:{self.post.id}",
+        )
+        self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
+        self.assertEqual(execution.attempt_count, 1)
+
+
+@override_settings(FEATURE_PM_E2E_ENABLED=True)
+class InboxViewTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.alice = User.objects.create_user(email="alice-inbox@example.com", username="aliceinbox", password="secret123")
+        self.bob = User.objects.create_user(email="bob-inbox@example.com", username="bobinbox", password="secret123")
+        self.alice.mark_email_verified()
+        self.bob.mark_email_verified()
+
+    def test_inbox_view_surfaces_dm_and_notification_previews(self):
+        Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.MENTION,
+            payload={"summary": "Bob mentioned you in a post"},
+        )
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        store_encrypted_message(
+            conversation=conversation,
+            sender=self.bob.actor,
+            recipient_actor=self.alice.actor,
+            ciphertext="cipher-inbox",
+            message_nonce="nonce-inbox",
+            sender_key_id="bob-key-1",
+            recipient_key_id="alice-key-1",
+            client_message_id="client-inbox-1",
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?filter=unread")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["unread_notification_count"], 1)
+        self.assertEqual(response.context["unread_message_count"], 1)
+        self.assertContains(response, "Bob mentioned you in a post")
+        self.assertContains(response, f"/messages/{conversation.id}/")
+
+    def test_nav_context_exposes_combined_unread_counts(self):
+        Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.SYSTEM,
+        )
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        store_encrypted_message(
+            conversation=conversation,
+            sender=self.bob.actor,
+            recipient_actor=self.alice.actor,
+            ciphertext="cipher-nav",
+            message_nonce="nonce-nav",
+            sender_key_id="bob-key-nav",
+            recipient_key_id="alice-key-nav",
+            client_message_id="client-nav-1",
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["nav_unread_notification_count"], 1)
+        self.assertEqual(response.context["nav_unread_message_count"], 1)
+        self.assertEqual(response.context["nav_unread_inbox_count"], 2)
+
+    def test_inbox_activity_feed_combines_message_and_notification_items(self):
+        notification = Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.REPLY,
+            payload={"summary": "Bob replied to your post"},
+        )
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        envelope = store_encrypted_message(
+            conversation=conversation,
+            sender=self.bob.actor,
+            recipient_actor=self.alice.actor,
+            ciphertext="cipher-feed",
+            message_nonce="nonce-feed",
+            sender_key_id="bob-feed-key",
+            recipient_key_id="alice-feed-key",
+            client_message_id="client-feed-1",
+        )
+        Notification.objects.filter(id=notification.id).update(created_at=envelope.created_at - timezone.timedelta(minutes=1))
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity")
+
+        self.assertEqual(response.status_code, 200)
+        items = response.context["activity_items"]
+        self.assertGreaterEqual(len(items), 2)
+        kinds = {item["kind"] for item in items}
+        self.assertIn("message", kinds)
+        self.assertIn("notification", kinds)
+        self.assertContains(response, f"/messages/{conversation.id}/")
+
+    def test_inbox_activity_feed_paginates_high_volume(self):
+        for idx in range(26):
+            Notification.objects.create(
+                recipient=self.alice.actor,
+                source_actor=self.bob.actor,
+                notification_type=Notification.NotificationType.SYSTEM,
+                payload={"summary": f"System event {idx}"},
+            )
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity&section=notifications")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["activity_items"]), 20)
+        self.assertTrue(response.context["activity_page_obj"].has_next())
+
+    def test_inbox_activity_feed_unread_filter_hides_read_items(self):
+        read_notification = Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.LIKE,
+            payload={"summary": "Read like"},
+            read_at=timezone.now(),
+        )
+        unread_notification = Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.MENTION,
+            payload={"summary": "Unread mention"},
+        )
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        envelope = store_encrypted_message(
+            conversation=conversation,
+            sender=self.bob.actor,
+            recipient_actor=self.alice.actor,
+            ciphertext="cipher-unread-filter",
+            message_nonce="nonce-unread-filter",
+            sender_key_id="bob-unread-filter-key",
+            recipient_key_id="alice-unread-filter-key",
+            client_message_id="client-unread-filter-1",
+        )
+        participant = ConversationParticipant.objects.get(conversation=conversation, actor=self.alice.actor)
+        participant.last_read_at = envelope.created_at
+        participant.save(update_fields=["last_read_at", "updated_at"])
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity&filter=unread")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, unread_notification.payload["summary"])
+        self.assertNotContains(response, read_notification.payload["summary"])
+        self.assertNotContains(response, f"/messages/{conversation.id}/")
+
+    def test_inbox_activity_feed_renders_notification_context_preview(self):
+        notification = Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.MENTION,
+            payload={"summary": "Bob mentioned you in a post"},
+        )
+        post = notification.source_post
+        if post is None:
+            from apps.posts.models import Post
+
+            post = Post.objects.create(
+                author=self.bob.actor,
+                canonical_uri="https://example.com/posts/inbox-preview-1",
+                content="This is a long preview line from Bob that should show up inside the inbox activity card.",
+            )
+            notification.source_post = post
+            notification.save(update_fields=["source_post"])
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity&section=notifications")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "From @bobinbox")
+        self.assertContains(response, "Post preview:")
+        self.assertContains(response, "Open related post")
+
+    def test_inbox_activity_feed_renders_latest_sender_context_for_messages(self):
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        store_encrypted_message(
+            conversation=conversation,
+            sender=self.bob.actor,
+            recipient_actor=self.alice.actor,
+            ciphertext="cipher-preview-message",
+            message_nonce="nonce-preview-message",
+            sender_key_id="bob-preview-key",
+            recipient_key_id="alice-preview-key",
+            client_message_id="client-preview-message-1",
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity&section=messages")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Latest envelope from @bobinbox")
+
+    def test_inbox_activity_feed_uses_type_specific_phrase_without_payload_summary(self):
+        Notification.objects.create(
+            recipient=self.alice.actor,
+            source_actor=self.bob.actor,
+            notification_type=Notification.NotificationType.LIKE,
+            payload={},
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity&section=notifications")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "@bobinbox liked your post")
+
+    def test_inbox_activity_feed_uses_system_phrase_without_actor(self):
+        Notification.objects.create(
+            recipient=self.alice.actor,
+            notification_type=Notification.NotificationType.SYSTEM,
+            payload={},
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.get("/inbox/?mode=activity&section=notifications")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "System update")

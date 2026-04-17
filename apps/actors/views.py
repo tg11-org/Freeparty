@@ -20,9 +20,26 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	if not can_view_actor(viewer, actor):
 		raise Http404("Actor not found")
 
-	posts_qs = Post.objects.filter(
-		author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL
-	).select_related("author", "author__profile").order_by("-created_at")
+	active_filter = request.GET.get("filter", "posts")
+	if active_filter not in ("posts", "reposts", "media"):
+		active_filter = "posts"
+
+	repost_posts = None
+	if active_filter == "reposts":
+		repost_ids = Repost.objects.filter(actor=actor).order_by("-created_at").values_list("post_id", flat=True)
+		posts_qs = Post.objects.filter(
+			id__in=repost_ids, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+	elif active_filter == "media":
+		posts_qs = Post.objects.filter(
+			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL,
+			attachments__isnull=False,
+		).distinct().select_related("author", "author__profile", "link_preview").order_by("-created_at")
+	else:
+		posts_qs = Post.objects.filter(
+			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+
 	page_obj = paginate_queryset(request, posts_qs, per_page=20, page_param="page")
 	posts = page_obj.object_list
 
@@ -61,6 +78,8 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		"actor": actor,
 		"posts": posts,
 		"page_obj": page_obj,
+		"active_filter": active_filter,
+		"filter_tabs": [("posts", "Posts"), ("reposts", "Reposts"), ("media", "Images & Video")],
 		"follower_count": follower_count,
 		"following_count": following_count,
 		"is_following": is_following,

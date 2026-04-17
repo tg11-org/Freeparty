@@ -1,3 +1,5 @@
+from time import perf_counter
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError
@@ -10,6 +12,7 @@ from django_ratelimit.decorators import ratelimit
 from apps.actors.models import Actor
 from apps.core.pagination import paginate_queryset
 from apps.core.permissions import can_comment_on_post, can_follow_actor, can_view_post
+from apps.core.services.interaction_observability import log_interaction_metric
 from apps.moderation.models import Report
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new
@@ -24,13 +27,94 @@ def _wants_json(request: HttpRequest) -> bool:
 	return requested_with == "xmlhttprequest" or "application/json" in accept
 
 
+def _follow_payload(followee: Actor, *, following: bool, follow_pending: bool) -> dict[str, object]:
+	if following:
+		return {
+			"ok": True,
+			"following": True,
+			"follow_pending": False,
+			"next_action": "unfollow",
+			"button_label": "✓ Following",
+			"button_active": True,
+			"message": f"You now follow @{followee.handle}.",
+		}
+	if follow_pending:
+		return {
+			"ok": True,
+			"following": False,
+			"follow_pending": True,
+			"next_action": "unfollow",
+			"button_label": "Cancel request",
+			"button_active": False,
+			"message": f"Follow request sent to @{followee.handle}.",
+		}
+	return {
+		"ok": True,
+		"following": False,
+		"follow_pending": False,
+		"next_action": "follow",
+		"button_label": "＋ Follow",
+		"button_active": False,
+		"message": f"You unfollowed @{followee.handle}.",
+	}
+
+
+def _follow_request_payload(follow: Follow, *, action: str) -> dict[str, object]:
+	verb = "approved" if action == "approved" else "rejected"
+	return {
+		"ok": True,
+		"action": action,
+		"follow_id": str(follow.id),
+		"remove_request_row": True,
+		"empty_message": "No pending follow requests.",
+		"message": f"{verb.capitalize()} follow request from @{follow.follower.handle}.",
+	}
+
+
+def _json_action_response(
+	*,
+	request: HttpRequest,
+	name: str,
+	started_at: float,
+	payload: dict[str, object],
+	status: int = 200,
+	success: bool = True,
+	target_id: str = "",
+	detail: str = "",
+) -> JsonResponse:
+	actor = getattr(getattr(request, "user", None), "actor", None)
+	actor_id = str(actor.id) if actor is not None else ""
+	log_interaction_metric(
+		name=name,
+		success=success,
+		duration_ms=(perf_counter() - started_at) * 1000,
+		status_code=status,
+		actor_id=actor_id,
+		target_id=target_id,
+		detail=detail,
+	)
+	return JsonResponse(payload, status=status)
+
+
 @ratelimit(key="user_or_ip", rate="60/h", block=True)
 @login_required
 @require_POST
 def follow_view(request: HttpRequest, handle: str) -> HttpResponse:
+	started_at = perf_counter()
 	follower = request.user.actor
 	followee = get_object_or_404(Actor, handle=handle)
 	if not can_follow_actor(follower, followee):
+		if _wants_json(request):
+			return _json_action_response(
+				request=request,
+				name="social_follow",
+				started_at=started_at,
+				payload={"ok": False, "error": "Cannot follow this account."},
+				status=403,
+				success=False,
+				target_id=str(followee.id),
+				detail="permission_denied",
+			)
 		messages.error(request, "Cannot follow this account.")
 		return redirect("actors:detail", handle=handle)
 
@@ -43,8 +127,24 @@ def follow_view(request: HttpRequest, handle: str) -> HttpResponse:
 			notification_type=Notification.NotificationType.FOLLOW,
 		)
 		messages.success(request, f"You now follow @{followee.handle}.")
+		if _wants_json(request):
+			return _json_action_response(
+				request=request,
+				name="social_follow",
+				started_at=started_at,
+				payload=_follow_payload(followee, following=True, follow_pending=False),
+				target_id=str(followee.id),
+			)
 	else:
 		messages.success(request, f"Follow request sent to @{followee.handle}.")
+		if _wants_json(request):
+			return _json_action_response(
+				request=request,
+				name="social_follow",
+				started_at=started_at,
+				payload=_follow_payload(followee, following=False, follow_pending=True),
+				target_id=str(followee.id),
+			)
 	return redirect("actors:detail", handle=handle)
 
 
@@ -52,10 +152,19 @@ def follow_view(request: HttpRequest, handle: str) -> HttpResponse:
 @login_required
 @require_POST
 def unfollow_view(request: HttpRequest, handle: str) -> HttpResponse:
+	started_at = perf_counter()
 	follower = request.user.actor
 	followee = get_object_or_404(Actor, handle=handle)
 	unfollow_actor(follower, followee)
 	messages.success(request, f"You unfollowed @{followee.handle}.")
+	if _wants_json(request):
+		return _json_action_response(
+			request=request,
+			name="social_unfollow",
+			started_at=started_at,
+			payload=_follow_payload(followee, following=False, follow_pending=False),
+			target_id=str(followee.id),
+		)
 	return redirect("actors:detail", handle=handle)
 
 
@@ -91,11 +200,21 @@ def unblock_view(request: HttpRequest, handle: str) -> HttpResponse:
 @login_required
 @require_POST
 def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
+	started_at = perf_counter()
 	actor = request.user.actor
 	post = get_object_or_404(Post, id=post_id)
 	if not can_comment_on_post(actor, post):
 		if _wants_json(request):
-			return JsonResponse({"ok": False, "error": "You cannot engage with this post."}, status=403)
+			return _json_action_response(
+				request=request,
+				name="social_like_toggle",
+				started_at=started_at,
+				payload={"ok": False, "error": "You cannot engage with this post."},
+				status=403,
+				success=False,
+				target_id=str(post.id),
+				detail="permission_denied",
+			)
 		messages.error(request, "You cannot engage with this post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 	like, created = Like.objects.get_or_create(actor=actor, post=post)
@@ -111,7 +230,13 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			source_post=post,
 		)
 	if _wants_json(request):
-		return JsonResponse({"ok": True, "liked": liked, "like_count": post.like_count})
+		return _json_action_response(
+			request=request,
+			name="social_like_toggle",
+			started_at=started_at,
+			payload={"ok": True, "liked": liked, "like_count": post.like_count},
+			target_id=str(post.id),
+		)
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
@@ -119,16 +244,35 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 @login_required
 @require_POST
 def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
+	started_at = perf_counter()
 	actor = request.user.actor
 	post = get_object_or_404(Post, id=post_id)
 	if actor.id == post.author_id:
 		if _wants_json(request):
-			return JsonResponse({"ok": False, "error": "You cannot repost your own post."}, status=400)
+			return _json_action_response(
+				request=request,
+				name="social_repost_toggle",
+				started_at=started_at,
+				payload={"ok": False, "error": "You cannot repost your own post."},
+				status=400,
+				success=False,
+				target_id=str(post.id),
+				detail="self_repost",
+			)
 		messages.error(request, "You cannot repost your own post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 	if not can_comment_on_post(actor, post):
 		if _wants_json(request):
-			return JsonResponse({"ok": False, "error": "You cannot repost this post."}, status=403)
+			return _json_action_response(
+				request=request,
+				name="social_repost_toggle",
+				started_at=started_at,
+				payload={"ok": False, "error": "You cannot repost this post."},
+				status=403,
+				success=False,
+				target_id=str(post.id),
+				detail="permission_denied",
+			)
 		messages.error(request, "You cannot repost this post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 	repost = Repost.objects.filter(actor=actor, post=post).first()
@@ -143,7 +287,16 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			created = False
 		if not created:
 			if _wants_json(request):
-				return JsonResponse({"ok": False, "error": "Post already reposted."}, status=400)
+				return _json_action_response(
+					request=request,
+					name="social_repost_toggle",
+					started_at=started_at,
+					payload={"ok": False, "error": "Post already reposted."},
+					status=400,
+					success=False,
+					target_id=str(post.id),
+					detail="already_reposted",
+				)
 			messages.info(request, "Post already reposted.")
 			return redirect(request.META.get("HTTP_REFERER", "home"))
 		reposted = True
@@ -155,7 +308,13 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		)
 		messages.success(request, "Post reposted.")
 	if _wants_json(request):
-		return JsonResponse({"ok": True, "reposted": reposted, "repost_count": post.repost_count})
+		return _json_action_response(
+			request=request,
+			name="social_repost_toggle",
+			started_at=started_at,
+			payload={"ok": True, "reposted": reposted, "repost_count": post.repost_count},
+			target_id=str(post.id),
+		)
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
@@ -191,11 +350,21 @@ def report_actor_view(request: HttpRequest, handle: str) -> HttpResponse:
 @login_required
 @require_POST
 def bookmark_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
+	started_at = perf_counter()
 	actor = request.user.actor
 	post = get_object_or_404(Post, id=post_id)
 	if not can_view_post(actor, post):
 		if _wants_json(request):
-			return JsonResponse({"ok": False, "error": "You cannot bookmark this post."}, status=403)
+			return _json_action_response(
+				request=request,
+				name="social_bookmark_toggle",
+				started_at=started_at,
+				payload={"ok": False, "error": "You cannot bookmark this post."},
+				status=403,
+				success=False,
+				target_id=str(post.id),
+				detail="permission_denied",
+			)
 		messages.error(request, "You cannot bookmark this post.")
 		return redirect(request.META.get("HTTP_REFERER", "home"))
 
@@ -208,7 +377,13 @@ def bookmark_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		bookmarked = True
 		messages.success(request, "Post bookmarked.")
 	if _wants_json(request):
-		return JsonResponse({"ok": True, "bookmarked": bookmarked})
+		return _json_action_response(
+			request=request,
+			name="social_bookmark_toggle",
+			started_at=started_at,
+			payload={"ok": True, "bookmarked": bookmarked},
+			target_id=str(post.id),
+		)
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
@@ -250,6 +425,7 @@ def follow_requests_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def approve_follow_request_view(request: HttpRequest, follow_id: str) -> HttpResponse:
+	started_at = perf_counter()
 	actor = request.user.actor
 	follow = get_object_or_404(Follow, id=follow_id, followee=actor, state=Follow.FollowState.PENDING)
 	approve_follow_request(follow)
@@ -259,6 +435,14 @@ def approve_follow_request_view(request: HttpRequest, follow_id: str) -> HttpRes
 		notification_type=Notification.NotificationType.FOLLOW,
 	)
 	messages.success(request, f"Approved follow request from @{follow.follower.handle}.")
+	if _wants_json(request):
+		return _json_action_response(
+			request=request,
+			name="social_follow_request_approve",
+			started_at=started_at,
+			payload=_follow_request_payload(follow, action="approved"),
+			target_id=str(follow.id),
+		)
 	return redirect("social:follow-requests")
 
 
@@ -266,8 +450,17 @@ def approve_follow_request_view(request: HttpRequest, follow_id: str) -> HttpRes
 @login_required
 @require_POST
 def reject_follow_request_view(request: HttpRequest, follow_id: str) -> HttpResponse:
+	started_at = perf_counter()
 	actor = request.user.actor
 	follow = get_object_or_404(Follow, id=follow_id, followee=actor, state=Follow.FollowState.PENDING)
 	reject_follow_request(follow)
 	messages.success(request, f"Rejected follow request from @{follow.follower.handle}.")
+	if _wants_json(request):
+		return _json_action_response(
+			request=request,
+			name="social_follow_request_reject",
+			started_at=started_at,
+			payload=_follow_request_payload(follow, action="rejected"),
+			target_id=str(follow.id),
+		)
 	return redirect("social:follow-requests")

@@ -116,6 +116,11 @@ Rules covered by these helpers:
 	- `task_success`
 	- `task_failure`
 - Include `correlation_id` when task is triggered from a request/flow that already has one.
+- Account transactional email tasks currently using this convention:
+	- `apps.accounts.tasks.send_verification_email`
+	- `apps.accounts.tasks.send_password_reset_email`
+	- `apps.accounts.tasks.send_password_reset_notice`
+	- `apps.accounts.tasks.send_system_email`
 
 ### Celery Reliability Convention (Phase 3.4)
 
@@ -265,20 +270,25 @@ Security audit events log forensically important account and moderator actions.
 
 ## 5. Suggested Next Milestones
 
-### Milestone A: Stronger API Surface
-- Add API serializers/views for moderation actions/report triage.
-- Add pagination and filtering strategy for timelines and posts.
-- Add API permissions matrix (owner/mod/admin/public).
+### Milestone A: PM Security Gate Closure (Phase 7.0/7.1)
+- Convert PM security checklist into tracked closure tasks with ownership.
+- Add staged PM rollout controls and rollback criteria.
+- Harden key lifecycle policy for abusive or high-frequency key resets.
 
-### Milestone B: Federation Stage 1
-- Inbound fetch/parsing of remote actors to `FederationObject`.
-- Outbound signed delivery worker built on `FederationDelivery`.
-- Retry backoff + dead-letter queue behavior.
+### Milestone B: Async Reliability Maturity (Phase 7.2)
+- Extend reliability wrappers and dead-letter visibility to remaining high-impact tasks.
+- Add controlled replay workflows with explicit safety checks.
+- Standardize incident diagnostics for retry storms and queue lag.
 
-### Milestone C: Moderation Stage 1
-- Moderator queue views and report triage workflow.
-- Post visibility enforcement in query layer for hidden/taken_down.
-- Moderator notes UI and action templates.
+### Milestone C: Federation Stage 1 Pilot (Phase 7.4/7.5)
+- Allowlisted inbound actor/object fetch and validation.
+- Signed outbound delivery for selected object types.
+- Retry/backoff/dead-letter behavior with operator replay guidance.
+
+### Milestone D: Moderation Escalation + SLO Operations (Phase 7.3/7.6/7.7)
+- Add escalation and SLA ownership flows for high/critical moderation queues.
+- Define dashboard ownership and alert severity routing.
+- Run failure drills and finalize beta readiness checklist.
 
 ## 6. Quality Gates
 

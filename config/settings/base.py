@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -14,6 +15,9 @@ env = environ.Env(
     REQUEST_SLOW_MS=(int, 700),
     FEATURE_PM_E2E_ENABLED=(bool, False),
     FEATURE_PM_DEV_CIPHERTEXT_PREVIEW=(bool, False),
+    FEATURE_PM_WEBSOCKET_ENABLED=(bool, False),
+    FEATURE_FEDERATION_OUTBOUND_ENABLED=(bool, False),
+    FEDERATION_SIGNATURE_MAX_AGE_SECONDS=(int, 300),
     CORS_ALLOWED_ORIGINS=(list, []),
     CSRF_TRUSTED_ORIGINS=(list, []),
     EMAIL_VERIFICATION_REQUIRED=(bool, True),
@@ -79,6 +83,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.core.context_processors.inbox_counts",
             ],
         },
     },
@@ -133,13 +138,23 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@freeparty.local")
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_URL,
-        "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+TESTING = "test" in sys.argv
+
+if TESTING:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "freeparty-tests",
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+        }
+    }
 
 RATELIMIT_USE_CACHE = "default"
 
@@ -186,3 +201,17 @@ EMAIL_VERIFICATION_REQUIRED = env("EMAIL_VERIFICATION_REQUIRED")
 REQUEST_SLOW_MS = env.int("REQUEST_SLOW_MS", default=700)
 FEATURE_PM_E2E_ENABLED = env.bool("FEATURE_PM_E2E_ENABLED", default=False)
 FEATURE_PM_DEV_CIPHERTEXT_PREVIEW = env.bool("FEATURE_PM_DEV_CIPHERTEXT_PREVIEW", default=False)
+FEATURE_PM_WEBSOCKET_ENABLED = env.bool("FEATURE_PM_WEBSOCKET_ENABLED", default=False)
+PM_CONVERSATION_CREATION_LIMIT = env.int("PM_CONVERSATION_CREATION_LIMIT", default=10)
+PM_CONVERSATION_CREATION_WINDOW_SECONDS = env.int("PM_CONVERSATION_CREATION_WINDOW_SECONDS", default=86400)
+PM_MESSAGE_RATE_LIMIT_MESSAGES = env.int("PM_MESSAGE_RATE_LIMIT_MESSAGES", default=100)
+PM_MESSAGE_RATE_LIMIT_WINDOW_SECONDS = env.int("PM_MESSAGE_RATE_LIMIT_WINDOW_SECONDS", default=60)
+PM_KEY_REGISTRATION_LIMIT = env.int("PM_KEY_REGISTRATION_LIMIT", default=5)
+PM_KEY_REGISTRATION_WINDOW_SECONDS = env.int("PM_KEY_REGISTRATION_WINDOW_SECONDS", default=86400)
+PM_KEY_ACK_COOLDOWN_SECONDS = env.int("PM_KEY_ACK_COOLDOWN_SECONDS", default=10)
+PM_KEY_ROTATION_COOLDOWN_SECONDS = env.int("PM_KEY_ROTATION_COOLDOWN_SECONDS", default=300)
+PM_PUBLIC_KEY_MIN_BYTES = env.int("PM_PUBLIC_KEY_MIN_BYTES", default=8)
+FEATURE_LINK_UNFURL_ENABLED = env.bool("FEATURE_LINK_UNFURL_ENABLED", default=False)
+FEATURE_FEDERATION_OUTBOUND_ENABLED = env.bool("FEATURE_FEDERATION_OUTBOUND_ENABLED", default=False)
+FEDERATION_SHARED_SECRET = env.str("FEDERATION_SHARED_SECRET", default="")
+FEDERATION_SIGNATURE_MAX_AGE_SECONDS = env.int("FEDERATION_SIGNATURE_MAX_AGE_SECONDS", default=300)

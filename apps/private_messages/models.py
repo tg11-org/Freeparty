@@ -1,6 +1,7 @@
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import TimeStampedModel
 
@@ -20,15 +21,26 @@ class Conversation(TimeStampedModel):
     )
     conversation_type = models.CharField(max_length=16, choices=ConversationType.choices, default=ConversationType.DIRECT)
     title = models.CharField(max_length=255, blank=True)
+    compromised_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Set when conversation is suspected compromised; invalidates prior messages",
+    )
+    compromise_reason = models.TextField(blank=True, help_text="Description of compromise incident")
 
     class Meta(TimeStampedModel.Meta):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["conversation_type", "created_at"]),
+            models.Index(fields=["compromised_at"]),
         ]
 
     def __str__(self) -> str:
         return f"Conversation<{self.id}>"
+
+    def is_compromised(self) -> bool:
+        """Check if conversation has been marked as compromised."""
+        return self.compromised_at is not None
 
 
 class ConversationParticipant(TimeStampedModel):
@@ -43,6 +55,7 @@ class ConversationParticipant(TimeStampedModel):
     participant_state = models.CharField(max_length=16, choices=ParticipantState.choices, default=ParticipantState.ACTIVE)
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
+    last_read_at = models.DateTimeField(null=True, blank=True)
     acknowledged_remote_key_id = models.CharField(max_length=128, blank=True)
     acknowledged_remote_key_at = models.DateTimeField(null=True, blank=True)
 
@@ -65,6 +78,11 @@ class UserIdentityKey(TimeStampedModel):
         ED25519 = "ed25519", "Ed25519"
         CURVE25519 = "curve25519", "Curve25519"
 
+    class CreationSource(models.TextChoices):
+        BOOTSTRAP = "bootstrap", "Bootstrap"
+        BROWSER = "browser", "Browser"
+        FEDERATION = "federation", "Federation"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     actor = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="identity_keys")
     key_id = models.CharField(max_length=128, unique=True)
@@ -73,16 +91,115 @@ class UserIdentityKey(TimeStampedModel):
     fingerprint_hex = models.CharField(max_length=64)
     is_active = models.BooleanField(default=True)
     rotated_at = models.DateTimeField(null=True, blank=True)
+    is_compromised = models.BooleanField(default=False, help_text="Mark as True if key is suspected compromised")
+    compromised_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when compromise was detected")
+    compromised_reason = models.TextField(blank=True, help_text="Description of compromise reason/incident")
+    revoked_at = models.DateTimeField(null=True, blank=True, help_text="Set when key is revoked")
+    revocation_reason = models.TextField(blank=True, help_text="Reason for key revocation")
+    expires_at = models.DateTimeField(null=True, blank=True, help_text="Key expiration timestamp for auto-invalidation")
+    rotation_cooldown_until = models.DateTimeField(null=True, blank=True, help_text="Prevent spam: timestamp after which next rotation is allowed")
+    creation_source = models.CharField(
+        max_length=32,
+        default=CreationSource.BOOTSTRAP,
+        choices=CreationSource.choices,
+        help_text="Origin of key: bootstrap (dev), browser (prod), or federation",
+    )
 
     class Meta(TimeStampedModel.Meta):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["actor", "is_active"]),
             models.Index(fields=["fingerprint_hex"]),
+            models.Index(fields=["actor", "is_compromised"]),
+            models.Index(fields=["actor", "revoked_at"]),
         ]
 
     def __str__(self) -> str:
         return f"UserIdentityKey<{self.actor.pk}:{self.key_id}>"
+
+    def is_valid(self) -> bool:
+        """Check if key is currently valid for use (not compromised, not expired, not rotated out, not revoked)."""
+        if self.is_compromised:
+            return False
+        if self.revoked_at is not None:
+            return False
+        if self.expires_at and timezone.now() > self.expires_at:
+            return False
+        return self.is_active
+
+    def can_rotate(self) -> bool:
+        """Check if key can be rotated (not in cooldown period)."""
+        if self.rotation_cooldown_until is None:
+            return True
+        return timezone.now() >= self.rotation_cooldown_until
+
+
+class KeyLifecycleAuditLog(TimeStampedModel):
+    """Audit trail for all key lifecycle events (creation, rotation, compromise marking, expiration)."""
+
+    class EventType(models.TextChoices):
+        CREATED = "created", "Key Created"
+        ROTATED = "rotated", "Key Rotated"
+        ACTIVATED = "activated", "Key Activated"
+        DEACTIVATED = "deactivated", "Key Deactivated"
+        MARKED_COMPROMISED = "marked_compromised", "Marked as Compromised"
+        UNMARKED_COMPROMISED = "unmarked_compromised", "Compromise Mark Removed"
+        EXPIRED = "expired", "Key Expired"
+        ACKNOWLEDGED = "acknowledged", "Key Acknowledged in Conversation"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="key_audit_logs")
+    key = models.ForeignKey("UserIdentityKey", on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_logs")
+    event_type = models.CharField(max_length=32, choices=EventType.choices)
+    reason = models.TextField(blank=True, help_text="Reason for the event (e.g., rotation reason, compromise details)")
+    triggered_by = models.CharField(
+        max_length=64,
+        choices=[("user_action", "User Action"), ("system", "System"), ("abuse_detection", "Abuse Detection")],
+        default="user_action",
+    )
+    related_conversation_id = models.UUIDField(null=True, blank=True, help_text="Conversation ID if applicable")
+
+    class Meta(TimeStampedModel.Meta):
+        ordering = ["-created_at"]
+        verbose_name_plural = "Key Lifecycle Audit Logs"
+        indexes = [
+            models.Index(fields=["actor", "event_type", "created_at"]),
+            models.Index(fields=["key", "event_type"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"KeyLifecycleAuditLog<{self.actor.pk}:{self.event_type}>"
+
+
+class PMRolloutPolicy(TimeStampedModel):
+    """Control staged rollout of PM feature by actor, cohort, or environment."""
+
+    class RolloutStage(models.TextChoices):
+        DISABLED = "disabled", "Disabled (Feature Flag Off)"
+        ALLOWLIST = "allowlist", "Allowlist (Explicit Per-Actor)"
+        BETA = "beta", "Beta (Opt-In)"
+        GENERAL = "general", "General Availability"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    stage = models.CharField(max_length=16, choices=RolloutStage.choices, default=RolloutStage.DISABLED)
+    allowlisted_actors = models.ManyToManyField(
+        "actors.Actor", blank=True, related_name="pm_allowlisted", help_text="Only applies when stage=ALLOWLIST"
+    )
+    notes = models.TextField(blank=True, help_text="Internal notes on rollout rationale and milestones")
+
+    class Meta(TimeStampedModel.Meta):
+        verbose_name_plural = "PM Rollout Policies"
+
+    def __str__(self) -> str:
+        return f"PMRolloutPolicy<stage={self.stage}>"
+
+    @staticmethod
+    def get_default_instance():
+        """Get or create the singleton PM rollout policy instance."""
+        # Use a fixed UUID for the singleton instance
+        singleton_id = uuid.UUID('00000000-0000-0000-0000-000000000000')
+        obj, _ = PMRolloutPolicy.objects.get_or_create(pk=singleton_id)
+        return obj
 
 
 class EncryptedMessageEnvelope(TimeStampedModel):

@@ -109,12 +109,24 @@ def public_posts_view(request: HttpRequest) -> HttpResponse:
 
 @require_http_methods(["GET"])
 def post_detail_view(request: HttpRequest, post_id: str) -> HttpResponse:
-	post = get_object_or_404(Post.objects.select_related("author"), id=post_id)
+	post = get_object_or_404(
+		Post.objects.select_related("author", "author__profile", "link_preview").prefetch_related("attachments"),
+		id=post_id,
+	)
 	actor = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
 	if not can_view_post(actor, post):
 		messages.error(request, "You do not have access to that post.")
 		return redirect("home")
 	comments = post.comments.filter(deleted_at__isnull=True).select_related("author", "author__profile")
+	og_image_url = ""
+	primary_image = post.attachments.filter(
+		attachment_type=Attachment.AttachmentType.IMAGE,
+		moderation_state=Attachment.ModerationState.NORMAL,
+	).order_by("created_at").first()
+	if primary_image:
+		og_image_url = request.build_absolute_uri(primary_image.file.url)
+	elif getattr(post.author.profile, "avatar", None):
+		og_image_url = request.build_absolute_uri(post.author.profile.avatar.url)
 	liked_ids = set()
 	reposted_ids = set()
 	bookmarked_ids = set()
@@ -125,6 +137,7 @@ def post_detail_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	return render(request, "posts/detail.html", {
 		"post": post,
 		"comments": comments,
+		"og_image_url": og_image_url,
 		"liked_ids": liked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,

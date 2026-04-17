@@ -15,7 +15,14 @@
         <a href="/actors/{{ actor.handle }}/" style="width:48px;height:48px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;color:var(--text2);flex-shrink:0;">{{ actor.handle|first|upper }}</a>
       {% endif %}
       <div style="flex:1;min-width:0;">
-        <a href="/actors/{{ actor.handle }}/" style="font-weight:600;color:var(--accent);">@{{ actor.handle }}</a>
+        {% with display_name=actor.user.display_name %}
+          <div class="identity-stack">
+            <a href="/actors/{{ actor.handle }}/" class="identity-name">{{ display_name|default:actor.handle }}</a>
+            {% if display_name %}
+              <a href="/actors/{{ actor.handle }}/" class="identity-handle">@{{ actor.handle }}</a>
+            {% endif %}
+          </div>
+        {% endwith %}
         {% if actor.profile.bio %}<p style="margin:0.15rem 0 0;font-size:0.85rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ actor.profile.bio|truncatechars:80 }}</p>{% endif %}
       </div>
       {% if user.is_authenticated and user.actor.id != actor.id %}

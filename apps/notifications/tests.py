@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -8,6 +8,7 @@ from apps.notifications.models import Notification
 from apps.posts.models import Post
 
 
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class NotificationViewTests(TestCase):
 	def setUp(self):
 		self.client = Client()
@@ -114,6 +115,7 @@ class NotificationViewTests(TestCase):
 		self.assertContains(response, f"/posts/{post.id}/")
 
 
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class MentionNotificationTests(TestCase):
 	"""Ensure @mention in posts and comments creates MENTION notifications."""
 

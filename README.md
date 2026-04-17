@@ -31,7 +31,7 @@ Freeparty is a centralized-first, federation-ready social media foundation inspi
 - Actor abstraction decoupled from account login concerns.
 - Canonical URI strategy (`SITE_URL`) for actor/post identity.
 - Email verification flow using signed tokens + token persistence model.
-- Password reset flow integrated with Django email backend.
+- Password reset flow dispatched through Celery-backed SMTP tasks (with retry/backoff).
 - Rate limiting on sensitive endpoints (signup, login, password reset, verify resend, posting, follow/unfollow).
 - API-ready foundation via DRF routers (`/api/v1/...`).
 - Channels websocket scaffolding for notifications (`/ws/notifications/`).
@@ -54,6 +54,13 @@ Freeparty is a centralized-first, federation-ready social media foundation inspi
   - browser keypair generation + public-key registration (`POST /messages/keys/register/`)
   - plaintext encrypt-on-send in browser
   - decrypt-on-read when local private key is present on the device
+- Phase 6 adds realtime and inbox UX foundations:
+  - unified inbox route (`/inbox/`) with unread counters for notifications + DM threads
+  - DM updates polling with cursor semantics and optional websocket live updates
+  - async social action handling (follow/unfollow/like/repost/bookmark/follow-request actions)
+- Phase 6 adds sharing improvements:
+  - outbound OpenGraph/Twitter metadata for post detail embeds
+  - inbound link unfurl previews behind `FEATURE_LINK_UNFURL_ENABLED` with SSRF safeguards
 - Centralized object permission policy layer for post/comment/actor follow and visibility checks.
 - Block-aware visibility enforcement in timeline and search queries.
 - Optional private account mode with follow-request approval/rejection flow.
@@ -73,6 +80,8 @@ Implementation companion document:
 - See `implementation_reference.md` for practical conventions and next milestones.
 - See `OPERATIONS.md` for deployment/runtime runbook and incident triage.
 - See `docs/adr/0001-pm-e2e-foundation.md` for PM/E2E foundation decisions and security review checklist.
+- See `phases_phase_7.md` for full Phase 7 scope and increment breakdown.
+- See `PHASE_7_KICKOFF.md` for a concise Phase 7 execution checklist.
 
 ## App Layout
 
@@ -124,6 +133,8 @@ Required core settings:
 - `REQUEST_SLOW_MS` (optional, default `700`)
 - `FEATURE_PM_E2E_ENABLED` (optional, default `False`; keep disabled until PM security gate sign-off)
 - `FEATURE_PM_DEV_CIPHERTEXT_PREVIEW` (optional, default `False`; only respected when `DEBUG=True`)
+- `FEATURE_PM_WEBSOCKET_ENABLED` (optional, default `False`; enables DM websocket stream)
+- `FEATURE_LINK_UNFURL_ENABLED` (optional, default `False`; enables asynchronous URL preview unfurl)
 
 Browser E2E note:
 - Browser private keys are stored client-side (localStorage) and are never uploaded to server.

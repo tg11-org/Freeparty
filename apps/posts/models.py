@@ -78,6 +78,27 @@ class Comment(TimeStampedModel):
 		return f"Comment<{self.id}>"
 
 
+class LinkPreview(TimeStampedModel):
+	"""Cached unfurl metadata for the first URL found in a Post."""
+
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	post = models.OneToOneField("posts.Post", on_delete=models.CASCADE, related_name="link_preview")
+	url = models.URLField(max_length=2000)
+	title = models.CharField(max_length=500, blank=True)
+	description = models.TextField(max_length=2000, blank=True)
+	thumbnail_url = models.URLField(max_length=2000, blank=True)
+	site_name = models.CharField(max_length=200, blank=True)
+	# For YouTube / oEmbed: may include an iframe-embed HTML snippet (sanitised)
+	embed_html = models.TextField(blank=True)
+	fetch_error = models.CharField(max_length=500, blank=True)
+
+	class Meta:
+		indexes = [models.Index(fields=["post"])]
+
+	def __str__(self) -> str:
+		return f"LinkPreview<{self.post_id}>"
+
+
 class PostEditHistory(TimeStampedModel):
 	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 	post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="edit_history")

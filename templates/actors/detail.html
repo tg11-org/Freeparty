@@ -9,7 +9,14 @@
   {% endif %}
   <div style="flex:1;min-width:0;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
-      <h2 style="margin:0 0 0.2rem;">@{{ actor.handle }}</h2>
+      <div class="identity-stack" style="gap:0.15rem;">
+        {% with display_name=actor.user.display_name %}
+          <h2 style="margin:0;">{{ display_name|default:actor.handle }}</h2>
+          {% if display_name %}
+            <div class="identity-handle">@{{ actor.handle }}</div>
+          {% endif %}
+        {% endwith %}
+      </div>
       {% if user.is_authenticated and user.actor.id == actor.id %}
         <a class="btn" href="{% url 'profiles:edit' %}">Edit profile</a>
       {% endif %}
@@ -43,17 +50,17 @@
     <span class="btn" style="opacity:0.6;">🚫 You are blocked</span>
   {% else %}
     {% if is_following %}
-      <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}
-        <button class="btn active" type="submit">✓ Following</button>
+      <form method="post" action="/social/unfollow/{{ actor.handle }}/" data-async-action="1" data-action-type="follow" data-target-handle="{{ actor.handle }}">{% csrf_token %}
+        <button class="btn active" type="submit" data-action-button="follow">✓ Following</button>
       </form>
     {% elif is_follow_pending %}
       <span class="btn" style="opacity:0.75;">Request pending</span>
-      <form method="post" action="/social/unfollow/{{ actor.handle }}/">{% csrf_token %}
-        <button class="btn" type="submit">Cancel request</button>
+      <form method="post" action="/social/unfollow/{{ actor.handle }}/" data-async-action="1" data-action-type="follow" data-target-handle="{{ actor.handle }}">{% csrf_token %}
+        <button class="btn" type="submit" data-action-button="follow">Cancel request</button>
       </form>
     {% else %}
-      <form method="post" action="/social/follow/{{ actor.handle }}/">{% csrf_token %}
-        <button class="btn" type="submit">＋ Follow</button>
+      <form method="post" action="/social/follow/{{ actor.handle }}/" data-async-action="1" data-action-type="follow" data-target-handle="{{ actor.handle }}">{% csrf_token %}
+        <button class="btn" type="submit" data-action-button="follow">＋ Follow</button>
       </form>
     {% endif %}
     <form method="post" action="/messages/start/{{ actor.handle }}/">{% csrf_token %}
@@ -67,11 +74,18 @@
 </div>
 {% endif %}
 
-<h3 style="margin:0 0 0.5rem;font-size:1rem;color:var(--text2);">Posts</h3>
+<div style="display:flex;gap:0.25rem;margin-bottom:0.75rem;border-bottom:2px solid var(--border);flex-wrap:wrap;">
+  {% for fval, flabel in filter_tabs %}
+    <a href="?filter={{ fval }}"
+      style="padding:0.45rem 1rem;font-size:0.9rem;font-weight:{% if active_filter == fval %}700{% else %}400{% endif %};color:{% if active_filter == fval %}var(--accent){% else %}var(--text2){% endif %};text-decoration:none;border-bottom:2px solid {% if active_filter == fval %}var(--accent){% else %}transparent{% endif %};margin-bottom:-2px;">
+      {{ flabel }}
+    </a>
+  {% endfor %}
+</div>
 {% for post in posts %}
   {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
 {% empty %}
-  <p style="color:var(--text2);">No posts yet.</p>
+  <p style="color:var(--text2);">No {% if active_filter == "reposts" %}reposts{% elif active_filter == "media" %}media posts{% else %}posts{% endif %} yet.</p>
 {% endfor %}
 {% include "partials/pagination.html" with page_obj=page_obj page_param="page" %}
 {% endblock %}

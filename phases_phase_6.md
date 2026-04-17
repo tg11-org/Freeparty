@@ -71,63 +71,112 @@ Requirements:
 - Metrics for DM update latency, async interaction failure rates, polling/websocket fallback rates.
 - Alert thresholds and runbook actions for incident response.
 
-Execution plan by increments:
+PHASE 6 PART F - Rich Link Embeds (Outbound OG + Inbound Unfurl)
+Goal:
+Make posts look great when shared to external platforms and automatically render link previews when posts contain URLs.
+
+Requirements (outbound — Freeparty posts shared to Discord/Twitter/etc.):
+- Add OpenGraph and Twitter Card meta tags to post detail pages.
+- Include: og:title, og:description, og:image (first attachment or avatar), og:url, og:type.
+- Add Twitter-specific: twitter:card, twitter:title, twitter:description, twitter:image.
+- Keep sensitive/NSFW/private posts from generating rich embeds (serve minimal meta or 404 for private-account posts).
+
+Requirements (inbound — links inside post content render as preview cards):
+- When a post body contains a URL, fetch and store unfurl metadata (title, description, thumbnail, domain) server-side via Celery task.
+- Store metadata in a dedicated LinkPreview model (url, title, description, thumbnail_url, fetched_at).
+- Render a preview card beneath post content in post_card.html.
+- Support rich embeds for YouTube (use oEmbed / noembed.com) to show video title, thumbnail, channel.
+- Rate-limit and sandbox outbound HTTP fetches; disallow SSRF targets (private IP ranges, metadata endpoints).
+- Feature-flag: FEATURE_LINK_UNFURL_ENABLED (default False in dev; operators opt-in).
+
+Execution tasks (Increment 6.7 — Outbound OG meta):
+- [ ] Add OG + Twitter Card meta block to post detail template.
+- [ ] Guard: skip rich OG for private/NSFW posts (serve safe fallback meta only).
+- [ ] Add tests verifying meta tag presence/absence based on post state.
+
+Execution tasks (Increment 6.8 — Inbound link unfurl):
+- [ ] Add LinkPreview model + migration.
+- [ ] Add async Celery task: fetch URL, parse OG/oEmbed, store LinkPreview; skip SSRF targets.
+- [ ] Wire task to post-save signal (only when body URL detected and flag enabled).
+- [ ] Render preview card in post_card.html when LinkPreview exists for post.
+- [ ] Add tests for SSRF guard, task idempotency, and card render toggle.
+
+
 
 Increment 6.0
 - Mailcow connectivity baseline.
 
 Execution tasks (Increment 6.0):
-- [ ] Add Mailcow SMTP env schema and secure defaults in settings.
-- [ ] Add startup/management check command for SMTP connectivity and auth.
-- [ ] Add docs for Mailcow DNS prerequisites (SPF, DKIM, DMARC, rDNS).
+- [x] Add Mailcow SMTP env schema and secure defaults in settings.
+- [x] Add startup/management check command for SMTP connectivity and auth.
+- [x] Add docs for Mailcow DNS prerequisites (SPF, DKIM, DMARC, rDNS).
 
 Increment 6.1
 - Transactional email migration.
 
 Execution tasks (Increment 6.1):
-- [ ] Route verification/reset/system emails through Mailcow SMTP backend.
-- [ ] Add retry/backoff behavior for transient SMTP failures.
-- [ ] Add tests for failure + retry behavior and sender metadata correctness.
+- [x] Route verification/reset/system emails through Mailcow SMTP backend.
+- [x] Add retry/backoff behavior for transient SMTP failures.
+- [x] Add tests for failure + retry behavior and sender metadata correctness.
 
 Increment 6.2
 - Async interaction parity and optimistic UX.
 
 Execution tasks (Increment 6.2):
-- [ ] Expand no-refresh action handling to all high-frequency social actions.
-- [ ] Add optimistic button state + rollback on API failure.
-- [ ] Add tests for JSON response contracts and UI-state edge cases.
+- [x] Expand no-refresh action handling to all high-frequency social actions.
+- [x] Add optimistic button state + rollback on API failure.
+- [x] Add tests for JSON response contracts and UI-state edge cases.
 
 Increment 6.3
 - DM live update hardening.
 
 Execution tasks (Increment 6.3):
-- [ ] Add robust polling/backoff strategy and duplicate-event protection.
-- [ ] Evaluate websocket upgrade path for DM events (feature-flagged).
-- [ ] Add tests for update cursor semantics and missed-message recovery.
+- [x] Add robust polling/backoff strategy and duplicate-event protection.
+- [x] Evaluate websocket upgrade path for DM events (feature-flagged).
+- [x] Add tests for update cursor semantics and missed-message recovery.
 
 Increment 6.4
 - Device/key UX and support tooling.
 
 Execution tasks (Increment 6.4):
-- [ ] Add explicit device key inventory UI (current browser key vs server active key).
-- [ ] Add user-facing guidance for recovery/rotation and verification steps.
-- [ ] Add tests for missing-local-key and key-change warning flows.
+- [x] Add explicit device key inventory UI (current browser key vs server active key).
+- [x] Add user-facing guidance for recovery/rotation and verification steps.
+- [x] Add tests for missing-local-key and key-change warning flows.
 
 Increment 6.5
 - Inbox + notification unification.
+- Status: Complete (slice 3 delivered: richer activity-card context previews for source actor/post and latest DM sender).
 
 Execution tasks (Increment 6.5):
-- [ ] Add unified unread counters in top navigation.
-- [ ] Add lightweight inbox dashboard linking DM threads and social notifications.
-- [ ] Add pagination/filter tests for high-volume data paths.
+- [x] Add unified unread counters in top navigation.
+- [x] Add lightweight inbox dashboard linking DM threads and social notifications.
+- [x] Add pagination/filter tests for high-volume data paths.
 
 Increment 6.6
 - Observability + SLO rollout.
 
 Execution tasks (Increment 6.6):
-- [ ] Add structured logging for SMTP send/retry outcomes.
-- [ ] Add DM and async interaction latency/failure metrics.
-- [ ] Add alert/runbook updates in OPERATIONS.md with escalation guidance.
+- [x] Add structured logging for SMTP send/retry outcomes.
+- [x] Add DM and async interaction latency/failure metrics.
+- [x] Add alert/runbook updates in OPERATIONS.md with escalation guidance.
+
+Increment 6.7
+- Outbound OG meta tags for Discord/Twitter/Facebook embeds.
+
+Execution tasks (Increment 6.7):
+- [x] Add OG + Twitter Card meta block to post detail template.
+- [x] Guard: skip rich OG for private/NSFW posts.
+- [x] Add tests verifying meta presence/absence.
+
+Increment 6.8
+- Inbound link unfurl / preview cards.
+
+Execution tasks (Increment 6.8):
+- [x] Add LinkPreview model + migration.
+- [x] Add SSRF-safe Celery unfurl task (OG + YouTube oEmbed).
+- [x] Wire task to post-save signal behind FEATURE_LINK_UNFURL_ENABLED flag.
+- [x] Render preview card in post_card.html.
+- [x] Add tests for SSRF guard, idempotency, card toggle.
 
 Acceptance gate per increment:
 - manage.py check passes.

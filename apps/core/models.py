@@ -55,6 +55,19 @@ class AsyncTaskFailure(TimeStampedModel):
 	attempt = models.PositiveIntegerField(default=1)
 	max_retries = models.PositiveIntegerField(default=0)
 	is_terminal = models.BooleanField(default=False)
+	terminal_reason = models.CharField(
+		max_length=32,
+		choices=[
+			("max_retries_exceeded", "Max Retries Exceeded"),
+			("timeout", "Timeout"),
+			("invalid_payload", "Invalid Payload"),
+			("manual_dismiss", "Manually Dismissed"),
+			("manual_replay", "Manual Replay"),
+			("other", "Other"),
+		],
+		blank=True,
+		help_text="Reason why task became terminal (Phase 7.2)",
+	)
 	error_message = models.TextField()
 	traceback = models.TextField(blank=True)
 	payload = models.JSONField(default=dict, blank=True)
@@ -63,5 +76,6 @@ class AsyncTaskFailure(TimeStampedModel):
 		indexes = [
 			models.Index(fields=["task_name", "is_terminal"]),
 			models.Index(fields=["correlation_id"]),
+			models.Index(fields=["is_terminal", "terminal_reason", "created_at"]),
 		]
 

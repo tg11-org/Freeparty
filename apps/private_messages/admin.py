@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageEnvelope, UserIdentityKey
+from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageEnvelope, UserIdentityKey, PMRolloutPolicy, KeyLifecycleAuditLog
 
 
 class ImmutableAdminMixin:
@@ -14,6 +14,45 @@ class ImmutableAdminMixin:
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(PMRolloutPolicy)
+class PMRolloutPolicyAdmin(admin.ModelAdmin):
+    list_display = ("stage", "allowlisted_count", "created_at", "updated_at")
+    fieldsets = (
+        ("Rollout Stage", {"fields": ("stage",)}),
+        ("Allowlisted Actors", {"fields": ("allowlisted_actors",), "classes": ("wide",)}),
+        ("Notes", {"fields": ("notes",), "classes": ("wide",)}),
+    )
+
+    def allowlisted_count(self, obj):
+        return obj.allowlisted_actors.count()
+
+    allowlisted_count.short_description = "Allowlisted Actors"
+
+    def has_add_permission(self, request):
+        return PMRolloutPolicy.objects.count() == 0
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(KeyLifecycleAuditLog)
+class KeyLifecycleAuditLogAdmin(ImmutableAdminMixin, admin.ModelAdmin):
+    list_display = ("actor", "event_type", "key", "triggered_by", "created_at")
+    list_filter = ("event_type", "triggered_by", "created_at")
+    search_fields = ("actor__handle", "key__key_id", "reason")
+    readonly_fields = (
+        "id",
+        "actor",
+        "key",
+        "event_type",
+        "reason",
+        "triggered_by",
+        "related_conversation_id",
+        "created_at",
+        "updated_at",
+    )
 
 
 @admin.register(Conversation)
@@ -45,8 +84,8 @@ class ConversationParticipantAdmin(ImmutableAdminMixin, admin.ModelAdmin):
 
 @admin.register(UserIdentityKey)
 class UserIdentityKeyAdmin(ImmutableAdminMixin, admin.ModelAdmin):
-    list_display = ("actor", "key_id", "algorithm", "is_active", "created_at")
-    list_filter = ("algorithm", "is_active")
+    list_display = ("actor", "key_id", "algorithm", "is_active", "is_compromised", "expires_at", "created_at")
+    list_filter = ("algorithm", "is_active", "is_compromised", "created_at")
     search_fields = ("actor__handle", "key_id", "fingerprint_hex")
     readonly_fields = (
         "id",
@@ -57,6 +96,10 @@ class UserIdentityKeyAdmin(ImmutableAdminMixin, admin.ModelAdmin):
         "fingerprint_hex",
         "is_active",
         "rotated_at",
+        "is_compromised",
+        "compromised_at",
+        "compromised_reason",
+        "expires_at",
         "created_at",
         "updated_at",
     )

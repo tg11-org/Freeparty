@@ -99,7 +99,9 @@ Interpretation:
 	- `task_failure` (task/task_id/duration_ms/correlation_id + stack trace)
 - Initial instrumented tasks:
 	- `apps.accounts.tasks.send_verification_email`
+	- `apps.accounts.tasks.send_password_reset_email`
 	- `apps.accounts.tasks.send_password_reset_notice`
+	- `apps.accounts.tasks.send_system_email`
 	- `apps.notifications.tasks.process_notification_fanout`
 	- `apps.federation.tasks.execute_federation_delivery`
 - For incident triage:
@@ -120,6 +122,21 @@ Interpretation:
 	2. Group by `task` and `error` message.
 	3. Use `corr=` value to correlate with web/worker logs.
 	4. Address root cause and manually re-enqueue only affected payloads.
+
+### Dead-letter replay decision tree (Phase 7.2)
+- Use `python manage.py dead_letter_inspect --limit 25` to review recent terminal failures.
+- Use `python manage.py dead_letter_inspect --task <task-name> --terminal-only` when isolating one worker path.
+- Replay only when all three conditions are true:
+	- root cause has been removed
+	- payload is safe to re-run with its idempotency key
+	- target system is healthy again
+- Dismiss or leave parked when payload is stale, unsafe, or tied to user-visible state that already recovered manually.
+- Replay command:
+	- `python manage.py dead_letter_inspect --replay <failure-id>`
+- Replay audit expectations:
+	- `AsyncTaskFailure.terminal_reason` becomes `manual_replay`
+	- payload replay counter increments
+	- worker logs should emit the normal `task_start` and `task_success` or a new terminal record
 
 ### Media processing reliability workflow (Phase 4.3)
 - Media attachments are processed asynchronously by `apps.posts.tasks.process_media_attachment`.
@@ -202,6 +219,100 @@ Interpretation:
 	- clearing browser storage removes local private keys for that device
 	- envelopes tied to removed local keys will remain stored but cannot be decrypted on that device
 
+### Device/key inventory and recovery workflow (Phase 6.4)
+- DM detail now includes an explicit **Device & Key Inventory** section:
+	- recent server-side local keys
+	- recent remote participant keys
+	- currently acknowledged remote key id
+	- browser-private-key availability status for this device
+- Recovery guidance:
+	- if browser private key material is missing for an active server key, use **Generate browser keypair for this device**
+	- this rotates server active key state for that actor and requires safety-fingerprint re-verification
+	- key-change warning remains the authoritative signal before trusting new encrypted messages
+
+### SMTP structured delivery observability (Phase 6.6)
+- Account email tasks now emit structured `smtp_delivery` logs for:
+	- `event=attempt`
+	- `event=success`
+	- `event=failure`
+	- `event=retry_scheduled`
+- Logged fields include:
+	- `task`, `task_id`, `correlation_id`
+	- `recipient_count`, `attempt`, `max_retries`, `will_retry`
+	- `error` (for failures/retries)
+
+### Async interaction and DM poll metrics (Phase 6.6)
+- Structured `interaction_metric` logs now cover:
+	- async social JSON actions (follow/unfollow/like/repost/bookmark/follow-request approve/reject)
+	- DM updates polling endpoint (`GET /messages/{id}/updates/`)
+- Logged fields include:
+	- `name`, `success`, `duration_ms`, `status_code`
+	- `actor_id`, `target_id`, `detail`
+
+### Alert thresholds and escalation guidance (Phase 6.6)
+- Suggested alerts for new telemetry:
+	- `smtp_delivery event=failure`: >= 5 failures in 10 minutes
+	- `smtp_delivery event=retry_scheduled`: >= 10 retries in 10 minutes
+	- `interaction_metric name=dm_conversation_updates success=False`: >= 20 failures in 10 minutes
+	- `interaction_metric name=social_* success=False`: >= 50 failures in 10 minutes
+	- `interaction_metric name=dm_conversation_updates duration_ms`: p95 > 1500 ms for 15 minutes
+	- `interaction_metric name=social_* duration_ms`: p95 > 800 ms for 15 minutes
+- Escalation sequence:
+	1. Correlate request IDs and `correlation_id` values in app + worker logs.
+	2. If SMTP failures spike, run `python manage.py check_smtp` and verify upstream relay/auth.
+	3. If social/DM latency spikes, check DB/cache readiness endpoints and lock contention.
+	4. If retry storms persist >30 minutes, page on-call and shift to degraded mode guidance.
+
+### PM staged rollout and gate closure (Phase 7.0)
+- PM feature is now controlled by staged rollout via `PMRolloutPolicy` model (in addition to `FEATURE_PM_E2E_ENABLED` flag).
+- Rollout stages managed in Django admin:
+	- `DISABLED`: All actors denied (default). Set `FEATURE_PM_E2E_ENABLED=False` to enforce at app level.
+	- `ALLOWLIST`: Only explicitly allowlisted actors can use PM. Manage via admin "Allowlisted Actors" M2M.
+	- `BETA`: All authenticated users can opt-in to PM (requires explicit feature flag + stage).
+	- `GENERAL`: Full rollout; all authenticated users can use PM.
+- **Staged rollout workflow:**
+	1. Start in `DISABLED` stage while security gate closure is in progress.
+	2. Move to `ALLOWLIST` stage when ready for internal alpha (ops + early testers).
+	3. Move to `BETA` stage when threat model gate is signed off and beta cohort is defined.
+	4. Move to `GENERAL` stage when public beta is approved.
+- **PM rollback procedure (if incident detected):**
+	1. Immediately set `FEATURE_PM_E2E_ENABLED=False` in environment and redeploy.
+	2. Set `PMRolloutPolicy.stage=DISABLED` in admin console.
+	3. Monitor logs for active PM connections gracefully closing.
+	4. No data loss — conversations and encrypted envelopes are preserved.
+	5. Document incident and root cause in security runbook before re-enabling.
+- **Incident response for PM security issues:**
+	- If plaintext leakage detected in logs: Revert `FEATURE_PM_E2E_ENABLED`, audit logs for sensitive data, escalate to security team.
+	- If key compromise/loss detected: Trigger key rotation workflow; affected user must acknowledge new key before messaging resumes.
+	- If message ordering/replay issue detected: Halt PM writes (disable feature flag), inspect `EncryptedMessageEnvelope` table for integrity.
+	- If unacknowledged key mismatch causes false warnings: Revert `FEATURE_PM_WEBSOCKET_ENABLED` if using websocket updates; fall back to polling interval.
+- **PM messaging is disabled-by-default within views:**
+	- All PM routes (`/messages/`) check both `FEATURE_PM_E2E_ENABLED` flag AND `is_actor_pm_eligible()` function.
+	- Eligible actors are determined by: global feature flag + staged rollout policy + optional per-actor allowlist.
+	- If ineligible, HTTP response is 403 Forbidden with message "Private messaging is not available to your account."
+
+### Phase 7 kickoff posture
+- Current planning baseline is documented in:
+	- `phases_phase_7.md` (full roadmap)
+	- `PHASE_7_KICKOFF.md` (operator-facing kickoff checklist)
+- Phase 7 risk controls:
+	- keep `FEATURE_PM_E2E_ENABLED` disabled by default outside explicit rollout windows
+	- keep `FEATURE_PM_WEBSOCKET_ENABLED` disabled until websocket failure drills are complete
+	- keep `FEATURE_LINK_UNFURL_ENABLED` disabled until outbound fetch policy and alerting are validated in target environment
+- During Phase 7 execution, require an explicit rollback note in each change set touching:
+	- feature flags
+	- migrations
+	- async task retry/dead-letter behavior
+	- federation delivery configuration
+
+### Structured log quick filters
+- SMTP delivery events:
+	- search for `smtp_delivery` and group by `event` (`attempt`, `success`, `failure`, `retry_scheduled`)
+- Async interaction events:
+	- search for `interaction_metric` and group by `name` + `success`
+- Request correlation:
+	- use `request_id` (web) and `correlation_id` (worker tasks) to join timelines during incident triage
+
 ### Structured report intake workflow (Phase 5 kickoff)
 - Actor/post report entry points now route to a dedicated report form page.
 - Stored report severity is derived from selected reason category.
@@ -219,6 +330,73 @@ Interpretation:
 	- `severity`
 	- `reason_category`
 - Use these filters during incident surge windows to prioritize high/critical safety queues first.
+
+### Moderation escalation and SLA workflow (Phase 7.3)
+- `Report` now tracks:
+	- `assigned_to`
+	- `first_assigned_at`
+	- `responded_at`
+	- `sla_target_minutes`
+	- `evidence_hash`
+- Critical intake auto-assignment:
+	- critical reports are automatically assigned to the earliest-created staff account
+	- web logs emit `incident_escalation` with report id and assignee
+- Staff dashboard triage additions:
+	- `owner_state=assigned|unassigned`
+	- `sla_breached=true`
+- SLA analytics:
+	- `GET /moderation/reports/analytics/sla/`
+	- `GET /api/v1/moderation/reports/analytics/sla/`
+- Evidence guardrail:
+	- high/critical reports cannot change state without evidence notes or an existing evidence hash
+	- status/action notes stamp a deterministic `evidence_hash` for later review
+
+### Federation pilot allowlist and outbound delivery (Phase 7.4/7.5)
+- Instance controls now include:
+	- `allowlist_state=pending|allowed|blocked`
+	- `allowlist_reason`
+	- optional per-instance metadata keys: `shared_secret`, `inbox_url`
+- Inbound pilot contract:
+	- only `allowlist_state=allowed` and not-blocked domains may be fetched
+	- inbound actor/object payloads require a valid `X-Freeparty-Timestamp` + `X-Freeparty-Signature`
+	- fetched entities are stored as `RemoteActor` and `RemotePost`
+- Outbound pilot contract:
+	- protected by `FEATURE_FEDERATION_OUTBOUND_ENABLED=False` by default
+	- worker signs POST bodies with `X-Freeparty-Key-Id`, `X-Freeparty-Timestamp`, `X-Freeparty-Signature`
+	- retry schedule: 1m, 5m, 30m, 2h, then terminal failure
+- Required configuration before enabling outbound:
+	- set `FEATURE_FEDERATION_OUTBOUND_ENABLED=True`
+	- set `FEDERATION_SHARED_SECRET` or per-instance `metadata.shared_secret`
+	- define partner inbox URL in `Instance.metadata.inbox_url` when not using the default `https://<domain>/inbox`
+
+### Phase 7.6 alert ownership baseline
+- Platform on-call owns:
+	- HTTP 5xx spikes
+	- SMTP delivery degradation
+	- Redis/database availability issues
+- Backend on-call owns:
+	- task failure rate spikes
+	- dead-letter growth
+	- DM poll latency regressions
+- Federation owner owns:
+	- federation delivery backlog growth
+	- signature validation failures
+	- pilot partner onboarding/offboarding
+
+### Phase 7.7 failure-drill checklist
+- Redis down:
+	- confirm API degradation mode
+	- confirm worker enqueue/retry visibility
+	- capture time-to-detect and time-to-mitigate
+- SMTP relay down:
+	- confirm `smtp_delivery event=failure|retry_scheduled`
+	- inspect dead-letter queue after retry ceiling
+- Database lag:
+	- confirm readiness failures and user-visible degradation messaging
+- DM websocket disruption:
+	- confirm polling remains available while websocket flag stays disabled
+- Federation delivery storm:
+	- inspect retry queue, backlog, and terminal failures before replaying anything
 
 ### Initial SLO Targets (Phase 3 baseline)
 | Objective | Target | Alert Trigger | Scope |

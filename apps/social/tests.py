@@ -1,5 +1,5 @@
 from django.db import IntegrityError
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from apps.accounts.models import User
 from apps.core.services.uris import post_uri
@@ -67,6 +67,7 @@ class SocialPermissionTests(TestCase):
 		self.assertFalse(post.likes.filter(actor=self.user_a.actor).exists())
 
 
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class PrivateAccountFollowFlowTests(TestCase):
 	def setUp(self):
 		self.client = Client()
@@ -132,6 +133,58 @@ class PrivateAccountFollowFlowTests(TestCase):
 			notification_type=Notification.NotificationType.FOLLOW,
 		).count()
 		self.assertEqual(count, 1)
+
+
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+class AsyncFollowRequestTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.owner = User.objects.create_user(email="owner-async-follow@example.com", username="ownerasyncfollow", password="secret123")
+		self.requester = User.objects.create_user(email="requester-async-follow@example.com", username="requesterasyncfollow", password="secret123")
+		self.owner.mark_email_verified()
+		self.requester.mark_email_verified()
+		self.relation = Follow.objects.create(
+			follower=self.requester.actor,
+			followee=self.owner.actor,
+			state=Follow.FollowState.PENDING,
+		)
+
+	def test_follow_requests_page_renders_async_forms(self):
+		self.client.force_login(self.owner)
+		response = self.client.get("/social/follow-requests/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'data-async-action="1"')
+		self.assertContains(response, 'data-action-type="follow-request"')
+
+	def test_approve_follow_request_returns_json(self):
+		self.client.force_login(self.owner)
+		response = self.client.post(
+			f"/social/follow-requests/{self.relation.id}/approve/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertEqual(payload["action"], "approved")
+		self.assertTrue(payload["remove_request_row"])
+		self.relation.refresh_from_db()
+		self.assertEqual(self.relation.state, Follow.FollowState.ACCEPTED)
+
+	def test_reject_follow_request_returns_json(self):
+		self.client.force_login(self.owner)
+		response = self.client.post(
+			f"/social/follow-requests/{self.relation.id}/reject/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertEqual(payload["action"], "rejected")
+		self.assertTrue(payload["remove_request_row"])
+		self.relation.refresh_from_db()
+		self.assertEqual(self.relation.state, Follow.FollowState.REJECTED)
 
 
 class RepostHardeningTests(TestCase):
@@ -206,6 +259,7 @@ class BookmarkFlowTests(TestCase):
 		self.assertFalse(Bookmark.objects.filter(actor=self.viewer.actor, post=self.post).exists())
 
 
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class SocialAjaxToggleTests(TestCase):
 	def setUp(self):
 		self.client = Client()
@@ -256,3 +310,80 @@ class SocialAjaxToggleTests(TestCase):
 		payload = response.json()
 		self.assertTrue(payload["ok"])
 		self.assertTrue(payload["bookmarked"])
+
+	def test_follow_returns_json_for_public_account(self):
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/follow/{self.owner.actor.handle}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["following"])
+		self.assertFalse(payload["follow_pending"])
+		self.assertEqual(payload["next_action"], "unfollow")
+
+	def test_follow_returns_pending_json_for_private_account(self):
+		self.owner.actor.profile.is_private_account = True
+		self.owner.actor.profile.save(update_fields=["is_private_account", "updated_at"])
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/follow/{self.owner.actor.handle}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertFalse(payload["following"])
+		self.assertTrue(payload["follow_pending"])
+		self.assertEqual(payload["next_action"], "unfollow")
+
+	def test_unfollow_returns_json(self):
+		Follow.objects.create(
+			follower=self.viewer.actor,
+			followee=self.owner.actor,
+			state=Follow.FollowState.ACCEPTED,
+		)
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/unfollow/{self.owner.actor.handle}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertFalse(payload["following"])
+		self.assertFalse(payload["follow_pending"])
+
+	def test_like_toggle_emits_interaction_metric_log(self):
+		self.client.force_login(self.viewer)
+		with self.assertLogs("apps.core.services.interaction_observability", level="INFO") as logs:
+			response = self.client.post(
+				f"/social/like/{self.post.id}/",
+				HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+				HTTP_ACCEPT="application/json",
+			)
+		self.assertEqual(response.status_code, 200)
+		joined = "\n".join(logs.output)
+		self.assertIn("interaction_metric", joined)
+		self.assertIn("name=social_like_toggle", joined)
+		self.assertIn("success=True", joined)
+
+	def test_follow_permission_denial_emits_failed_interaction_metric_log(self):
+		Block.objects.create(blocker=self.owner.actor, blocked=self.viewer.actor)
+		self.client.force_login(self.viewer)
+		with self.assertLogs("apps.core.services.interaction_observability", level="WARNING") as logs:
+			response = self.client.post(
+				f"/social/follow/{self.owner.actor.handle}/",
+				HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+				HTTP_ACCEPT="application/json",
+			)
+		self.assertEqual(response.status_code, 403)
+		joined = "\n".join(logs.output)
+		self.assertIn("interaction_metric", joined)
+		self.assertIn("name=social_follow", joined)
+		self.assertIn("success=False", joined)
