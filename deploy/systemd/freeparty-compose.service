@@ -2,6 +2,7 @@
 Description=Freeparty Docker Compose Stack
 After=network-online.target docker.service
 Wants=network-online.target docker.service
+Requires=docker.service
 
 [Service]
 Type=oneshot
@@ -10,19 +11,29 @@ WorkingDirectory=/var/www/Freeparty
 
 # Keep this stack definition in one place
 Environment=COMPOSE_FILE=/var/www/Freeparty/compose.yaml
+Environment=COMPOSE_PROJECT_NAME=freeparty
+
+# Validate compose file and environment before attempting startup
+ExecStartPre=/usr/bin/docker compose config -q
 
 # Start/refresh stack
-ExecStart=/usr/bin/docker compose up --detach --build --remove-orphans
+ExecStart=/usr/bin/docker compose up --detach --build --remove-orphans --wait --wait-timeout 180
+
+# Emit container status after startup to journald for quick visibility
+ExecStartPost=/usr/bin/docker compose ps
 
 # Stop stack without deleting volumes/data
 ExecStop=/usr/bin/docker compose stop
 
 # Refresh stack on reload
-ExecReload=/usr/bin/docker compose up --detach --build --remove-orphans
+ExecReload=/usr/bin/docker compose up --detach --build --remove-orphans --wait --wait-timeout 180
 
 # Let compose operations run to completion
 TimeoutStartSec=0
-TimeoutStopSec=120
+TimeoutStopSec=180
+
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

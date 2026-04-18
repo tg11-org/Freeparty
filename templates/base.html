@@ -312,7 +312,7 @@
     <a class="skip-link" href="#main-content">Skip to main content</a>
     <header>
       <h1><a href="/" style="color:#fff;text-decoration:none;">Freeparty</a></h1>
-      <nav>
+      <nav data-unread-inbox="{{ nav_unread_inbox_count|default:0 }}" data-unread-messages="{{ nav_unread_message_count|default:0 }}" data-unread-notifications="{{ nav_unread_notification_count|default:0 }}">
         <a href="/">Home</a>
         <a href="/posts/public/">Explore</a>
         {% if user.is_authenticated %}
@@ -708,6 +708,28 @@
       window.closeShareSheet = closeShareSheet;
       window.shareSheetCopyLink = shareSheetCopyLink;
       window.shareSheetNative = shareSheetNative;
+    })();
+    </script>
+    <!-- Badge API for PWA app badge count (Android/Chrome only, iOS Safari not supported) -->
+    <script>
+    (function () {
+      function updateBadge() {
+        if ('setAppBadge' in navigator) {
+          var nav = document.querySelector('nav');
+          if (!nav) return;
+          var total = 0;
+          total += parseInt(nav.dataset.unreadsInbox || 0);
+          total += parseInt(nav.dataset.unreadsMessages || 0);
+          total += parseInt(nav.dataset.unreadsNotifications || 0);
+          if (total > 0) {
+            navigator.setAppBadge(total);
+          } else {
+            navigator.clearAppBadge();
+          }
+        }
+      }
+      updateBadge();
+      window.updateBadge = updateBadge;
     })();
     </script>
   </body>
