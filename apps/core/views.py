@@ -41,7 +41,7 @@ def _notification_activity_summary(notification: Notification, actor_label: str)
 @require_http_methods(["GET"])
 def home_view(request: HttpRequest) -> HttpResponse:
 	active_tab = request.GET.get("tab", "all").strip().lower()
-	if active_tab not in {"all", "media"}:
+	if active_tab not in {"all", "media", "links"}:
 		active_tab = "all"
 
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
@@ -57,6 +57,8 @@ def home_view(request: HttpRequest) -> HttpResponse:
 			attachments__attachment_type__in=["image", "video"],
 			attachments__moderation_state="normal",
 		).distinct()
+	elif active_tab == "links":
+		posts_qs = posts_qs.filter(link_preview__isnull=False)
 
 	page_obj = paginate_queryset(request, posts_qs, per_page=20, page_param="page")
 	posts = page_obj.object_list

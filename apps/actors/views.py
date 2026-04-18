@@ -25,7 +25,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		raise Http404("Actor not found")
 
 	active_filter = request.GET.get("filter", "posts")
-	if active_filter not in ("posts", "reposts", "media"):
+	if active_filter not in ("posts", "reposts", "media", "links"):
 		active_filter = "posts"
 
 	repost_posts = None
@@ -39,6 +39,11 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL,
 			attachments__isnull=False,
 		).distinct().select_related("author", "author__profile", "link_preview").order_by("-created_at")
+	elif active_filter == "links":
+		posts_qs = Post.objects.filter(
+			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL,
+			link_preview__isnull=False,
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
 	else:
 		posts_qs = Post.objects.filter(
 			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL
@@ -83,7 +88,8 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		"posts": posts,
 		"page_obj": page_obj,
 		"active_filter": active_filter,
-		"filter_tabs": [("posts", "Posts"), ("reposts", "Reposts"), ("media", "Images & Video")],
+		"filter_tabs": [("posts", "Posts"), ("reposts", "Reposts"), ("media", "Images & Video"), ("links", "Links")],
+		"query_string": f"filter={active_filter}" if active_filter != "posts" else "",
 		"follower_count": follower_count,
 		"following_count": following_count,
 		"is_following": is_following,

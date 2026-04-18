@@ -5,6 +5,7 @@
 <div style="display:flex;gap:0.5rem;margin:0 0 1rem;">
   <a class="btn {% if active_tab == 'all' %}active{% endif %}" href="/">All posts</a>
   <a class="btn {% if active_tab == 'media' %}active{% endif %}" href="/?tab=media">Photos and videos</a>
+  <a class="btn {% if active_tab == 'links' %}active{% endif %}" href="/?tab=links">Links</a>
 </div>
 {% if user.is_authenticated and not user.email_verified %}
 <div style="background:var(--surface2);border-left:3px solid var(--danger);padding:0.6rem 0.9rem;border-radius:6px;margin-bottom:1rem;">
