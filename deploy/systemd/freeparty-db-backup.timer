@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Freeparty DB backup every 24 hours
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=10m
+Unit=freeparty-db-backup.service
+
+[Install]
+WantedBy=timers.target

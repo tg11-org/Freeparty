@@ -1,0 +1,25 @@
+[Unit]
+Description=Freeparty PostgreSQL Backup
+After=docker.service freeparty.service
+Wants=docker.service freeparty.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/www/Freeparty
+
+# You can override these in a drop-in if needed.
+Environment=PROJECT_DIR=/var/www/Freeparty
+Environment=BACKUP_DIR=/var/backups/freeparty
+Environment=RETENTION_DAYS=7
+Environment=RETENTION_COUNT=7
+Environment=DB_CONTAINER=db
+Environment=DB_NAME=freeparty
+Environment=DB_USER=freeparty
+
+ExecStart=/bin/sh /var/www/Freeparty/scripts/backup_db.sh
+
+User=root
+Group=root
+
+StandardOutput=journal
+StandardError=journal
