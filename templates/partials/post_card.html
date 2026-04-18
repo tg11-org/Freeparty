@@ -43,7 +43,7 @@
                   onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
               {% endif %}
               <div class="content-gate-body">
-                <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+                <p class="post-content multiline-scroll multiline-scroll-lg">{{ post.content|linkify_mentions|linebreaksbr }}</p>
                 {% if post.attachments.all %}
                   <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
                     {% for media in post.attachments.all %}
@@ -64,7 +64,7 @@
               </div>
             </div>
           {% else %}
-            <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+            <p class="post-content multiline-scroll multiline-scroll-lg">{{ post.content|linkify_mentions|linebreaksbr }}</p>
             {% if post.attachments.all %}
               <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
                 {% for media in post.attachments.all %}
@@ -94,7 +94,7 @@
             onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
         {% endif %}
         <div class="content-gate-body">
-          <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+          <p class="post-content multiline-scroll multiline-scroll-lg">{{ post.content|linkify_mentions|linebreaksbr }}</p>
           {% if post.attachments.all %}
             <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
               {% for media in post.attachments.all %}
@@ -117,7 +117,7 @@
 
     {# ── Normal (no gate) ──────────────────────────────────────── #}
     {% else %}
-      <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
+      <p class="post-content multiline-scroll multiline-scroll-lg">{{ post.content|linkify_mentions|linebreaksbr }}</p>
       {% if post.attachments.all %}
         <div style="display:grid;gap:0.5rem;margin:0.5rem 0;">
           {% for media in post.attachments.all %}

@@ -234,7 +234,17 @@
         color: var(--accent);
         text-decoration: underline;
       }
-      .post-content { margin: 0 0 0.5rem; word-break: break-word; white-space: pre-wrap; }
+      .multiline-scroll {
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-y: auto;
+      }
+      .multiline-scroll-sm { max-height: 8rem; }
+      .multiline-scroll-md { max-height: 12rem; }
+      .multiline-scroll-lg { max-height: 22rem; }
+      .post-content { margin: 0 0 0.5rem; }
+      .post-content.multiline-scroll { padding-right: 0.15rem; }
+      .comment-content { margin: 0; padding-right: 0.15rem; }
       .post-content a { color: var(--accent); }
       .post-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
       .post-actions form { margin: 0; }

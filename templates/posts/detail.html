@@ -72,7 +72,7 @@
           &middot; <span>edited</span>
         {% endif %}
       </div>
-      <p style="margin:0;word-break:break-word;">{{ comment.content|linkify_mentions|linebreaksbr }}</p>
+      <p class="comment-content multiline-scroll multiline-scroll-md">{{ comment.content|linkify_mentions|linebreaksbr }}</p>
       {% if user.is_authenticated and user.actor.id == comment.author.id %}
       <details style="margin-top:0.45rem;">
         <summary style="cursor:pointer;color:var(--text2);font-size:0.8rem;">Manage comment</summary>

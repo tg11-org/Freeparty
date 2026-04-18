@@ -23,7 +23,7 @@
     </div>
     {% if actor.profile.location %}<p style="margin:0;font-size:0.85rem;color:var(--text2);">📍 {{ actor.profile.location }}</p>{% endif %}
     {% if actor.profile.website_url %}<p style="margin:0.2rem 0 0;font-size:0.85rem;"><a href="{{ actor.profile.website_url }}" target="_blank" rel="noopener noreferrer">🌐 {{ actor.profile.website_url }}</a></p>{% endif %}
-    {% if actor.profile.bio %}<p style="margin:0.5rem 0 0;">{{ actor.profile.bio }}</p>{% endif %}
+    {% if actor.profile.bio %}<p class="multiline-scroll multiline-scroll-sm" style="margin:0.5rem 0 0;">{{ actor.profile.bio|linebreaksbr }}</p>{% endif %}
     <p style="font-size:0.85rem;color:var(--text2);margin:0.5rem 0 0;">
       {% if show_follower_count %}
         <strong style="color:var(--text);">{{ follower_count }}</strong> followers
