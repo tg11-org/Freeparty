@@ -14,6 +14,7 @@ from apps.core.pagination import paginate_queryset
 from apps.core.permissions import can_comment_on_post, can_follow_actor, can_view_post
 from apps.core.services.interaction_observability import log_interaction_metric
 from apps.moderation.models import Report
+from apps.moderation.services import ActionVelocityTracker, AdaptiveAbuseControlService
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new
 from apps.posts.models import Post
@@ -96,6 +97,37 @@ def _json_action_response(
 	return JsonResponse(payload, status=status)
 
 
+def _deny_if_abuse_limited(
+	request: HttpRequest,
+	*,
+	action_name: str,
+	started_at: float,
+	actor: Actor,
+	target_id: str,
+	denial_detail: str,
+	fallback_redirect: str,
+	ui_message: str,
+) -> HttpResponse | None:
+	allowed, denial_reason = AdaptiveAbuseControlService.evaluate_action(actor, action_name)
+	if allowed:
+		return None
+
+	if _wants_json(request):
+		return _json_action_response(
+			request=request,
+			name=f"social_{action_name}",
+			started_at=started_at,
+			payload={"ok": False, "error": denial_reason},
+			status=429,
+			success=False,
+			target_id=target_id,
+			detail=denial_detail,
+		)
+
+	messages.error(request, ui_message)
+	return redirect(fallback_redirect)
+
+
 @ratelimit(key="user_or_ip", rate="60/h", block=True)
 @login_required
 @require_POST
@@ -103,6 +135,18 @@ def follow_view(request: HttpRequest, handle: str) -> HttpResponse:
 	started_at = perf_counter()
 	follower = request.user.actor
 	followee = get_object_or_404(Actor, handle=handle)
+	denied_response = _deny_if_abuse_limited(
+		request,
+		action_name="follow",
+		started_at=started_at,
+		actor=follower,
+		target_id=str(followee.id),
+		denial_detail="abuse_control",
+		fallback_redirect=f"/actors/{handle}/",
+		ui_message="Follow temporarily limited due to account risk controls.",
+	)
+	if denied_response is not None:
+		return denied_response
 	if not can_follow_actor(follower, followee):
 		if _wants_json(request):
 			return _json_action_response(
@@ -119,6 +163,7 @@ def follow_view(request: HttpRequest, handle: str) -> HttpResponse:
 		return redirect("actors:detail", handle=handle)
 
 	follow_actor(follower, followee)
+	ActionVelocityTracker.record_follow(follower)
 	follow = Follow.objects.get(follower=follower, followee=followee)
 	if follow.state == Follow.FollowState.ACCEPTED:
 		create_notification_if_new(
@@ -222,7 +267,21 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		like.delete()
 		liked = False
 	else:
+		denied_response = _deny_if_abuse_limited(
+			request,
+			action_name="like",
+			started_at=started_at,
+			actor=actor,
+			target_id=str(post.id),
+			denial_detail="abuse_control",
+			fallback_redirect=request.META.get("HTTP_REFERER", "home"),
+			ui_message="Like temporarily limited due to account risk controls.",
+		)
+		if denied_response is not None:
+			like.delete()
+			return denied_response
 		liked = True
+		ActionVelocityTracker.record_like(actor)
 		create_notification_if_new(
 			recipient=post.author,
 			source_actor=actor,
@@ -281,6 +340,18 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		reposted = False
 		messages.success(request, "Repost removed.")
 	else:
+		denied_response = _deny_if_abuse_limited(
+			request,
+			action_name="repost",
+			started_at=started_at,
+			actor=actor,
+			target_id=str(post.id),
+			denial_detail="abuse_control",
+			fallback_redirect=request.META.get("HTTP_REFERER", "home"),
+			ui_message="Repost temporarily limited due to account risk controls.",
+		)
+		if denied_response is not None:
+			return denied_response
 		try:
 			_, created = Repost.objects.get_or_create(actor=actor, post=post)
 		except IntegrityError:
@@ -300,6 +371,7 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			messages.info(request, "Post already reposted.")
 			return redirect(request.META.get("HTTP_REFERER", "home"))
 		reposted = True
+		ActionVelocityTracker.record_repost(actor)
 		create_notification_if_new(
 			recipient=post.author,
 			source_actor=actor,

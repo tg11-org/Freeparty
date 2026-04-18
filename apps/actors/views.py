@@ -1,3 +1,6 @@
+import re
+
+from django.conf import settings
 from django.db import models
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -6,6 +9,7 @@ from django.views.decorators.http import require_http_methods
 from apps.actors.models import Actor
 from apps.core.pagination import paginate_queryset
 from apps.core.permissions import can_view_actor
+from apps.posts.hashtags import extract_hashtags
 from apps.posts.models import Post
 from apps.social.models import Block, Bookmark, Follow, Like, Repost
 
@@ -97,6 +101,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 @require_http_methods(["GET"])
 def search_view(request: HttpRequest) -> HttpResponse:
 	query = request.GET.get("q", "").strip()
+	hashtag_terms = extract_hashtags(query)
 	viewer = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
 	actors = []
 	posts = []
@@ -121,11 +126,20 @@ def search_view(request: HttpRequest) -> HttpResponse:
 			blocked_me = Block.objects.filter(blocked=viewer).values_list("blocker_id", flat=True)
 			actors_qs = actors_qs.exclude(id__in=blocked_by_me).exclude(id__in=blocked_me)
 		posts_qs = Post.objects.filter(
-			content__icontains=query,
 			visibility=Post.Visibility.PUBLIC,
 			deleted_at__isnull=True,
 			moderation_state=Post.ModerationState.NORMAL,
-		).select_related("author", "author__profile").order_by("-created_at")
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+		if hashtag_terms:
+			if getattr(settings, "FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED", True):
+				for tag in hashtag_terms:
+					posts_qs = posts_qs.filter(post_hashtags__hashtag__tag=tag)
+				posts_qs = posts_qs.distinct()
+			else:
+				for tag in hashtag_terms:
+					posts_qs = posts_qs.filter(content__iregex=rf"#{re.escape(tag)}(?![A-Za-z0-9_])")
+		else:
+			posts_qs = posts_qs.filter(content__icontains=query)
 		if viewer is None:
 			posts_qs = posts_qs.filter(author__profile__is_private_account=False)
 		else:

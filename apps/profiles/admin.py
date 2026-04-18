@@ -5,7 +5,7 @@ from apps.profiles.models import Profile, ProfileEditHistory
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-	list_display = ("actor", "website_url", "location", "updated_at")
+	list_display = ("actor", "website_url", "location", "auto_reveal_spoilers", "updated_at")
 	search_fields = ("actor__handle", "location")
 
 

@@ -2,7 +2,16 @@ from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from apps.posts.hashtags import sync_post_hashtags
 from apps.posts.models import Post
+
+
+@receiver(post_save, sender=Post)
+def sync_hashtag_index(sender, instance, created, update_fields=None, **kwargs):
+    """Maintain indexed hashtag mappings whenever post content is created/updated."""
+    if not created and update_fields is not None and "content" not in update_fields:
+        return
+    sync_post_hashtags(instance)
 
 
 @receiver(post_save, sender=Post)

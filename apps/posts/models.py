@@ -35,6 +35,7 @@ class Post(TimeStampedModel):
 	deleted_at = models.DateTimeField(null=True, blank=True)
 	is_nsfw = models.BooleanField(default=False, help_text="Mark as Not Safe For Work (sexual/graphic content).")
 	is_18plus = models.BooleanField(default=False, help_text="Mark as 18+ content (adult themes).")
+	hashtags = models.ManyToManyField("posts.Hashtag", through="posts.PostHashtag", related_name="posts", blank=True)
 
 	class Meta:
 		ordering = ["-created_at"]
@@ -154,4 +155,34 @@ class Attachment(TimeStampedModel):
 
 	class Meta:
 		ordering = ["-created_at"]
+
+
+class Hashtag(TimeStampedModel):
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	tag = models.CharField(max_length=100, unique=True)
+
+	class Meta:
+		ordering = ["tag"]
+		indexes = [models.Index(fields=["tag"])]
+
+	def __str__(self) -> str:
+		return f"Hashtag<{self.tag}>"
+
+
+class PostHashtag(TimeStampedModel):
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="post_hashtags")
+	hashtag = models.ForeignKey("posts.Hashtag", on_delete=models.CASCADE, related_name="post_hashtags")
+
+	class Meta:
+		constraints = [
+			models.UniqueConstraint(fields=["post", "hashtag"], name="posts_posthashtag_unique_post_tag"),
+		]
+		indexes = [
+			models.Index(fields=["hashtag", "post"]),
+			models.Index(fields=["post", "hashtag"]),
+		]
+
+	def __str__(self) -> str:
+		return f"PostHashtag<post={self.post_id}, hashtag={self.hashtag_id}>"
 

@@ -9,6 +9,7 @@ from django.urls import reverse
 from apps.accounts.models import User
 from apps.accounts.services import VerificationService
 from apps.accounts.tasks import _deliver_transactional_email, send_password_reset_email
+from apps.core.models import AsyncTaskExecution
 
 
 class UserModelTests(TestCase):
@@ -124,3 +125,33 @@ class TransactionalEmailTaskTests(TestCase):
 		self.assertIn("event=failure", joined)
 		self.assertIn("event=retry_scheduled", joined)
 		self.assertIn("will_retry=True", joined)
+
+	@patch("apps.accounts.tasks.send_mail")
+	def test_password_reset_task_records_reliable_execution(self, mock_send_mail):
+		send_password_reset_email.run(
+			subject="Reset",
+			message="Body",
+			recipient_email="user@example.com",
+			correlation_id="corr-reset-1",
+		)
+		mock_send_mail.assert_called_once()
+		execution = AsyncTaskExecution.objects.filter(task_name=send_password_reset_email.name).first()
+		self.assertIsNotNone(execution)
+		assert execution is not None
+		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
+
+	@patch("apps.accounts.tasks.send_mail")
+	def test_password_reset_task_is_idempotent_for_same_payload(self, mock_send_mail):
+		payload = {
+			"subject": "Reset",
+			"message": "Body",
+			"recipient_email": "user@example.com",
+			"correlation_id": "corr-reset-2",
+		}
+		send_password_reset_email.run(**payload)
+		send_password_reset_email.run(**payload)
+
+		self.assertEqual(mock_send_mail.call_count, 1)
+		execution = AsyncTaskExecution.objects.get(task_name=send_password_reset_email.name)
+		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
+		self.assertEqual(execution.attempt_count, 1)

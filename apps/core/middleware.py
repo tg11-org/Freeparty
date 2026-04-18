@@ -62,3 +62,24 @@ class RequestObservabilityMiddleware:
             )
 
         return response
+
+
+class SecurityHeadersMiddleware:
+    """Applies configurable response security headers."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = self.get_response(request)
+
+        referrer_policy = getattr(settings, "SECURE_REFERRER_POLICY", "")
+        if referrer_policy and "Referrer-Policy" not in response:
+            response["Referrer-Policy"] = referrer_policy
+
+        csp_policy = (getattr(settings, "CSP_REPORT_ONLY_POLICY", "") or "").strip()
+        csp_report_only_enabled = bool(getattr(settings, "CSP_REPORT_ONLY_ENABLED", False))
+        if csp_report_only_enabled and csp_policy and "Content-Security-Policy-Report-Only" not in response:
+            response["Content-Security-Policy-Report-Only"] = csp_policy
+
+        return response

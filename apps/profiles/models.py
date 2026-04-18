@@ -24,6 +24,7 @@ class Profile(TimeStampedModel):
 	show_follower_count = models.BooleanField(default=True)
 	show_following_count = models.BooleanField(default=True)
 	is_private_account = models.BooleanField(default=False)
+	auto_reveal_spoilers = models.BooleanField(default=False)
 
 	def __str__(self) -> str:
 		return f"Profile<{self.actor.handle}>"

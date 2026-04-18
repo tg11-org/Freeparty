@@ -1,6 +1,6 @@
 # Freeparty Project Status
 
-Last Updated: 2026-04-16 (Phase 6 complete, Phase 7 kickoff ready)
+Last Updated: 2026-04-18 (Phase 8.7 closure wave)
 
 ## Snapshot
 
@@ -22,6 +22,28 @@ Freeparty is a centralized-first, federation-ready Django social platform with w
 - Phase 7 roadmap is now authored in `phases_phase_7.md` with increments 7.0 through 7.7.
 - Initial execution focus is PM security-gate closure, async dead-letter maturity, moderation escalation workflow, and federation allowlist pilot readiness.
 - Operational readiness work is now centered on dashboard ownership, alert tuning, and failure drill playbooks before broader beta exposure.
+
+## Phase 8 Progress
+
+- Increment 8.0 is now implemented: production deploy guardrails are enforced through custom Django deploy checks in `apps.core.checks`.
+- Guardrails now fail `manage.py check --deploy` in production context for unsafe combinations such as debug-enabled runtime, weak/default secret key, localhost-only hosts, missing/unsafe CSRF trusted origins, and localhost site domain.
+- Guardrail tests were added in `apps.core.tests.ProductionConfigGuardrailChecksTests` and are passing.
+- Operations and implementation reference documentation now include Phase 8.0 run/triage guidance.
+- Increment 8.1 is now implemented: security headers baseline is centralized via `apps.core.middleware.SecurityHeadersMiddleware`.
+- Production now uses explicit referrer policy and `SameSite=Lax` cookie defaults, and enables CSP in report-only mode by default with environment-driven policy overrides.
+- Security header middleware tests were added in `apps.core.tests.SecurityHeadersMiddlewareTests` and are passing.
+- Increment 8.2 is now implemented: hashtag indexing schema and parser synchronization are in place (`Hashtag`, `PostHashtag`, and `Post.hashtags` through relation).
+- Actor search hashtag queries now use indexed relational filters with multi-tag AND behavior.
+- Hashtag parser and synchronization tests are passing (`apps.posts.tests.HashtagIndexingTests`) and actor hashtag search tests remain green.
+- Increment 8.3 is now implemented: indexed hashtag search now has a feature toggle (`FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED`) for safe fallback to legacy regex behavior.
+- Added management command `backfill_hashtags` to rebuild mappings for existing posts with optional batching via `--limit`.
+- Added tests for fallback behavior and backfill command (`apps.actors.tests.ActorHashtagSearchTests.test_search_falls_back_to_regex_when_index_disabled`, `apps.posts.tests.HashtagBackfillCommandTests`).
+- Increment 8.4 slice 1 is now implemented: account transactional email Celery tasks now use reliability lifecycle tracking (`start_task_execution`, `mark_task_execution_succeeded`, `mark_task_execution_failed`) with deterministic idempotency keys.
+- Added idempotency and execution-record tests in `apps.accounts.tests.TransactionalEmailTaskTests`.
+- Increment 8.4 remainder is now implemented: dead-letter replay requires explicit operator attribution, captures replay audit metadata, and enforces replay cooldown/max replay guardrails.
+- Increment 8.5 is now implemented: adaptive abuse runtime controls are wired into high-risk interaction paths (post/follow/like/repost), with trust/velocity checks and moderation escalation markers.
+- Increment 8.6 is now implemented: backup/restore automation scripts and backup drill workflow were added for PostgreSQL operations.
+- Increment 8.7 is now implemented: supply-chain/container posture was tightened through pinned runtime image tags, compose health-gated dependencies, no-new-privileges runtime hardening, Docker context minimization, and a repeatable dependency audit script.
 
 ## Runtime and Infrastructure
 

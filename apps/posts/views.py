@@ -19,6 +19,7 @@ from apps.core.permissions import (
 from apps.core.services.uris import post_uri
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new, notify_mentions
+from apps.moderation.services import ActionVelocityTracker, AdaptiveAbuseControlService
 from apps.posts.forms import PostForm
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
 from apps.posts.tasks import process_media_attachment
@@ -26,8 +27,8 @@ from apps.social.models import Bookmark, Like, Repost
 from apps.timelines.services import public_timeline
 
 
-@ratelimit(key="user_or_ip", rate="20/h", block=True)
 @login_required
+@ratelimit(key="user", rate="20/h", method="POST", block=True)
 @require_http_methods(["GET", "POST"])
 def create_post_view(request: HttpRequest) -> HttpResponse:
 	if settings.EMAIL_VERIFICATION_REQUIRED and not request.user.email_verified:
@@ -38,6 +39,16 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 	if actor is None:
 		messages.error(request, "No actor profile linked to this account.")
 		return redirect("home")
+
+	allowed, denial_reason = AdaptiveAbuseControlService.evaluate_action(actor, "post")
+	if not allowed:
+		messages.error(request, denial_reason)
+		return redirect("home")
+
+	next_url = request.POST.get("next") or request.GET.get("next") or request.META.get("HTTP_REFERER") or ""
+	# Only allow relative URLs to prevent open redirect
+	if next_url and (next_url.startswith("http") and not next_url.startswith(request.build_absolute_uri("/"))):
+		next_url = ""
 
 	form = PostForm(request.POST or None, request.FILES or None)
 	if request.method == "POST" and form.is_valid():
@@ -68,10 +79,11 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 				correlation_id=getattr(request, "request_id", ""),
 			)
 		messages.success(request, "Post published.")
+		ActionVelocityTracker.record_post(actor)
 		notify_mentions(content=post.content, source_actor=actor, source_post=post)
-		return redirect("home")
+		return redirect(next_url or "home")
 
-	return render(request, "posts/create_post.html", {"form": form})
+	return render(request, "posts/create_post.html", {"form": form, "next": next_url})
 
 
 @require_http_methods(["GET"])
@@ -171,6 +183,11 @@ def add_comment_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		)
 	notify_mentions(content=content, source_actor=actor, source_post=post)
 	messages.success(request, "Comment added.")
+	next_url = request.META.get("HTTP_REFERER", "")
+	if next_url and (next_url.startswith("http") and not next_url.startswith(request.build_absolute_uri("/"))):
+		next_url = ""
+	if next_url:
+		return redirect(next_url)
 	return redirect("posts:detail", post_id=post_id)
 
 
@@ -220,7 +237,14 @@ def delete_post_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	post.deleted_at = timezone.now()
 	post.save(update_fields=["deleted_at", "updated_at"])
 	messages.success(request, "Post deleted.")
-	return redirect("home")
+	next_url = request.META.get("HTTP_REFERER", "")
+	if next_url and (next_url.startswith("http") and not next_url.startswith(request.build_absolute_uri("/"))):
+		next_url = ""
+	# Don't return to the deleted post's own page
+	post_detail_url = f"/posts/{post_id}/"
+	if next_url and post_detail_url in next_url:
+		next_url = ""
+	return redirect(next_url or "home")
 
 
 @ratelimit(key="user_or_ip", rate="60/h", block=True)

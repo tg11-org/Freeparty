@@ -21,9 +21,12 @@ class ProfileEditHistoryTests(TestCase):
 				"show_follower_count": True,
 				"show_following_count": True,
 				"is_private_account": False,
+				"auto_reveal_spoilers": True,
 			},
 		)
 		self.assertEqual(response.status_code, 302)
 		history = ProfileEditHistory.objects.filter(profile=self.user.actor.profile).first()
 		self.assertIsNotNone(history)
 		self.assertEqual(history.new_bio, "Updated bio")
+		self.user.actor.profile.refresh_from_db()
+		self.assertTrue(self.user.actor.profile.auto_reveal_spoilers)

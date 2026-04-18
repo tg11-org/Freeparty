@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from django.core.checks import run_checks
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from unittest.mock import patch
@@ -10,10 +11,59 @@ from apps.notifications.models import Notification
 from apps.posts.models import LinkPreview, Post
 from apps.private_messages.models import ConversationParticipant
 from apps.private_messages.services import create_direct_conversation, store_encrypted_message
+from apps.core.templatetags.mention_tags import linkify_mentions
 
 from apps.core.middleware import RequestObservabilityMiddleware
 from apps.core.services.task_observability import observe_celery_task
 from apps.posts.tasks import unfurl_post_link
+
+
+class MentionAndHashtagLinkifyTests(SimpleTestCase):
+    def test_linkify_mentions_and_hashtags(self):
+        rendered = linkify_mentions("Hey @alice check #test")
+        self.assertIn('href="/actors/alice/"', rendered)
+        self.assertIn('href="/actors/search/?q=%23test"', rendered)
+
+    def test_linkify_multiple_chained_hashtags(self):
+        rendered = linkify_mentions("#foo#bar and #woo #hoo")
+        self.assertIn('href="/actors/search/?q=%23foo"', rendered)
+        self.assertIn('href="/actors/search/?q=%23bar"', rendered)
+        self.assertIn('href="/actors/search/?q=%23woo"', rendered)
+        self.assertIn('href="/actors/search/?q=%23hoo"', rendered)
+
+
+class ProductionConfigGuardrailChecksTests(SimpleTestCase):
+    @override_settings(
+        DEBUG=True,
+        SECRET_KEY="change-me",
+        ALLOWED_HOSTS=["localhost", "127.0.0.1"],
+        CSRF_TRUSTED_ORIGINS=[],
+        SITE_DOMAIN="localhost",
+    )
+    def test_production_checks_fail_for_unsafe_defaults(self):
+        with patch.dict("os.environ", {"DJANGO_SETTINGS_MODULE": "config.settings.production"}):
+            errors = run_checks(tags=["security"], include_deployment_checks=True)
+
+        error_ids = {error.id for error in errors}
+        self.assertIn("core.E001", error_ids)
+        self.assertIn("core.E002", error_ids)
+        self.assertIn("core.E003", error_ids)
+        self.assertIn("core.E004", error_ids)
+        self.assertIn("core.E006", error_ids)
+
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="A2z5x9m1Q8p4r7t0V3k6n2d9L5b8w1Y4",
+        ALLOWED_HOSTS=["freeparty.tg11.org"],
+        CSRF_TRUSTED_ORIGINS=["https://freeparty.tg11.org"],
+        SITE_DOMAIN="freeparty.tg11.org",
+    )
+    def test_production_checks_pass_for_safe_configuration(self):
+        with patch.dict("os.environ", {"DJANGO_SETTINGS_MODULE": "config.settings.production"}):
+            errors = run_checks(tags=["security"], include_deployment_checks=True)
+
+        guardrail_errors = [error for error in errors if error.id and error.id.startswith("core.E")]
+        self.assertEqual(guardrail_errors, [])
 
 
 class RequestObservabilityMiddlewareTests(SimpleTestCase):
@@ -77,6 +127,30 @@ class RequestObservabilityMiddlewareTests(SimpleTestCase):
         self.assertIn("method=GET", joined)
         self.assertIn("path=/explode/", joined)
         self.assertIn("request_id=err-123", joined)
+
+
+class SecurityHeadersMiddlewareTests(TestCase):
+    @override_settings(
+        CSP_REPORT_ONLY_ENABLED=True,
+        CSP_REPORT_ONLY_POLICY="default-src 'self'",
+        SECURE_REFERRER_POLICY="strict-origin-when-cross-origin",
+    )
+    def test_sets_referrer_and_csp_report_only_headers(self):
+        response = self.client.get("/health/live/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Referrer-Policy"], "strict-origin-when-cross-origin")
+        self.assertEqual(response["Content-Security-Policy-Report-Only"], "default-src 'self'")
+
+    @override_settings(
+        CSP_REPORT_ONLY_ENABLED=False,
+        CSP_REPORT_ONLY_POLICY="default-src 'self'",
+        SECURE_REFERRER_POLICY="strict-origin-when-cross-origin",
+    )
+    def test_does_not_set_csp_report_only_when_disabled(self):
+        response = self.client.get("/health/live/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Referrer-Policy"], "strict-origin-when-cross-origin")
+        self.assertNotIn("Content-Security-Policy-Report-Only", response)
 
 
 class TaskObservabilityTests(SimpleTestCase):
@@ -182,12 +256,55 @@ class DeadLetterReplayCommandTests(TestCase):
             payload={"post_id": "post-1", "args": ["post-1"], "kwargs": {"correlation_id": "corr-replay-1"}},
         )
 
-        call_command("dead_letter_inspect", replay=str(failure.id))
+        call_command("dead_letter_inspect", replay=str(failure.id), operator="phase8-ops", note="safe retry")
 
         task.apply_async.assert_called_once_with(args=["post-1"], kwargs={"correlation_id": "corr-replay-1"})
         failure.refresh_from_db()
         self.assertEqual(failure.terminal_reason, "manual_replay")
         self.assertEqual(failure.payload["replay_count"], 1)
+        self.assertEqual(failure.payload["last_replayed_by"], "phase8-ops")
+        self.assertEqual(failure.payload["last_replay_note"], "safe retry")
+
+    def test_replay_requires_operator_attribution(self):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        failure = AsyncTaskFailure.objects.create(
+            task_name="apps.posts.tasks.unfurl_post_link",
+            correlation_id="corr-replay-missing-operator",
+            is_terminal=True,
+            terminal_reason="max_retries_exceeded",
+            error_message="boom",
+            payload={"post_id": "post-1", "args": ["post-1"]},
+        )
+
+        with self.assertRaises(CommandError):
+            call_command("dead_letter_inspect", replay=str(failure.id))
+
+    @override_settings(DEAD_LETTER_REPLAY_COOLDOWN_SECONDS=3600)
+    @patch("apps.core.management.commands.dead_letter_inspect.current_app")
+    def test_replay_respects_cooldown_window(self, mocked_current_app):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        AsyncTaskFailure.objects.create(
+            task_name="apps.posts.tasks.unfurl_post_link",
+            correlation_id="corr-replay-cooldown",
+            is_terminal=True,
+            terminal_reason="manual_replay",
+            error_message="boom",
+            payload={
+                "post_id": "post-1",
+                "args": ["post-1"],
+                "last_replay_at": timezone.now().isoformat(),
+                "replay_count": 1,
+            },
+        )
+
+        failure = AsyncTaskFailure.objects.get(correlation_id="corr-replay-cooldown")
+        with self.assertRaises(CommandError):
+            call_command("dead_letter_inspect", replay=str(failure.id), operator="phase8-ops")
+        mocked_current_app.tasks.get.return_value.apply_async.assert_not_called()
 
 
 @override_settings(FEATURE_LINK_UNFURL_ENABLED=True)

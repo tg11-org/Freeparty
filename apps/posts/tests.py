@@ -6,7 +6,9 @@ from unittest.mock import patch
 from apps.accounts.models import User
 from apps.core.models import AsyncTaskExecution, AsyncTaskFailure
 from apps.core.services.uris import post_uri
-from apps.posts.models import Attachment, Comment, CommentEditHistory, LinkPreview, Post, PostEditHistory
+from apps.moderation.models import Report, TrustSignal
+from apps.posts.hashtags import extract_hashtags
+from apps.posts.models import Attachment, Comment, CommentEditHistory, Hashtag, LinkPreview, Post, PostEditHistory
 from apps.posts.tasks import _fetch_unfurl, process_media_attachment, unfurl_post_link
 from apps.social.models import Block, Follow
 
@@ -102,6 +104,29 @@ class PostTests(TestCase):
 		)
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Add text or attach media before publishing.")
+
+	@override_settings(FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED=True)
+	def test_create_post_blocked_for_throttled_actor(self):
+		TrustSignal.objects.create(
+			actor=self.user.actor,
+			is_throttled=True,
+			throttle_reason="risk_control",
+		)
+		client = Client()
+		client.force_login(self.user)
+		response = client.post(
+			"/posts/new/",
+			{
+				"content": "Should not publish",
+				"visibility": Post.Visibility.PUBLIC,
+			},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 302)
+		self.assertFalse(Post.objects.filter(content="Should not publish").exists())
+		report = Report.objects.filter(target_actor=self.user.actor, reason=Report.Reason.SPAM_SCAM).first()
+		self.assertIsNotNone(report)
+		self.assertIn("auto:adaptive_abuse", report.description)
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
@@ -566,3 +591,43 @@ class ReprocessFailedMediaCommandTests(TestCase):
 		attachment.refresh_from_db()
 		self.assertEqual(attachment.processing_state, Attachment.ProcessingState.PENDING)
 		delay_mock.assert_called_once()
+
+
+class HashtagIndexingTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(email="hashtags@example.com", username="hashtags", password="secret123")
+		self.user.mark_email_verified()
+
+	def test_extract_hashtags_handles_chained_spaced_and_case(self):
+		tags = extract_hashtags("#Foo#bar and #woo #HOO!")
+		self.assertEqual(tags, ["foo", "bar", "woo", "hoo"])
+
+	def test_post_save_syncs_hashtags_on_create_and_content_update(self):
+		post = Post.objects.create(
+			author=self.user.actor,
+			content="hello #foo #bar",
+			canonical_uri=post_uri("hash-sync"),
+		)
+		self.assertEqual(set(post.post_hashtags.values_list("hashtag__tag", flat=True)), {"foo", "bar"})
+
+		post.content = "updated #bar #baz"
+		post.save(update_fields=["content", "updated_at"])
+		self.assertEqual(set(post.post_hashtags.values_list("hashtag__tag", flat=True)), {"bar", "baz"})
+		self.assertTrue(Hashtag.objects.filter(tag="foo").exists())
+
+
+class HashtagBackfillCommandTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(email="hashbackfill@example.com", username="hashbackfill", password="secret123")
+		self.user.mark_email_verified()
+
+	def test_backfill_command_rebuilds_missing_mappings(self):
+		post = Post.objects.create(
+			author=self.user.actor,
+			content="backfill #one #two",
+			canonical_uri=post_uri("hash-backfill"),
+		)
+		post.post_hashtags.all().delete()
+
+		call_command("backfill_hashtags")
+		self.assertEqual(set(post.post_hashtags.values_list("hashtag__tag", flat=True)), {"one", "two"})

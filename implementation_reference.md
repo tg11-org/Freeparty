@@ -230,6 +230,18 @@ Trust signals are per-actor signals used for abuse detection and adaptive thrott
 - `record_repost(actor)`: Update hourly repost velocity counter
 - `is_velocity_anomaly(actor, action_type)`: Check if action would exceed threshold
 
+**Service**: `apps.moderation.services.AdaptiveAbuseControlService`
+- `evaluate_action(actor, action_type)`: runtime gate for high-risk write actions
+- feature-flagged by `FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED`
+- optional velocity hard-block controlled by `ABUSE_VELOCITY_BLOCK_ENABLED`
+- when throttled/abnormal activity is detected, creates a deduplicated moderation report marker (`auto:adaptive_abuse`) for queue visibility
+
+Current enforcement integration:
+- post creation (`apps.posts.views.create_post_view`)
+- follow creation (`apps.social.views.follow_view`)
+- like creation path (`apps.social.views.like_toggle_view`)
+- repost creation path (`apps.social.views.repost_toggle_view`)
+
 **Staff visibility**:
 - Trust signal summary is included in moderation report detail API as `target_actor_trust_signal`
 - Shows computed scores, velocity signals, and throttle status/reason
@@ -258,6 +270,24 @@ Security audit events log forensically important account and moderator actions.
 - `log_email_changed(user, old_email, ip, ua)`: Record email change
 - `log_moderator_action(moderator, target, action_type, ip, ua)`: Record moderator action
 
+### Dead-Letter Replay Attribution Convention (Phase 8.4 remainder)
+
+- `python manage.py dead_letter_inspect --replay <failure-id> --operator <identifier>` is required for replay.
+- optional replay context should be supplied with `--note` for incident traceability.
+- replay flow enforces:
+	- max replay count (`DEAD_LETTER_REPLAY_MAX_COUNT`)
+	- replay cooldown (`DEAD_LETTER_REPLAY_COOLDOWN_SECONDS`)
+- replay metadata is persisted on `AsyncTaskFailure.payload` (`last_replayed_by`, `last_replay_at`, `last_replay_note`).
+
+### Backup and Supply-Chain Operations Convention (Phase 8.6/8.7)
+
+- Backup automation scripts are maintained in `scripts/`:
+	- `backup_db.ps1`
+	- `restore_db.ps1`
+	- `backup_restore_drill.ps1`
+- Supply-chain checks run through `scripts/supply_chain_audit.ps1`.
+- Docker context hygiene is enforced via `.dockerignore` and pinned image tags in `compose.yaml`.
+
 **Integration points**:
 - `apps.accounts.views.RateLimitedLoginView`: Logs login success/failure
 - `apps.accounts.views.RateLimitedPasswordResetView`: Logs reset request
@@ -267,6 +297,76 @@ Security audit events log forensically important account and moderator actions.
 **Staff query**:
 - Export audit events via admin panel or management command for compliance
 - Query by user or event type for incident investigation
+
+### Production Deploy Guardrails Convention (Phase 8.0)
+
+- Custom production guardrails are implemented as Django deploy checks in `apps.core.checks`.
+- Checks are registered through `apps.core.apps.CoreConfig.ready()`.
+- Guardrails run during `manage.py check --deploy` and intentionally fail for unsafe production defaults.
+- Current enforced production checks:
+	- `DEBUG` must be `False`
+	- `SECRET_KEY` must be strong and non-default
+	- `ALLOWED_HOSTS` must include non-local host(s)
+	- `CSRF_TRUSTED_ORIGINS` must be non-empty and HTTPS-only
+	- `SITE_DOMAIN` must be non-localhost
+- Error IDs `core.E001` through `core.E006` are reserved for these startup safety checks.
+
+### Security Headers Baseline Convention (Phase 8.1)
+
+- Response security headers are centralized in `apps.core.middleware.SecurityHeadersMiddleware`.
+- `Referrer-Policy` is emitted from `SECURE_REFERRER_POLICY`.
+- CSP is currently deployed in report-only mode via:
+	- `CSP_REPORT_ONLY_ENABLED`
+	- `CSP_REPORT_ONLY_POLICY`
+- Keep CSP report-only until violation telemetry is stable; enforce in a later hardening slice.
+- Production cookie posture should remain explicit:
+	- `SESSION_COOKIE_SECURE=True`
+	- `CSRF_COOKIE_SECURE=True`
+	- `SESSION_COOKIE_SAMESITE='Lax'`
+	- `CSRF_COOKIE_SAMESITE='Lax'`
+
+### Indexed Hashtag Search Convention (Phase 8.2)
+
+- Hashtags are normalized to lowercase and indexed in `apps.posts.models.Hashtag`.
+- Post-to-hashtag mapping is stored in `apps.posts.models.PostHashtag` with unique `(post, hashtag)` constraint.
+- `Post.hashtags` uses a through relation to support indexed joins and future metadata expansion.
+- Synchronization behavior:
+	- hashtag mappings are maintained by `apps.posts.signals.sync_hashtag_index`
+	- parser/sync logic lives in `apps.posts.hashtags`
+	- sync runs on post create and content updates
+- Multi-tag search behavior:
+	- actor search parses query hashtags with `extract_hashtags`
+	- matching applies AND semantics by chaining `post_hashtags__hashtag__tag=<tag>` filters
+	- text-scan fallback remains for non-hashtag queries
+
+### Hashtag Backfill and Rollout Toggle Convention (Phase 8.3)
+
+- Search path toggle:
+	- `FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED=True` uses indexed relational hashtag lookup
+	- `FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED=False` falls back to legacy regex content matching
+- Backfill operation:
+	- `python manage.py backfill_hashtags` rebuilds mappings for existing non-deleted posts
+	- optional limit for gradual rollout: `python manage.py backfill_hashtags --limit N`
+- Rollout guidance:
+	1. Deploy schema + sync + toggle.
+	2. Run backfill command.
+	3. Keep indexed search toggle enabled and monitor query behavior.
+	4. Disable toggle to revert to legacy matching if needed.
+
+### Async Reliability Expansion Convention (Phase 8.4 - Slice 1)
+
+- Account transactional email tasks now use reliability lifecycle tracking in addition to retry/backoff.
+- Wrapped tasks:
+	- `send_verification_email`
+	- `send_password_reset_email`
+	- `send_password_reset_notice`
+	- `send_system_email`
+- Reliability behavior:
+	- deterministic idempotency key per task payload category
+	- execution row created via `start_task_execution`
+	- success marked via `mark_task_execution_succeeded`
+	- failure path recorded via `mark_task_execution_failed` with retry/terminal context
+- This keeps email task retries observable and prevents duplicate side effects for identical payload retries.
 
 ## 5. Suggested Next Milestones
 

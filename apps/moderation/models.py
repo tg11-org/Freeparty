@@ -159,6 +159,7 @@ class SecurityAuditEvent(TimeStampedModel):
 		MODERATOR_PRIVILEGE_GRANT = "moderator_privilege_grant", "Moderator Privilege Grant"
 		MODERATOR_PRIVILEGE_REVOKE = "moderator_privilege_revoke", "Moderator Privilege Revoke"
 		MODERATION_ACTION_CREATE = "moderation_action_create", "Moderation Action Created"
+		ABUSE_AUTO_ACTION = "abuse_auto_action", "Abuse Auto Action"
 
 	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 	user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="audit_events")

@@ -49,6 +49,75 @@ Interpretation:
 - `live`: process is running.
 - `ready`: DB + cache are available.
 
+## 3.1 Production Deploy Guardrails (Phase 8.0)
+
+Production now includes custom deploy checks that fail startup validation for unsafe configuration.
+
+Run before deployment:
+
+```bash
+python manage.py check --deploy
+```
+
+Guardrails enforced in production settings context:
+- `DEBUG` must be `False`.
+- `SECRET_KEY` must be non-default and strong (at least 32 characters).
+- `ALLOWED_HOSTS` must include at least one non-local host.
+- `CSRF_TRUSTED_ORIGINS` must be non-empty and use `https://` origins.
+- `SITE_DOMAIN` must be set to a non-localhost value.
+
+If checks fail, fix environment variables first and rerun `check --deploy` before starting app processes.
+
+## 3.2 Security Headers and Cookie Baseline (Phase 8.1)
+
+Production now applies explicit response hardening defaults:
+- `SECURE_HSTS_SECONDS`, `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`
+- `SECURE_CONTENT_TYPE_NOSNIFF`
+- `X_FRAME_OPTIONS=DENY`
+- `SECURE_REFERRER_POLICY=strict-origin-when-cross-origin`
+- secure + `SameSite=Lax` session and CSRF cookies
+
+Content Security Policy rollout strategy:
+- use report-only first (`Content-Security-Policy-Report-Only`)
+- default production behavior enables report-only mode
+- tune policy via environment variable without code changes:
+	- `CSP_REPORT_ONLY_ENABLED=True|False`
+	- `CSP_REPORT_ONLY_POLICY="...policy..."`
+
+Recommended rollout sequence:
+1. Keep `CSP_REPORT_ONLY_ENABLED=True` and collect browser violations.
+2. Adjust policy until false-positive noise is low.
+3. Move to enforced CSP in a later increment once violations are resolved.
+
+## 3.3 Indexed Hashtag Search (Phase 8.2)
+
+Hashtag queries now use indexed relational lookup instead of content regex scans.
+
+Data model:
+- `posts_hashtag` stores normalized hashtag tokens
+- `posts_posthashtag` stores post<->hashtag mappings
+
+Operational behavior:
+- mappings are synchronized automatically on post save when content is created/updated
+- multi-hashtag queries keep AND semantics (`#foo#bar` means posts containing both)
+- non-hashtag search terms continue using content text matching
+
+Validation commands:
+
+```bash
+python manage.py test apps.actors.tests apps.posts.tests.HashtagIndexingTests
+```
+
+Backfill command:
+
+```bash
+python manage.py backfill_hashtags
+python manage.py backfill_hashtags --limit 500
+```
+
+Rollback toggle:
+- set `FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED=False` to return hashtag queries to legacy regex matching.
+
 ## 4. Startup Sequence
 
 1. Start infra and app.
@@ -123,6 +192,17 @@ Interpretation:
 	3. Use `corr=` value to correlate with web/worker logs.
 	4. Address root cause and manually re-enqueue only affected payloads.
 
+### Account email reliability tracking (Phase 8.4 slice)
+- Transactional account email tasks now participate in task reliability lifecycle tracking.
+- For email incidents, review both:
+	- structured `smtp_delivery` logs (attempt/failure/retry/success)
+	- `AsyncTaskExecution` / `AsyncTaskFailure` rows for idempotency and terminal failure visibility
+- Target tasks:
+	- `apps.accounts.tasks.send_verification_email`
+	- `apps.accounts.tasks.send_password_reset_email`
+	- `apps.accounts.tasks.send_password_reset_notice`
+	- `apps.accounts.tasks.send_system_email`
+
 ### Dead-letter replay decision tree (Phase 7.2)
 - Use `python manage.py dead_letter_inspect --limit 25` to review recent terminal failures.
 - Use `python manage.py dead_letter_inspect --task <task-name> --terminal-only` when isolating one worker path.
@@ -132,10 +212,13 @@ Interpretation:
 	- target system is healthy again
 - Dismiss or leave parked when payload is stale, unsafe, or tied to user-visible state that already recovered manually.
 - Replay command:
-	- `python manage.py dead_letter_inspect --replay <failure-id>`
+	- `python manage.py dead_letter_inspect --replay <failure-id> --operator <name-or-ticket>`
+	- optional note: `python manage.py dead_letter_inspect --replay <failure-id> --operator <name-or-ticket> --note "<why replay is safe>"`
 - Replay audit expectations:
 	- `AsyncTaskFailure.terminal_reason` becomes `manual_replay`
 	- payload replay counter increments
+	- payload stores replay actor and replay timestamp for audit trail
+	- replay is blocked during cooldown windows and after max replay count
 	- worker logs should emit the normal `task_start` and `task_success` or a new terminal record
 
 ### Media processing reliability workflow (Phase 4.3)
@@ -526,12 +609,47 @@ Periodic backups and exports are recommended per your compliance requirements.
 
 ## 6. Deployment Notes
 
-## 6. Deployment Notes
-
 - Behind Apache reverse proxy to Daphne.
 - Enable websocket proxying for `/ws/` paths.
 - Serve static/media via Apache or object storage/CDN.
 - Ensure trusted proxy headers are configured safely.
+
+## 6.1 Backup and Restore Automation (Phase 8.6)
+
+PowerShell operational scripts are now available:
+- `scripts/backup_db.ps1`: create SQL backup from the running `db` container
+- `scripts/restore_db.ps1`: restore SQL backup into target DB
+- `scripts/backup_restore_drill.ps1`: perform backup + restore drill into a temporary validation database
+
+Examples:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/backup_db.ps1
+powershell -ExecutionPolicy Bypass -File scripts/restore_db.ps1 -BackupFile backups/freeparty-20260418-130000.sql -DropAndRecreate
+powershell -ExecutionPolicy Bypass -File scripts/backup_restore_drill.ps1
+```
+
+Drill expectation:
+- drill creates `<db>_drill`
+- restores latest exported SQL into drill DB
+- validates restored schema table count is non-zero
+
+## 6.2 Container and Supply-Chain Hardening (Phase 8.7)
+
+Container posture updates now include:
+- pinned container tags in `compose.yaml` for PostgreSQL, Redis, and MailHog
+- dependency startup ordering based on service health checks for DB and Redis
+- `no-new-privileges` security option for app worker/runtime services
+- reduced Docker build nondeterminism by removing blanket OS upgrade in `Dockerfile`
+- reduced Docker build context via `.dockerignore` (excluding local secrets/artifacts)
+
+Supply-chain scan command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/supply_chain_audit.ps1
+```
+
+This runs dependency audit (`pip-audit`) and validates compose configuration (`docker compose config -q`).
 
 ## 6. Routine Maintenance
 

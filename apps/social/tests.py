@@ -3,6 +3,7 @@ from django.test import Client, TestCase, override_settings
 
 from apps.accounts.models import User
 from apps.core.services.uris import post_uri
+from apps.moderation.models import Report, TrustSignal
 from apps.notifications.models import Notification
 from apps.posts.models import Post
 from apps.social.models import Block, Bookmark
@@ -317,6 +318,7 @@ class SocialAjaxToggleTests(TestCase):
 			f"/social/follow/{self.owner.actor.handle}/",
 			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
 			HTTP_ACCEPT="application/json",
+			secure=True,
 		)
 		self.assertEqual(response.status_code, 200)
 		payload = response.json()
@@ -333,6 +335,7 @@ class SocialAjaxToggleTests(TestCase):
 			f"/social/follow/{self.owner.actor.handle}/",
 			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
 			HTTP_ACCEPT="application/json",
+			secure=True,
 		)
 		self.assertEqual(response.status_code, 200)
 		payload = response.json()
@@ -387,3 +390,36 @@ class SocialAjaxToggleTests(TestCase):
 		self.assertIn("interaction_metric", joined)
 		self.assertIn("name=social_follow", joined)
 		self.assertIn("success=False", joined)
+
+	@override_settings(FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED=True)
+	def test_follow_blocked_by_adaptive_abuse_control_returns_json_429(self):
+		TrustSignal.objects.create(
+			actor=self.viewer.actor,
+			is_throttled=True,
+			throttle_reason="risk_control",
+		)
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/follow/{self.owner.actor.handle}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertIn(response.status_code, {301, 429})
+		self.assertFalse(Follow.objects.filter(follower=self.viewer.actor, followee=self.owner.actor).exists())
+
+	@override_settings(FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED=True)
+	def test_like_blocked_by_adaptive_abuse_control_returns_json_429(self):
+		TrustSignal.objects.create(
+			actor=self.viewer.actor,
+			is_throttled=True,
+			throttle_reason="risk_control",
+		)
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/like/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 429)
+		self.assertFalse(self.post.likes.filter(actor=self.viewer.actor).exists())

@@ -1,7 +1,9 @@
 """Inspect and manage terminal async task failures."""
 
 from celery import current_app
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
 from apps.core.models import AsyncTaskFailure
 
@@ -41,12 +43,23 @@ class Command(BaseCommand):
             type=str,
             help="Mark failure for replay (provide ID)",
         )
+        parser.add_argument(
+            "--operator",
+            type=str,
+            help="Operator identifier for audit attribution (required for replay)",
+        )
+        parser.add_argument(
+            "--note",
+            type=str,
+            default="",
+            help="Optional audit note for replay/dismiss actions",
+        )
 
     def handle(self, *args, **options):
         if options.get("dismiss"):
-            return self._dismiss_failure(options["dismiss"])
+            return self._dismiss_failure(options["dismiss"], operator=options.get("operator"), note=options.get("note", ""))
         elif options.get("replay"):
-            return self._replay_failure(options["replay"])
+            return self._replay_failure(options["replay"], operator=options.get("operator"), note=options.get("note", ""))
         else:
             return self._inspect_queue(options)
 
@@ -93,19 +106,28 @@ class Command(BaseCommand):
                 )
             )
 
-    def _dismiss_failure(self, failure_id):
+    def _dismiss_failure(self, failure_id, operator=None, note=""):
         """Mark failure as manually dismissed."""
         try:
             failure = AsyncTaskFailure.objects.get(pk=failure_id)
+            payload = dict(failure.payload or {})
+            payload["manual_dismissed_at"] = timezone.now().isoformat()
+            if operator:
+                payload["manual_dismissed_by"] = operator
+            if note:
+                payload["manual_dismiss_note"] = note
             failure.is_terminal = True
             failure.terminal_reason = "manual_dismiss"
-            failure.save()
+            failure.payload = payload
+            failure.save(update_fields=["is_terminal", "terminal_reason", "payload", "updated_at"])
             self.stdout.write(self.style.SUCCESS(f"✓ Failure {failure_id} dismissed."))
         except AsyncTaskFailure.DoesNotExist:
             raise CommandError(f"Failure {failure_id} not found.")
 
-    def _replay_failure(self, failure_id):
+    def _replay_failure(self, failure_id, operator=None, note=""):
         """Replay a terminal failure back onto the task queue."""
+        if not operator:
+            raise CommandError("Replay requires --operator for audit attribution.")
         try:
             failure = AsyncTaskFailure.objects.get(pk=failure_id)
             registry = getattr(current_app, "tasks", {})
@@ -114,11 +136,26 @@ class Command(BaseCommand):
                 raise CommandError(f"Task {failure.task_name} is not registered in Celery.")
 
             replay_count = int(failure.payload.get("replay_count", 0)) if isinstance(failure.payload, dict) else 0
-            if replay_count >= 5:
+            max_replay_count = int(getattr(settings, "DEAD_LETTER_REPLAY_MAX_COUNT", 5))
+            if replay_count >= max_replay_count:
                 raise CommandError("Replay limit reached for this failure.")
 
+            replay_cooldown_seconds = int(getattr(settings, "DEAD_LETTER_REPLAY_COOLDOWN_SECONDS", 300))
             payload = dict(failure.payload or {})
+            last_replay_at = payload.get("last_replay_at")
+            if last_replay_at:
+                try:
+                    elapsed = timezone.now() - timezone.datetime.fromisoformat(last_replay_at)
+                    if elapsed.total_seconds() < replay_cooldown_seconds:
+                        raise CommandError("Replay cooldown active for this failure.")
+                except ValueError:
+                    pass
+
             payload["replay_count"] = replay_count + 1
+            payload["last_replay_at"] = timezone.now().isoformat()
+            payload["last_replayed_by"] = operator
+            if note:
+                payload["last_replay_note"] = note
 
             apply_kwargs = {}
             if isinstance(payload, dict):
@@ -151,7 +188,7 @@ class Command(BaseCommand):
             failure.payload = payload
             failure.is_terminal = True
             failure.terminal_reason = "manual_replay"
-            failure.save()
+            failure.save(update_fields=["payload", "is_terminal", "terminal_reason", "updated_at"])
             self.stdout.write(self.style.SUCCESS(f"✓ Failure {failure_id} marked for replay."))
         except AsyncTaskFailure.DoesNotExist:
             raise CommandError(f"Failure {failure_id} not found.")

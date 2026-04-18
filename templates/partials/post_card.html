@@ -27,17 +27,21 @@
 
     {# ── Spoiler wrapper ─────────────────────────────────────────── #}
     {% if post.spoiler_text %}
-      <div class="content-gate" data-revealed="false" data-gate-type="spoiler">
-        <button class="btn content-gate-btn" type="button"
-          onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?btn.getAttribute('data-show-label'):btn.getAttribute('data-hide-label');})(this)"
-          data-show-label="CW: {{ post.spoiler_text }} (show)"
-          data-hide-label="Hide spoiler">CW: {{ post.spoiler_text }} (show)</button>
+      <div class="content-gate" data-revealed="{% if user.is_authenticated and user.actor.profile.auto_reveal_spoilers %}true{% else %}false{% endif %}" data-gate-type="spoiler">
+        {% if not user.is_authenticated or not user.actor.profile.auto_reveal_spoilers %}
+          <button class="btn content-gate-btn" type="button"
+            onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?btn.getAttribute('data-show-label'):btn.getAttribute('data-hide-label');})(this)"
+            data-show-label="CW: {{ post.spoiler_text }} (show)"
+            data-hide-label="Hide spoiler">CW: {{ post.spoiler_text }} (show)</button>
+        {% endif %}
         <div class="content-gate-body">
           {# NSFW within spoiler #}
           {% if post.is_nsfw %}
-            <div class="content-gate" data-revealed="false" data-gate-type="nsfw" style="margin-top:0;">
-              <button class="btn content-gate-btn" type="button"
-                onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
+            <div class="content-gate" data-revealed="{% if user.is_authenticated and user.actor.profile.auto_reveal_spoilers %}true{% else %}false{% endif %}" data-gate-type="nsfw" style="margin-top:0;">
+              {% if not user.is_authenticated or not user.actor.profile.auto_reveal_spoilers %}
+                <button class="btn content-gate-btn" type="button"
+                  onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
+              {% endif %}
               <div class="content-gate-body">
                 <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
                 {% if post.attachments.all %}
@@ -84,9 +88,11 @@
 
     {# ── NSFW (no spoiler) ──────────────────────────────────────── #}
     {% elif post.is_nsfw %}
-      <div class="content-gate" data-revealed="false" data-gate-type="nsfw">
-        <button class="btn content-gate-btn" type="button"
-          onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
+      <div class="content-gate" data-revealed="{% if user.is_authenticated and user.actor.profile.auto_reveal_spoilers %}true{% else %}false{% endif %}" data-gate-type="nsfw">
+        {% if not user.is_authenticated or not user.actor.profile.auto_reveal_spoilers %}
+          <button class="btn content-gate-btn" type="button"
+            onclick="(function(btn){var w=btn.closest('.content-gate');var rev=w.dataset.revealed==='true';w.dataset.revealed=rev?'false':'true';btn.textContent=rev?'\u26a0\ufe0f NSFW \u2014 tap to reveal':'Hide NSFW';})(this)">&#9888;&#65039; NSFW &mdash; tap to reveal</button>
+        {% endif %}
         <div class="content-gate-body">
           <p class="post-content">{{ post.content|linkify_mentions|linebreaksbr }}</p>
           {% if post.attachments.all %}
@@ -138,7 +144,9 @@
           {# Video embed (YouTube / Vimeo oEmbed iframe) #}
           <div style="margin:0.5rem 0;border-radius:0.6rem;overflow:hidden;border:1px solid var(--border);">
             <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">
-              {{ preview.embed_html|safe }}
+              <div style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;">
+                <div class="oembed-wrap">{{ preview.embed_html|safe }}</div>
+              </div>
             </div>
             <div style="padding:0.5rem 0.75rem;background:var(--surface2);">
               {% if preview.title %}<p style="margin:0;font-weight:600;font-size:0.88rem;">{{ preview.title }}</p>{% endif %}

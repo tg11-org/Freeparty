@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.moderation.models import ModerationAction, ModerationNote, Report, TrustSignal, SecurityAuditEvent
-from apps.moderation.services import TrustSignalService, ActionVelocityTracker, SecurityAuditService
+from apps.moderation.services import TrustSignalService, ActionVelocityTracker, SecurityAuditService, AdaptiveAbuseControlService
 from apps.posts.models import Attachment, Post
 from apps.social.models import Like
 
@@ -474,8 +474,13 @@ class TrustSignalTests(TestCase):
 		ActionVelocityTracker.record_post(self.actor)
 		self.assertFalse(ActionVelocityTracker.is_velocity_anomaly(self.actor, "post"))
 
-		# Add one more to exceed threshold
+		# Add one more to hit threshold exactly (still allowed)
 		Post.objects.create(author=self.actor, canonical_uri="https://example.com/5", content="test")
+		ActionVelocityTracker.record_post(self.actor)
+		self.assertFalse(ActionVelocityTracker.is_velocity_anomaly(self.actor, "post"))
+
+		# Add one more to exceed threshold
+		Post.objects.create(author=self.actor, canonical_uri="https://example.com/6", content="test")
 		ActionVelocityTracker.record_post(self.actor)
 		self.assertTrue(ActionVelocityTracker.is_velocity_anomaly(self.actor, "post"))
 
@@ -493,6 +498,27 @@ class TrustSignalTests(TestCase):
 		self.assertIn("target_actor_trust_signal", data)
 		self.assertIsNotNone(data["target_actor_trust_signal"])
 		self.assertIn("trust_score", data["target_actor_trust_signal"])
+
+	@override_settings(FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED=True)
+	def test_automatic_abuse_block_is_logged_to_security_audit(self):
+		TrustSignal.objects.create(
+			actor=self.actor,
+			is_throttled=True,
+			throttle_reason="risk_control",
+		)
+
+		allowed, _reason = AdaptiveAbuseControlService.evaluate_action(self.actor, "post")
+		self.assertFalse(allowed)
+
+		audit_event = SecurityAuditEvent.objects.filter(
+			user=self.user,
+			event_type=SecurityAuditEvent.EventType.ABUSE_AUTO_ACTION,
+		).order_by("-created_at").first()
+		self.assertIsNotNone(audit_event)
+		assert audit_event is not None
+		self.assertEqual(audit_event.details.get("action_type"), "post")
+		self.assertEqual(audit_event.details.get("signal"), "throttled")
+		self.assertTrue(audit_event.details.get("blocked"))
 
 
 class SecurityAuditTests(TestCase):

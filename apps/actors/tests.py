@@ -1,6 +1,8 @@
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from apps.accounts.models import User
+from apps.core.services.uris import post_uri
+from apps.posts.models import Post, PostHashtag
 from apps.social.models import Follow
 
 
@@ -49,3 +51,63 @@ class ActorDetailSelfControlsTests(TestCase):
 		response = self.client.get(f"/actors/{other.actor.handle}/")
 		self.assertEqual(response.status_code, 200)
 		self.assertNotContains(response, "Edit profile")
+
+
+class ActorHashtagSearchTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="hashtag-search@example.com", username="hashtagsearch", password="secret123")
+		self.user.mark_email_verified()
+
+	def test_search_by_chained_hashtags(self):
+		Post.objects.create(
+			author=self.user.actor,
+			content="alpha #foo#bar",
+			canonical_uri=post_uri("hash-chain"),
+		)
+		Post.objects.create(
+			author=self.user.actor,
+			content="alpha #foo only",
+			canonical_uri=post_uri("hash-only-foo"),
+		)
+
+		response = self.client.get("/actors/search/?q=%23foo%23bar")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "alpha")
+		self.assertContains(response, 'href="/actors/search/?q=%23foo"')
+		self.assertContains(response, 'href="/actors/search/?q=%23bar"')
+		self.assertNotContains(response, "alpha #foo only")
+		self.assertNotContains(response, "hash-only-foo")
+
+	def test_search_by_spaced_hashtags(self):
+		Post.objects.create(
+			author=self.user.actor,
+			content="combo #woo #hoo",
+			canonical_uri=post_uri("hash-spaced"),
+		)
+		Post.objects.create(
+			author=self.user.actor,
+			content="single #woo",
+			canonical_uri=post_uri("hash-single"),
+		)
+
+		response = self.client.get("/actors/search/?q=%23woo%20%23hoo")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "combo")
+		self.assertContains(response, 'href="/actors/search/?q=%23woo"')
+		self.assertContains(response, 'href="/actors/search/?q=%23hoo"')
+		self.assertNotContains(response, "single")
+		self.assertNotContains(response, "hash-single")
+
+	@override_settings(FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED=False)
+	def test_search_falls_back_to_regex_when_index_disabled(self):
+		post = Post.objects.create(
+			author=self.user.actor,
+			content="legacy #fallback",
+			canonical_uri=post_uri("hash-legacy-fallback"),
+		)
+		PostHashtag.objects.filter(post=post).delete()
+
+		response = self.client.get("/actors/search/?q=%23fallback")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "legacy")
