@@ -90,7 +90,7 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 def public_posts_view(request: HttpRequest) -> HttpResponse:
 	actor = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
 	active_tab = request.GET.get("tab", "all").strip().lower()
-0	if active_tab not in {"all", "media", "links"}:
+	if active_tab not in {"all", "media", "links"}:
 		active_tab = "all"
 	posts_qs = public_timeline(actor=actor, limit=None)
 	if active_tab == "media":
