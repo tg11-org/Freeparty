@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.profiles.models import Profile, ProfileEditHistory
+from apps.profiles.models import Profile, ProfileEditHistory, ProfileLink
 
 
 @admin.register(Profile)
@@ -13,3 +13,10 @@ class ProfileAdmin(admin.ModelAdmin):
 class ProfileEditHistoryAdmin(admin.ModelAdmin):
 	list_display = ("profile", "editor", "created_at")
 	search_fields = ("profile__actor__handle", "editor__username", "editor__email")
+
+
+@admin.register(ProfileLink)
+class ProfileLinkAdmin(admin.ModelAdmin):
+	list_display = ("profile", "title", "display_order", "is_active", "updated_at")
+	search_fields = ("profile__actor__handle", "title", "url")
+	list_filter = ("is_active",)

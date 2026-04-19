@@ -3,8 +3,91 @@
 {% block content %}
 <h2>Edit profile</h2>
 <p style="color:var(--text2);margin-top:0;">Control your profile details and privacy visibility.</p>
-<form method="post" enctype="multipart/form-data">{% csrf_token %}
-  {{ form.as_p }}
+<p><a class="btn" href="{% url 'profiles:links_edit' %}">Manage links page</a></p>
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <ul class="field-errors">
+      {% for error in form.non_field_errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div class="field-wrap">
+    <label for="{{ form.bio.id_for_label }}">{{ form.bio.label }}:</label>
+    {% if form.bio.errors %}<ul class="field-errors">{% for error in form.bio.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.bio }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.avatar.id_for_label }}">{{ form.avatar.label }}:</label>
+    {% if form.avatar.errors %}<ul class="field-errors">{% for error in form.avatar.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.avatar }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.header.id_for_label }}">{{ form.header.label }}:</label>
+    {% if form.header.errors %}<ul class="field-errors">{% for error in form.header.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.header }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.website_url.id_for_label }}">{{ form.website_url.label }}:</label>
+    {% if form.website_url.errors %}<ul class="field-errors">{% for error in form.website_url.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.website_url }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.location.id_for_label }}">{{ form.location.label }}:</label>
+    {% if form.location.errors %}<ul class="field-errors">{% for error in form.location.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.location }}
+  </div>
+
+  <div class="toggle-field">
+    {{ form.show_follower_count.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.show_follower_count.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Show follower count</span>
+        <span class="toggle-help">Disable to hide your follower count from other people.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.show_following_count.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.show_following_count.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Show following count</span>
+        <span class="toggle-help">Disable to hide how many accounts you follow.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.is_private_account.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.is_private_account.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Private account</span>
+        <span class="toggle-help">If enabled, only approved followers can view your profile and posts.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.auto_reveal_spoilers.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.auto_reveal_spoilers.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Auto reveal spoilers</span>
+        <span class="toggle-help">If enabled, spoiler and NSFW content gates open by default.</span>
+      </span>
+    </label>
+  </div>
+
   <button class="button" type="submit">Save</button>
 </form>
 {% endblock %}

@@ -240,6 +240,11 @@ class RootPathAndHealthStatusTests(TestCase):
         self.assertEqual(self.client.get("/profiles/").status_code, 200)
         self.assertEqual(self.client.get("/social/").status_code, 302)
 
+    def test_static_info_pages_are_available(self):
+        for path in ["/about/", "/terms/", "/privacy/", "/guidelines/", "/faq/", "/support/"]:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, msg=f"Expected 200 for {path}")
+
 
 class DeadLetterReplayCommandTests(TestCase):
     @patch("apps.core.management.commands.dead_letter_inspect.current_app")

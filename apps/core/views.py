@@ -131,6 +131,36 @@ def health_status_view(request: HttpRequest) -> HttpResponse:
 
 
 @require_http_methods(["GET"])
+def about_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/about.html")
+
+
+@require_http_methods(["GET"])
+def terms_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/terms.html")
+
+
+@require_http_methods(["GET"])
+def privacy_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/privacy.html")
+
+
+@require_http_methods(["GET"])
+def guidelines_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/guidelines.html")
+
+
+@require_http_methods(["GET"])
+def faq_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/faq.html")
+
+
+@require_http_methods(["GET"])
+def support_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/support.html")
+
+
+@require_http_methods(["GET"])
 def me_redirect_view(request: HttpRequest) -> HttpResponse:
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		return redirect("actors:detail", handle=request.user.actor.handle)

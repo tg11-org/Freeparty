@@ -30,6 +30,21 @@ class Profile(TimeStampedModel):
 		return f"Profile<{self.actor.handle}>"
 
 
+class ProfileLink(TimeStampedModel):
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	profile = models.ForeignKey("profiles.Profile", on_delete=models.CASCADE, related_name="links")
+	title = models.CharField(max_length=120)
+	url = models.URLField(max_length=2048)
+	display_order = models.PositiveIntegerField(default=0)
+	is_active = models.BooleanField(default=True)
+
+	class Meta:
+		ordering = ["display_order", "created_at"]
+
+	def __str__(self) -> str:
+		return f"ProfileLink<{self.profile.actor.handle}:{self.title}>"
+
+
 class ProfileEditHistory(TimeStampedModel):
 	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 	profile = models.ForeignKey("profiles.Profile", on_delete=models.CASCADE, related_name="edit_history")

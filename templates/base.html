@@ -266,10 +266,92 @@
       .messages { list-style: none; padding: 0; margin: 0 0 1rem; }
       .messages li { padding: 0.55rem 0.75rem; border-radius: 6px; margin-bottom: 0.4rem; background: var(--surface2); border-left: 3px solid var(--accent); }
       form p { display: flex; flex-direction: column; gap: 0.2rem; }
+      .field-wrap { margin-bottom: 0.8rem; }
+      .field-wrap label { display: inline-block; margin-bottom: 0.25rem; font-weight: 600; }
+      .field-help { margin-top: 0.25rem; color: var(--text2); font-size: 0.85rem; }
+      .field-errors { margin: 0 0 0.35rem; padding-left: 1rem; color: var(--danger); font-size: 0.85rem; }
       textarea, input[type=text], input[type=email], input[type=password], input[type=url], input[type=search], select {
         padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border);
         background: var(--surface); color: var(--text); font-size: 0.9rem; width: 100%;
       }
+      input[type=checkbox]:not(.toggle-input), input[type=radio] {
+        accent-color: var(--accent);
+        width: 1.05rem;
+        height: 1.05rem;
+      }
+      form p:has(input[type=checkbox]:not(.toggle-input)),
+      form p:has(input[type=radio]) {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.35rem 0.55rem;
+        align-items: start;
+      }
+      form p:has(input[type=checkbox]:not(.toggle-input)) input[type=checkbox]:not(.toggle-input),
+      form p:has(input[type=radio]) input[type=radio] {
+        grid-column: 1;
+        margin-top: 0.15rem;
+      }
+      form p:has(input[type=checkbox]:not(.toggle-input)) label,
+      form p:has(input[type=radio]) label {
+        grid-column: 2;
+        margin: 0;
+      }
+      .toggle-field {
+        position: relative;
+        margin: 0.7rem 0;
+      }
+      .toggle-input {
+        position: absolute;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+        pointer-events: none;
+      }
+      .toggle-label {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        cursor: pointer;
+        user-select: none;
+      }
+      .toggle-switch {
+        position: relative;
+        width: 46px;
+        height: 26px;
+        border-radius: 999px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        transition: background 0.2s ease, border-color 0.2s ease;
+        flex-shrink: 0;
+        margin-top: 0.1rem;
+      }
+      .toggle-switch::after {
+        content: "";
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        top: 2px;
+        left: 2px;
+        transition: transform 0.2s ease;
+      }
+      .toggle-input:checked + .toggle-label .toggle-switch {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .toggle-input:checked + .toggle-label .toggle-switch::after {
+        transform: translateX(20px);
+        border-color: transparent;
+      }
+      .toggle-input:focus-visible + .toggle-label .toggle-switch {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .toggle-copy { display: flex; flex-direction: column; gap: 0.1rem; }
+      .toggle-title { font-weight: 700; }
+      .toggle-help { color: var(--text2); font-size: 0.85rem; }
       .profile-avatar { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); }
       .profile-avatar-lg { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 3px solid var(--accent); }
       .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
@@ -312,9 +394,31 @@
       .content-gate[data-gate-type="spoiler"][data-revealed="false"] .content-gate-body {
         border: 1px dashed var(--border);
       }
+      .site-footer {
+        max-width: 800px;
+        margin: 0.4rem auto 1rem;
+        padding: 0.85rem 1.2rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--text2);
+        font-size: 0.85rem;
+      }
+      .site-footer nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.65rem;
+      }
+      .site-footer nav a {
+        color: var(--text2);
+      }
+      .site-footer nav a:hover {
+        color: var(--accent);
+      }
       @media (max-width: 680px) {
         main { margin: 0.5rem; padding: 0.9rem; border-radius: 8px; }
         header h1 { font-size: 1.1rem; }
+        .site-footer { margin: 0.5rem; padding: 0.8rem 0.9rem; border-radius: 8px; }
       }
     </style>
   </head>
@@ -378,6 +482,17 @@
       {% endif %}
       {% block content %}{% endblock %}
     </main>
+    <footer class="site-footer" aria-label="Site links">
+      <nav>
+        <a href="/about/">About</a>
+        <a href="/terms/">Terms</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/guidelines/">Guidelines</a>
+        <a href="/faq/">FAQ</a>
+        <a href="/support/">Support</a>
+        <a href="/health/">Status</a>
+      </nav>
+    </footer>
     <script>
     (function(){
       var root = document.documentElement;

@@ -23,3 +23,13 @@ dist/
 build/
 *.egg-info/
 node_modules/
+docs*
+codebase_analysis.json
+foundation.md
+implementation_reference.md
+LOGS_SETUP.md
+OPERATIONS.md
+PHASE*
+PM_*
+PROJECT_STATUS.md
+SECURITY_HARDENING*
