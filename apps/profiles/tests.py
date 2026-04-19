@@ -260,6 +260,38 @@ class ParentalControlsTests(TestCase):
 		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
 		self.assertFalse(change_request.proposed_parental_controls_enabled)
 
+	def test_minor_protected_visibility_change_still_requests_when_parental_toggle_off(self):
+		self.client.force_login(self.user)
+		profile = self.user.actor.profile
+		profile.is_minor_account = True
+		profile.parental_controls_enabled = False
+		profile.guardian_email = "parent@example.com"
+		profile.guardian_email_verified_at = timezone.now()
+		profile.auto_reveal_spoilers = False
+		profile.save(
+			update_fields=[
+				"is_minor_account",
+				"parental_controls_enabled",
+				"guardian_email",
+				"guardian_email_verified_at",
+				"auto_reveal_spoilers",
+				"updated_at",
+			],
+		)
+
+		response = self._post_profile(
+			is_minor_account=True,
+			parental_controls_enabled=False,
+			guardian_email="parent@example.com",
+			auto_reveal_spoilers=True,
+		)
+		self.assertEqual(response.status_code, 302)
+		profile.refresh_from_db()
+		self.assertFalse(profile.auto_reveal_spoilers)
+
+		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
+		self.assertTrue(change_request.proposed_auto_reveal_spoilers)
+
 	def test_guardian_can_lock_basic_profile_and_minor_change_becomes_request(self):
 		self.client.force_login(self.user)
 		profile = self.user.actor.profile

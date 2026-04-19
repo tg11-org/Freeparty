@@ -150,7 +150,9 @@ def _locked_fields_for_profile(profile: Profile) -> set[str]:
 	if profile.guardian_locks_account_protection:
 		locked_fields.update(LOCK_CONFIGURATION_FIELDS)
 
-	if profile.parental_controls_enabled or profile.guardian_locks_visibility_settings:
+	# Minor account safety defaults: these visibility/content fields require guardian approval
+	# whenever a guardian email is configured for a minor account, regardless of toggle position.
+	if profile.is_minor_account or profile.guardian_locks_visibility_settings:
 		locked_fields.update(PROTECTED_PARENTAL_FIELDS)
 
 	if profile.guardian_locks_basic_profile:
