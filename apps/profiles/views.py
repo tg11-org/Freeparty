@@ -168,7 +168,11 @@ def _locked_fields_for_profile(profile: Profile) -> set[str]:
 		return set()
 
 	locked_fields = set()
-	if profile.guardian_locks_account_protection:
+
+	# Minor accounts always lock the configuration fields (is_minor_account,
+	# parental_controls_enabled, guardian_email) so the child cannot remove
+	# their own protections without guardian approval.
+	if profile.is_minor_account or profile.guardian_locks_account_protection:
 		locked_fields.update(LOCK_CONFIGURATION_FIELDS)
 
 	# Minor account safety defaults: these visibility/content fields require guardian approval
@@ -201,11 +205,27 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 		previous_location = profile.location
 		previous_website_url = profile.website_url
 		changed_fields = set(form.changed_data)
+
+		# Snapshot original values BEFORE form.save(commit=False) mutates the
+		# profile object (ModelForm writes to the same instance in memory).
+		original_values = {
+			field_name: getattr(profile, field_name)
+			for field_name in restricted_fields
+			if field_name in form.cleaned_data
+		}
 		locked_field_changes = {
 			field_name
-			for field_name in restricted_fields
-			if field_name in form.cleaned_data and form.cleaned_data.get(field_name) != getattr(profile, field_name)
+			for field_name, original_value in original_values.items()
+			if form.cleaned_data.get(field_name) != original_value
 		}
+		original_guardian_email_verified_at = profile.guardian_email_verified_at
+
+		logger.info(
+			"edit_profile profile=%s is_minor=%s guardian=%s restricted=%s changed=%s locked_changes=%s",
+			profile.id, profile.is_minor_account, profile.guardian_email,
+			restricted_fields, changed_fields, locked_field_changes,
+		)
+
 		updated_profile = form.save(commit=False)
 
 		if "guardian_email" in changed_fields and "guardian_email" not in restricted_fields:
@@ -213,8 +233,8 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 
 		if guardian_approval_possible and locked_field_changes:
 			for field_name in locked_field_changes:
-				setattr(updated_profile, field_name, getattr(profile, field_name))
-			updated_profile.guardian_email_verified_at = profile.guardian_email_verified_at
+				setattr(updated_profile, field_name, original_values[field_name])
+			updated_profile.guardian_email_verified_at = original_guardian_email_verified_at
 			locked_changes_queued = True
 
 		updated_profile.save()
