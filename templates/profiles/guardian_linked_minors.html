@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Linked Minor Accounts · Freeparty{% endblock %}
+{% block content %}
+<section data-section-anchors="1" style="max-width:760px;margin:1.2rem auto;">
+  <h2>Linked minor accounts</h2>
+  <p style="color:var(--text2);margin-top:0;">Manage minor accounts connected to your verified guardian email.</p>
+
+  {% if linked_profiles %}
+    <div style="display:grid;gap:0.7rem;">
+      {% for linked_profile in linked_profiles %}
+        <article class="card" style="padding:0.85rem;display:flex;align-items:center;justify-content:space-between;gap:0.7rem;flex-wrap:wrap;">
+          <div>
+            <p style="margin:0;"><strong>@{{ linked_profile.actor.handle }}</strong></p>
+            <p style="margin:0.3rem 0 0;color:var(--text2);font-size:0.92rem;">
+              Guardian verified on {{ linked_profile.guardian_email_verified_at|date:"Y-m-d H:i" }}
+            </p>
+          </div>
+          <a class="btn" href="{% url 'profiles:guardian_manage_linked_minor' linked_profile.id %}">Open guardian controls</a>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p style="color:var(--text2);">No verified minor accounts are currently linked to your email.</p>
+  {% endif %}
+</section>
+{% endblock %}

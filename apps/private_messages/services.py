@@ -15,6 +15,48 @@ import uuid
 from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageAttachment, EncryptedMessageEnvelope, UserIdentityKey
 
 
+def _get_profile_or_none(actor):
+    try:
+        return actor.profile
+    except Exception:
+        return None
+
+
+def _is_teen_actor(*, actor) -> bool:
+    profile = _get_profile_or_none(actor)
+    if profile is None or not profile.is_minor_account:
+        return False
+    age_years = profile.get_effective_minor_age_years()
+    if age_years is None:
+        return False
+    return 13 <= age_years < 18
+
+
+def get_parental_dm_restriction_error(*, actor, target_actor) -> str | None:
+    actor_profile = _get_profile_or_none(actor)
+    target_profile = _get_profile_or_none(target_actor)
+
+    if (
+        actor_profile is not None
+        and actor_profile.is_minor_account
+        and actor_profile.parental_controls_enabled
+        and actor_profile.guardian_restrict_dms_to_teens
+        and not _is_teen_actor(actor=target_actor)
+    ):
+        return "Parental controls only allow DMs with teen accounts (13-17)."
+
+    if (
+        target_profile is not None
+        and target_profile.is_minor_account
+        and target_profile.parental_controls_enabled
+        and target_profile.guardian_restrict_dms_to_teens
+        and not _is_teen_actor(actor=actor)
+    ):
+        return "This account is protected by parental controls and only accepts DMs from teen accounts (13-17)."
+
+    return None
+
+
 def is_private_messages_enabled() -> bool:
     return bool(getattr(settings, "FEATURE_PM_E2E_ENABLED", False))
 
@@ -320,6 +362,10 @@ def send_direct_encrypted_message(*, conversation, sender, ciphertext: str, mess
     recipient_participant = next((participant for participant in participants if participant.actor_id != sender.id), None)
     if recipient_participant is None:
         raise ValidationError("Direct conversation recipient could not be resolved.")
+
+    dm_restriction_error = get_parental_dm_restriction_error(actor=sender, target_actor=recipient_participant.actor)
+    if dm_restriction_error:
+        raise ValidationError(dm_restriction_error)
 
     sender_key = UserIdentityKey.objects.filter(actor=sender, is_active=True).order_by("-created_at").first()
     recipient_key = UserIdentityKey.objects.filter(actor=recipient_participant.actor, is_active=True).order_by("-created_at").first()

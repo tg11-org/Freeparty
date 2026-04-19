@@ -5,6 +5,9 @@
 <h2>Edit profile</h2>
 <p style="color:var(--text2);margin-top:0;">Control your profile details and privacy visibility.</p>
 <p><a class="btn" href="{% url 'profiles:links_edit' %}">Manage links page</a></p>
+{% if can_manage_linked_minors %}
+  <p><a class="btn" href="{% url 'profiles:guardian_minors' %}">Manage linked minor accounts</a></p>
+{% endif %}
 <form method="post" enctype="multipart/form-data">
   {% csrf_token %}
   {% if form.non_field_errors %}
@@ -47,6 +50,11 @@
 
   <h3 style="margin-top:1.2rem;">Minor Safety and Parental Controls</h3>
   <p class="field-help" style="margin-top:0;">For minor accounts, sensitive privacy/content changes can be locked behind guardian email approval.</p>
+  {% if profile.is_minor_account and profile.guardian_email %}
+    <p class="field-help" style="margin-top:0;">
+      For minor accounts, guardian-managed toggles are request-only. Save your desired changes here and a guardian approval link will be emailed.
+    </p>
+  {% endif %}
 
   <div class="field-wrap">
     <label for="{{ form.guardian_email.id_for_label }}">{{ form.guardian_email.label }}:</label>

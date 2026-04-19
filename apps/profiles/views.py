@@ -34,6 +34,7 @@ PROTECTED_PARENTAL_FIELDS = {
 	"show_following_count",
 }
 LOCK_CONFIGURATION_FIELDS = {"is_minor_account", "parental_controls_enabled", "guardian_email"}
+BASIC_PROFILE_FIELDS = {"bio", "website_url", "location"}
 
 
 def _issue_guardian_management_access(profile: Profile) -> GuardianManagementAccessToken:
@@ -97,6 +98,9 @@ def _issue_parental_change_approval(request: HttpRequest, profile: Profile, requ
 		proposed_is_minor_account=bool(cleaned_data.get("is_minor_account")),
 		proposed_parental_controls_enabled=bool(cleaned_data.get("parental_controls_enabled")),
 		proposed_guardian_email=(cleaned_data.get("guardian_email") or "").strip(),
+		proposed_bio=(cleaned_data.get("bio") or "").strip(),
+		proposed_location=(cleaned_data.get("location") or "").strip(),
+		proposed_website_url=(cleaned_data.get("website_url") or "").strip(),
 	)
 	approve_path = reverse("profiles:approve_parental_change", kwargs={"token": approval.token})
 	approve_url = request.build_absolute_uri(approve_path)
@@ -114,6 +118,47 @@ def _issue_parental_change_approval(request: HttpRequest, profile: Profile, requ
 	)
 
 
+def _is_non_minor_guardian_user(user) -> bool:
+	if not getattr(user, "is_authenticated", False):
+		return False
+	if not user.email:
+		return False
+	actor = getattr(user, "actor", None)
+	if actor is None:
+		return False
+	profile, _ = Profile.objects.get_or_create(actor=actor)
+	return not profile.is_minor_account
+
+
+def _guardian_can_manage_profile(user, profile: Profile) -> bool:
+	if not _is_non_minor_guardian_user(user):
+		return False
+	if not profile.guardian_email or not profile.guardian_email_verified_at:
+		return False
+	return bool(user.email and user.email.lower() == profile.guardian_email.lower())
+
+
+def _guardian_request_ready(profile: Profile) -> bool:
+	return bool(profile.is_minor_account and profile.guardian_email)
+
+
+def _locked_fields_for_profile(profile: Profile) -> set[str]:
+	if not _guardian_request_ready(profile):
+		return set()
+
+	locked_fields = set()
+	if profile.guardian_locks_account_protection:
+		locked_fields.update(LOCK_CONFIGURATION_FIELDS)
+
+	if profile.parental_controls_enabled or profile.guardian_locks_visibility_settings:
+		locked_fields.update(PROTECTED_PARENTAL_FIELDS)
+
+	if profile.guardian_locks_basic_profile:
+		locked_fields.update(BASIC_PROFILE_FIELDS)
+
+	return locked_fields
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def edit_profile_view(request: HttpRequest) -> HttpResponse:
@@ -124,25 +169,21 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 	profile, _ = Profile.objects.get_or_create(actor=actor)
 
 	form = ProfileForm(request.POST or None, request.FILES or None, instance=profile)
+	can_manage_linked_minors = _is_non_minor_guardian_user(request.user)
 	if request.method == "POST" and form.is_valid():
 		locked_changes_queued = False
-		restricted_fields = PROTECTED_PARENTAL_FIELDS.union(LOCK_CONFIGURATION_FIELDS)
-		current_parental_lock_active = (
-			profile.is_minor_account
-			and profile.parental_controls_enabled
-			and bool(profile.guardian_email)
-			and bool(profile.guardian_email_verified_at)
-		)
+		restricted_fields = _locked_fields_for_profile(profile)
+		guardian_approval_possible = bool(profile.guardian_email)
 		previous_bio = profile.bio
 		previous_location = profile.location
 		previous_website_url = profile.website_url
 		changed_fields = set(form.changed_data)
 		updated_profile = form.save(commit=False)
 
-		if "guardian_email" in changed_fields and not current_parental_lock_active:
+		if "guardian_email" in changed_fields and "guardian_email" not in restricted_fields:
 			updated_profile.guardian_email_verified_at = None
 
-		if current_parental_lock_active and restricted_fields.intersection(changed_fields):
+		if guardian_approval_possible and restricted_fields.intersection(changed_fields):
 			for field_name in restricted_fields:
 				if field_name in changed_fields:
 					setattr(updated_profile, field_name, getattr(profile, field_name))
@@ -173,10 +214,21 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 				previous_website_url=previous_website_url,
 				new_website_url=updated_profile.website_url,
 			)
-		messages.success(request, "Profile updated.")
+		if locked_changes_queued:
+			messages.success(request, "Profile updated. Guardian approval is pending for protected changes.")
+		else:
+			messages.success(request, "Profile updated.")
 		return redirect("actors:detail", handle=actor.handle)
 
-	return render(request, "profiles/edit.html", {"form": form, "profile": profile})
+	return render(
+		request,
+		"profiles/edit.html",
+		{
+			"form": form,
+			"profile": profile,
+			"can_manage_linked_minors": can_manage_linked_minors,
+		},
+	)
 
 
 @require_http_methods(["GET"])
@@ -221,6 +273,9 @@ def approve_parental_change_view(request: HttpRequest, token: str) -> HttpRespon
 	profile.show_following_count = change_request.proposed_show_following_count
 	profile.is_minor_account = change_request.proposed_is_minor_account
 	profile.parental_controls_enabled = change_request.proposed_parental_controls_enabled
+	profile.bio = change_request.proposed_bio
+	profile.location = change_request.proposed_location
+	profile.website_url = change_request.proposed_website_url
 	guardian_email_changed = profile.guardian_email != change_request.proposed_guardian_email
 	profile.guardian_email = change_request.proposed_guardian_email
 	if guardian_email_changed:
@@ -233,6 +288,9 @@ def approve_parental_change_view(request: HttpRequest, token: str) -> HttpRespon
 			"show_following_count",
 			"is_minor_account",
 			"parental_controls_enabled",
+			"bio",
+			"location",
+			"website_url",
 			"guardian_email",
 			"guardian_email_verified_at",
 			"updated_at",
@@ -276,6 +334,10 @@ def guardian_manage_minor_view(request: HttpRequest, token: str) -> HttpResponse
 				"minor_birth_day",
 				"guardian_allows_nsfw_underage",
 				"guardian_allows_16plus_underage",
+				"guardian_locks_basic_profile",
+				"guardian_locks_visibility_settings",
+				"guardian_locks_account_protection",
+				"guardian_restrict_dms_to_teens",
 				"updated_at",
 			],
 		)
@@ -289,6 +351,73 @@ def guardian_manage_minor_view(request: HttpRequest, token: str) -> HttpResponse
 			"form": form,
 			"profile": profile,
 			"access": access,
+			"back_to_guardian_minors": False,
+		},
+	)
+
+
+@login_required
+@require_http_methods(["GET"])
+def guardian_linked_minors_view(request: HttpRequest) -> HttpResponse:
+	if not _is_non_minor_guardian_user(request.user):
+		messages.error(request, "Guardian account access requires a non-minor account.")
+		return redirect("profiles:edit")
+
+	linked_profiles = Profile.objects.select_related("actor").filter(
+		is_minor_account=True,
+		guardian_email__iexact=request.user.email,
+		guardian_email_verified_at__isnull=False,
+	).order_by("actor__handle")
+
+	return render(
+		request,
+		"profiles/guardian_linked_minors.html",
+		{
+			"linked_profiles": linked_profiles,
+		},
+	)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def guardian_manage_linked_minor_view(request: HttpRequest, profile_id) -> HttpResponse:
+	profile = get_object_or_404(Profile.objects.select_related("actor"), id=profile_id)
+	if not _guardian_can_manage_profile(request.user, profile):
+		messages.error(request, "You are not allowed to manage this minor profile.")
+		return redirect("profiles:guardian_minors")
+
+	form = GuardianMinorSettingsForm(request.POST or None, profile=profile)
+	if request.method == "POST" and form.is_valid():
+		profile = form.apply(profile)
+		profile.save(
+			update_fields=[
+				"minor_birthdate_precision",
+				"minor_age_range",
+				"minor_age_years",
+				"minor_age_recorded_at",
+				"minor_birth_year",
+				"minor_birth_month",
+				"minor_birth_day",
+				"guardian_allows_nsfw_underage",
+				"guardian_allows_16plus_underage",
+				"guardian_locks_basic_profile",
+				"guardian_locks_visibility_settings",
+				"guardian_locks_account_protection",
+				"guardian_restrict_dms_to_teens",
+				"updated_at",
+			],
+		)
+		messages.success(request, f"Guardian settings saved for @{profile.actor.handle}.")
+		return redirect("profiles:guardian_manage_linked_minor", profile_id=profile.id)
+
+	return render(
+		request,
+		"profiles/guardian_manage.html",
+		{
+			"form": form,
+			"profile": profile,
+			"access": None,
+			"back_to_guardian_minors": True,
 		},
 	)
 

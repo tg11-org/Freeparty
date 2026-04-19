@@ -23,6 +23,7 @@ from apps.private_messages.models import Conversation, ConversationParticipant, 
 from apps.private_messages.security import compute_identicon_seed, compute_safety_fingerprint_hex, has_remote_key_changed
 from apps.private_messages.services import (
     ensure_active_identity_key,
+    get_parental_dm_restriction_error,
     get_conversation_queryset_for_actor,
     get_or_create_direct_conversation,
     is_private_messages_enabled,
@@ -252,6 +253,10 @@ def start_direct_conversation_view(request: HttpRequest, handle: str) -> HttpRes
     target = get_object_or_404(Actor, handle=handle, state=Actor.ActorState.ACTIVE)
     if actor.id == target.id:
         messages.error(request, "You cannot start a DM with yourself.")
+        return redirect("actors:detail", handle=handle)
+    dm_restriction_error = get_parental_dm_restriction_error(actor=actor, target_actor=target)
+    if dm_restriction_error:
+        messages.error(request, dm_restriction_error)
         return redirect("actors:detail", handle=handle)
     if Block.objects.filter(blocker=actor, blocked=target).exists() or Block.objects.filter(blocker=target, blocked=actor).exists():
         messages.error(request, "You cannot start a DM with this account.")

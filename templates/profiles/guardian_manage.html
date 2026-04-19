@@ -5,6 +5,9 @@
 <section data-section-anchors="1">
 <h2>Guardian controls for @{{ profile.actor.handle }}</h2>
 <p style="color:var(--text2);margin-top:0;">Use this page to set the child's stored age details and decide whether underage access can include NSFW or 16+ posts. This does not grant access to 18+ content.</p>
+{% if back_to_guardian_minors %}
+  <p><a class="btn" href="{% url 'profiles:guardian_minors' %}">Back to linked minor accounts</a></p>
+{% endif %}
 
 {% if form.non_field_errors %}
   <ul class="field-errors">
@@ -79,6 +82,53 @@
       <span class="toggle-copy">
         <span class="toggle-title">Allow 16+ posts for this minor</span>
         <span class="toggle-help">Useful if the child is younger than 16 but you still want 16+ posts visible. This still does not enable 18+ content.</span>
+      </span>
+    </label>
+  </div>
+
+  <h3 style="margin-top:0.8rem;">Guardian lock controls</h3>
+  <p style="margin:0;color:var(--text2);">Choose which profile setting groups the minor can only request instead of changing directly.</p>
+
+  <div class="toggle-field">
+    {{ form.guardian_locks_basic_profile }}
+    <label class="toggle-label" for="{{ form.guardian_locks_basic_profile.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Lock profile basics</span>
+        <span class="toggle-help">Requires guardian approval before bio, location, or website changes are applied.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.guardian_locks_visibility_settings }}
+    <label class="toggle-label" for="{{ form.guardian_locks_visibility_settings.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Lock visibility settings</span>
+        <span class="toggle-help">Requires guardian approval for follower/following visibility, private account, and spoiler reveal toggles.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.guardian_locks_account_protection }}
+    <label class="toggle-label" for="{{ form.guardian_locks_account_protection.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Lock account protection settings</span>
+        <span class="toggle-help">Keeps minor protection and parental-lock toggles guardian-controlled.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.guardian_restrict_dms_to_teens }}
+    <label class="toggle-label" for="{{ form.guardian_restrict_dms_to_teens.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Restrict DMs to teen accounts</span>
+        <span class="toggle-help">When enabled for a minor account, direct messages are allowed only with teen accounts (13-17).</span>
       </span>
     </label>
   </div>

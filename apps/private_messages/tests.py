@@ -386,6 +386,70 @@ class PrivateMessagesHtmlFlowTests(TestCase):
         self.assertEqual(second.status_code, 302)
         self.assertEqual(Conversation.objects.count(), 1)
 
+    def test_minor_with_parental_dm_restriction_cannot_start_dm_with_non_teen(self):
+        self.alice.actor.profile.is_minor_account = True
+        self.alice.actor.profile.parental_controls_enabled = True
+        self.alice.actor.profile.guardian_restrict_dms_to_teens = True
+        self.alice.actor.profile.minor_birthdate_precision = "age_years"
+        self.alice.actor.profile.minor_age_years = 16
+        self.alice.actor.profile.minor_age_recorded_at = timezone.now()
+        self.alice.actor.profile.save(
+            update_fields=[
+                "is_minor_account",
+                "parental_controls_enabled",
+                "guardian_restrict_dms_to_teens",
+                "minor_birthdate_precision",
+                "minor_age_years",
+                "minor_age_recorded_at",
+                "updated_at",
+            ]
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.post(f"/messages/start/{self.bob.actor.handle}/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Conversation.objects.count(), 0)
+
+    def test_minor_with_parental_dm_restriction_can_start_dm_with_teen(self):
+        teen = User.objects.create_user(email="teen-dm@example.com", username="teendm", password="secret123")
+        teen.mark_email_verified()
+        teen.actor.profile.is_minor_account = True
+        teen.actor.profile.minor_birthdate_precision = "age_years"
+        teen.actor.profile.minor_age_years = 15
+        teen.actor.profile.minor_age_recorded_at = timezone.now()
+        teen.actor.profile.save(
+            update_fields=[
+                "is_minor_account",
+                "minor_birthdate_precision",
+                "minor_age_years",
+                "minor_age_recorded_at",
+                "updated_at",
+            ]
+        )
+
+        self.alice.actor.profile.is_minor_account = True
+        self.alice.actor.profile.parental_controls_enabled = True
+        self.alice.actor.profile.guardian_restrict_dms_to_teens = True
+        self.alice.actor.profile.minor_birthdate_precision = "age_years"
+        self.alice.actor.profile.minor_age_years = 16
+        self.alice.actor.profile.minor_age_recorded_at = timezone.now()
+        self.alice.actor.profile.save(
+            update_fields=[
+                "is_minor_account",
+                "parental_controls_enabled",
+                "guardian_restrict_dms_to_teens",
+                "minor_birthdate_precision",
+                "minor_age_years",
+                "minor_age_recorded_at",
+                "updated_at",
+            ]
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.post(f"/messages/start/{teen.actor.handle}/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Conversation.objects.count(), 1)
+
     def test_messages_list_renders(self):
         conversation = create_direct_conversation(
             created_by=self.alice.actor,
@@ -568,6 +632,56 @@ class PrivateMessagesHtmlFlowTests(TestCase):
         self.assertEqual(envelope.recipient_actor, self.bob.actor)
         self.assertEqual(envelope.sender_key_id, "alice-key-1")
         self.assertEqual(envelope.recipient_key_id, "bob-key-1")
+
+    def test_parental_dm_restriction_blocks_message_send_in_existing_conversation(self):
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        UserIdentityKey.objects.create(
+            actor=self.alice.actor,
+            key_id="alice-key-1",
+            public_key="alice-public-key",
+            fingerprint_hex="a" * 64,
+        )
+        UserIdentityKey.objects.create(
+            actor=self.bob.actor,
+            key_id="bob-key-1",
+            public_key="bob-public-key",
+            fingerprint_hex="b" * 64,
+        )
+
+        self.alice.actor.profile.is_minor_account = True
+        self.alice.actor.profile.parental_controls_enabled = True
+        self.alice.actor.profile.guardian_restrict_dms_to_teens = True
+        self.alice.actor.profile.minor_birthdate_precision = "age_years"
+        self.alice.actor.profile.minor_age_years = 16
+        self.alice.actor.profile.minor_age_recorded_at = timezone.now()
+        self.alice.actor.profile.save(
+            update_fields=[
+                "is_minor_account",
+                "parental_controls_enabled",
+                "guardian_restrict_dms_to_teens",
+                "minor_birthdate_precision",
+                "minor_age_years",
+                "minor_age_recorded_at",
+                "updated_at",
+            ]
+        )
+
+        self.client.force_login(self.alice)
+        response = self.client.post(
+            f"/messages/{conversation.id}/send/",
+            {
+                "ciphertext": "base64:encrypted-payload",
+                "message_nonce": "nonce-123",
+                "client_message_id": "client-1",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Parental controls only allow DMs with teen accounts")
+        self.assertEqual(EncryptedMessageEnvelope.objects.filter(conversation=conversation).count(), 0)
 
     def test_send_encrypted_message_stores_encrypted_attachment(self):
         conversation = create_direct_conversation(

@@ -172,6 +172,8 @@ class ParentalControlsTests(TestCase):
 				"minor_birth_year": 2012,
 				"guardian_allows_nsfw_underage": "on",
 				"guardian_allows_16plus_underage": "on",
+				"guardian_locks_account_protection": "on",
+				"guardian_restrict_dms_to_teens": "on",
 			},
 		)
 		self.assertEqual(response.status_code, 302)
@@ -181,6 +183,8 @@ class ParentalControlsTests(TestCase):
 		self.assertEqual(profile.minor_birth_year, 2012)
 		self.assertTrue(profile.guardian_allows_nsfw_underage)
 		self.assertTrue(profile.guardian_allows_16plus_underage)
+		self.assertTrue(profile.guardian_locks_account_protection)
+		self.assertTrue(profile.guardian_restrict_dms_to_teens)
 
 	def test_minor_locked_change_requires_guardian_approval(self):
 		self.client.force_login(self.user)
@@ -249,3 +253,94 @@ class ParentalControlsTests(TestCase):
 
 		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
 		self.assertFalse(change_request.proposed_parental_controls_enabled)
+
+	def test_guardian_can_lock_basic_profile_and_minor_change_becomes_request(self):
+		self.client.force_login(self.user)
+		profile = self.user.actor.profile
+		profile.is_minor_account = True
+		profile.parental_controls_enabled = True
+		profile.guardian_email = "parent@example.com"
+		profile.guardian_email_verified_at = timezone.now()
+		profile.guardian_locks_basic_profile = True
+		profile.bio = "Original bio"
+		profile.save(
+			update_fields=[
+				"is_minor_account",
+				"parental_controls_enabled",
+				"guardian_email",
+				"guardian_email_verified_at",
+				"guardian_locks_basic_profile",
+				"bio",
+				"updated_at",
+			],
+		)
+
+		response = self._post_profile(
+			is_minor_account=True,
+			parental_controls_enabled=True,
+			guardian_email="parent@example.com",
+			bio="Requested new bio",
+		)
+		self.assertEqual(response.status_code, 302)
+		profile.refresh_from_db()
+		self.assertEqual(profile.bio, "Original bio")
+
+		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
+		self.assertEqual(change_request.proposed_bio, "Requested new bio")
+
+		approve_response = self.client.get(f"/profiles/guardian/approve/{change_request.token}/")
+		self.assertEqual(approve_response.status_code, 302)
+		profile.refresh_from_db()
+		self.assertEqual(profile.bio, "Requested new bio")
+
+
+class GuardianLinkedMinorManagementTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.guardian_user = User.objects.create_user(email="guardian@example.com", username="guardian", password="secret123")
+		self.guardian_user.mark_email_verified()
+		guardian_profile = self.guardian_user.actor.profile
+		guardian_profile.is_minor_account = False
+		guardian_profile.save(update_fields=["is_minor_account", "updated_at"])
+
+		self.minor_user = User.objects.create_user(email="minorlinked@example.com", username="minorlinked", password="secret123")
+		self.minor_user.mark_email_verified()
+		minor_profile = self.minor_user.actor.profile
+		minor_profile.is_minor_account = True
+		minor_profile.parental_controls_enabled = True
+		minor_profile.guardian_email = "guardian@example.com"
+		minor_profile.guardian_email_verified_at = timezone.now()
+		minor_profile.save(
+			update_fields=[
+				"is_minor_account",
+				"parental_controls_enabled",
+				"guardian_email",
+				"guardian_email_verified_at",
+				"updated_at",
+			],
+		)
+
+	def test_non_minor_guardian_can_view_linked_minor_accounts(self):
+		self.client.force_login(self.guardian_user)
+		response = self.client.get("/profiles/guardian/minors/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, self.minor_user.actor.handle)
+
+	def test_non_minor_guardian_can_manage_linked_minor_settings(self):
+		self.client.force_login(self.guardian_user)
+		minor_profile = self.minor_user.actor.profile
+		response = self.client.post(
+			f"/profiles/guardian/minors/{minor_profile.id}/",
+			{
+				"minor_birthdate_precision": "age_range",
+				"minor_age_range": "13_15",
+				"guardian_locks_basic_profile": "on",
+				"guardian_locks_visibility_settings": "on",
+				"guardian_locks_account_protection": "on",
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		minor_profile.refresh_from_db()
+		self.assertTrue(minor_profile.guardian_locks_basic_profile)
+		self.assertTrue(minor_profile.guardian_locks_visibility_settings)
+		self.assertTrue(minor_profile.guardian_locks_account_protection)

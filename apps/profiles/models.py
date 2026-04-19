@@ -52,6 +52,10 @@ class Profile(TimeStampedModel):
 	minor_birth_day = models.PositiveSmallIntegerField(null=True, blank=True)
 	guardian_allows_nsfw_underage = models.BooleanField(default=False)
 	guardian_allows_16plus_underage = models.BooleanField(default=False)
+	guardian_locks_basic_profile = models.BooleanField(default=False)
+	guardian_locks_visibility_settings = models.BooleanField(default=False)
+	guardian_locks_account_protection = models.BooleanField(default=True)
+	guardian_restrict_dms_to_teens = models.BooleanField(default=False)
 
 	@property
 	def guardian_email_verified(self) -> bool:
@@ -208,6 +212,9 @@ class ParentalControlChangeRequest(TimeStampedModel):
 	proposed_is_minor_account = models.BooleanField(default=False)
 	proposed_parental_controls_enabled = models.BooleanField(default=False)
 	proposed_guardian_email = models.EmailField(blank=True)
+	proposed_bio = models.TextField(blank=True)
+	proposed_location = models.CharField(max_length=255, blank=True)
+	proposed_website_url = models.URLField(blank=True)
 
 	class Meta:
 		indexes = [models.Index(fields=["token"]), models.Index(fields=["expires_at"])]

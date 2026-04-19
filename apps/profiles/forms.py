@@ -63,10 +63,21 @@ class GuardianMinorSettingsForm(forms.Form):
     minor_birth_day = forms.IntegerField(required=False, min_value=1, max_value=31, label="Birth day")
     guardian_allows_nsfw_underage = forms.BooleanField(required=False, label="Allow NSFW for this minor")
     guardian_allows_16plus_underage = forms.BooleanField(required=False, label="Allow 16+ posts for this minor")
+    guardian_locks_basic_profile = forms.BooleanField(required=False, label="Lock bio, website, and location")
+    guardian_locks_visibility_settings = forms.BooleanField(required=False, label="Lock privacy and visibility toggles")
+    guardian_locks_account_protection = forms.BooleanField(required=False, label="Lock minor mode and parental control toggles")
+    guardian_restrict_dms_to_teens = forms.BooleanField(required=False, label="Allow DMs only with teen accounts")
 
     def __init__(self, *args, profile: Profile | None = None, **kwargs):
         super().__init__(*args, **kwargs)
-        for field_name in ["guardian_allows_nsfw_underage", "guardian_allows_16plus_underage"]:
+        for field_name in [
+            "guardian_allows_nsfw_underage",
+            "guardian_allows_16plus_underage",
+            "guardian_locks_basic_profile",
+            "guardian_locks_visibility_settings",
+            "guardian_locks_account_protection",
+            "guardian_restrict_dms_to_teens",
+        ]:
             self.fields[field_name].widget.attrs["class"] = "toggle-input"
         self.profile = profile
         if profile is not None:
@@ -78,6 +89,10 @@ class GuardianMinorSettingsForm(forms.Form):
             self.initial.setdefault("minor_birth_day", profile.minor_birth_day)
             self.initial.setdefault("guardian_allows_nsfw_underage", profile.guardian_allows_nsfw_underage)
             self.initial.setdefault("guardian_allows_16plus_underage", profile.guardian_allows_16plus_underage)
+            self.initial.setdefault("guardian_locks_basic_profile", profile.guardian_locks_basic_profile)
+            self.initial.setdefault("guardian_locks_visibility_settings", profile.guardian_locks_visibility_settings)
+            self.initial.setdefault("guardian_locks_account_protection", profile.guardian_locks_account_protection)
+            self.initial.setdefault("guardian_restrict_dms_to_teens", profile.guardian_restrict_dms_to_teens)
 
     def clean(self):
         cleaned = super().clean()
@@ -122,6 +137,10 @@ class GuardianMinorSettingsForm(forms.Form):
         profile.minor_birth_day = self.cleaned_data.get("minor_birth_day")
         profile.guardian_allows_nsfw_underage = bool(self.cleaned_data.get("guardian_allows_nsfw_underage"))
         profile.guardian_allows_16plus_underage = bool(self.cleaned_data.get("guardian_allows_16plus_underage"))
+        profile.guardian_locks_basic_profile = bool(self.cleaned_data.get("guardian_locks_basic_profile"))
+        profile.guardian_locks_visibility_settings = bool(self.cleaned_data.get("guardian_locks_visibility_settings"))
+        profile.guardian_locks_account_protection = bool(self.cleaned_data.get("guardian_locks_account_protection"))
+        profile.guardian_restrict_dms_to_teens = bool(self.cleaned_data.get("guardian_restrict_dms_to_teens"))
         if profile.minor_birthdate_precision == Profile.MinorBirthdatePrecision.AGE_YEARS:
             profile.minor_age_recorded_at = timezone.now()
         else:

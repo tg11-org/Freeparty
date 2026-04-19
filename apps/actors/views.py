@@ -12,6 +12,7 @@ from apps.core.permissions import can_view_actor
 from apps.posts.hashtags import extract_hashtags
 from apps.posts.models import Post
 from apps.social.models import Block, Bookmark, Follow, Like, Repost
+from apps.private_messages.services import get_parental_dm_restriction_error
 
 
 @require_http_methods(["GET"])
@@ -83,6 +84,11 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		reposted_ids = set(Repost.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 
+	dm_restriction_reason = ""
+	if request.user.is_authenticated and hasattr(request.user, "actor") and request.user.actor.id != actor.id:
+		dm_restriction_reason = get_parental_dm_restriction_error(actor=request.user.actor, target_actor=actor) or ""
+	can_start_dm = bool(request.user.is_authenticated and hasattr(request.user, "actor") and request.user.actor.id != actor.id and not dm_restriction_reason)
+
 	return render(request, "actors/detail.html", {
 		"actor": actor,
 		"posts": posts,
@@ -101,6 +107,8 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		"liked_ids": liked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
+		"can_start_dm": can_start_dm,
+		"dm_restriction_reason": dm_restriction_reason,
 	})
 
 

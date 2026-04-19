@@ -71,15 +71,22 @@
         <button class="btn" type="submit" data-action-button="follow">＋ Follow</button>
       </form>
     {% endif %}
-    <form method="post" action="/messages/start/{{ actor.handle }}/">{% csrf_token %}
-      <button class="btn" type="submit">✉ DM</button>
-    </form>
+    {% if can_start_dm %}
+      <form method="post" action="/messages/start/{{ actor.handle }}/">{% csrf_token %}
+        <button class="btn" type="submit">✉ DM</button>
+      </form>
+    {% else %}
+      <span class="btn" style="opacity:0.7;cursor:not-allowed;" title="{{ dm_restriction_reason|default:'DM unavailable' }}">✉ DM unavailable</span>
+    {% endif %}
     <form method="post" action="/social/block/{{ actor.handle }}/">{% csrf_token %}
       <button class="btn btn-danger" type="submit">🚫 Block</button>
     </form>
     <a class="btn btn-danger" href="/moderation/report/?target_actor_id={{ actor.id }}">⚑ Report</a>
   {% endif %}
 </div>
+{% if dm_restriction_reason %}
+  <p style="margin:-0.9rem 0 1.1rem;color:var(--text2);font-size:0.9rem;">{{ dm_restriction_reason }}</p>
+{% endif %}
 {% endif %}
 
 <div style="display:flex;gap:0.25rem;margin-bottom:0.75rem;border-bottom:2px solid var(--border);flex-wrap:wrap;">
