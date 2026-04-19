@@ -253,6 +253,22 @@
     let pollInFlight = false;
     let dmSocket = null;
 
+    function safeStorageGet(key) {
+      try {
+        return window.localStorage.getItem(key);
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function safeStorageSet(key, value) {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch (_err) {
+        // Ignore storage failures (private mode / blocked storage) so UI remains functional.
+      }
+    }
+
     function readCsrfToken() {
       if (csrfToken) {
         return csrfToken;
@@ -388,7 +404,7 @@
       const sentByViewer = envelope.sender_id === viewerActorId;
       const localKeyId = sentByViewer ? envelope.sender_key_id : envelope.recipient_key_id;
       const remoteKeyId = sentByViewer ? envelope.recipient_key_id : envelope.sender_key_id;
-      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const privateBase64 = safeStorageGet(privateKeyStorageKey(localKeyId));
       const remotePublicBase64 = publicKeysById[remoteKeyId];
       if (!privateBase64 || !remotePublicBase64) {
         throw new Error("Attachment keys are unavailable on this device.");
@@ -502,13 +518,13 @@
       if (!button || !panel) {
         return;
       }
-      const stored = window.localStorage.getItem(storageKey);
+      const stored = safeStorageGet(storageKey);
       const expanded = stored !== "collapsed";
       setPanelExpanded(button, panel, expanded, labels);
       button.addEventListener("click", function () {
         const nextExpanded = button.getAttribute("aria-expanded") !== "true";
         setPanelExpanded(button, panel, nextExpanded, labels);
-        window.localStorage.setItem(storageKey, nextExpanded ? "expanded" : "collapsed");
+        safeStorageSet(storageKey, nextExpanded ? "expanded" : "collapsed");
       });
     }
 
@@ -661,7 +677,7 @@
       if (!remoteActiveKeyId || remoteActiveKeyAlgorithm !== "curve25519") {
         return { ok: false, message: "Waiting for the other participant to register a browser keypair." };
       }
-      if (!window.localStorage.getItem(privateKeyStorageKey(localActiveKeyId))) {
+      if (!safeStorageGet(privateKeyStorageKey(localActiveKeyId))) {
         return { ok: false, message: "Local private key is missing on this browser/device." };
       }
       if (!publicKeysById[remoteActiveKeyId]) {
@@ -729,7 +745,7 @@
     }
 
     async function encryptPlaintext(plaintext, localKeyId, remoteKeyId) {
-      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const privateBase64 = safeStorageGet(privateKeyStorageKey(localKeyId));
       const remotePublicBase64 = publicKeysById[remoteKeyId];
       if (!privateBase64) {
         throw new Error("No local private key for current active key id on this device.");
@@ -755,7 +771,7 @@
     }
 
     async function encryptAttachmentFile(file, localKeyId, remoteKeyId) {
-      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const privateBase64 = safeStorageGet(privateKeyStorageKey(localKeyId));
       const remotePublicBase64 = publicKeysById[remoteKeyId];
       if (!privateBase64 || !remotePublicBase64) {
         throw new Error("Attachment encryption keys are unavailable.");
@@ -788,7 +804,7 @@
       const sentByViewer = payload.sender_id === viewerActorId;
       const localKeyId = sentByViewer ? payload.sender_key_id : payload.recipient_key_id;
       const remoteKeyId = sentByViewer ? payload.recipient_key_id : payload.sender_key_id;
-      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const privateBase64 = safeStorageGet(privateKeyStorageKey(localKeyId));
       const remotePublicBase64 = publicKeysById[remoteKeyId];
       if (!privateBase64) {
         return "Encrypted payload stored. Private key for this message is not available on this device.";
@@ -986,7 +1002,7 @@
         throw new Error((payload && payload.error) || fallback);
       }
 
-      window.localStorage.setItem(privateKeyStorageKey(keyId), toBase64(pkcs8));
+      safeStorageSet(privateKeyStorageKey(keyId), toBase64(pkcs8));
       statusNode.textContent = "Browser key registered as active key. Reloading conversation to refresh fingerprint and send context.";
       window.setTimeout(function () {
         window.location.reload();
@@ -1013,7 +1029,7 @@
         updateRegisterButtonLabel("default");
         return;
       }
-      if (!window.localStorage.getItem(privateKeyStorageKey(localActiveKeyId))) {
+      if (!safeStorageGet(privateKeyStorageKey(localActiveKeyId))) {
         statusNode.textContent = "Active local key exists on server, but private key is missing on this browser/device. Use the recovery button below to create and register a new device keypair.";
         if (localInventoryStatusNode) {
           localInventoryStatusNode.textContent = "Browser private key status: missing for active server key on this device.";
