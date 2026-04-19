@@ -17,83 +17,91 @@
   <a class="btn" href="{% url 'private_messages:list' %}">Back to messages</a>
 </div>
 
-{% if safety_fingerprint %}
-  <section style="margin-top:1rem;padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
-      <h3 style="margin:0;">Safety Fingerprint</h3>
-      <button class="btn" id="toggle-fingerprint-panel" type="button" aria-expanded="true" aria-controls="fingerprint-panel-body">Hide fingerprint details</button>
-    </div>
-    <div id="fingerprint-panel-body" style="margin-top:0.8rem;">
-      <p style="margin:0 0 0.45rem;font-family:monospace;word-break:break-all;">{{ safety_fingerprint }}</p>
-      <p style="margin:0;color:var(--text2);font-size:0.92rem;">Identicon seed contract: <span style="font-family:monospace;">{{ identicon_seed }}</span></p>
-      <div id="fingerprint-validate-panel" style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px dashed var(--border);">
-        <button class="btn" id="validate-fingerprint-btn" type="button">Validate fingerprint</button>
-        <p id="validate-fingerprint-status" style="margin:0.5rem 0 0;color:var(--text2);font-size:0.92rem;">Generate a deterministic check code and visual marker for this contract.</p>
-        <div id="validate-fingerprint-output" style="display:none;margin-top:0.55rem;align-items:flex-start;gap:0.7rem;flex-wrap:wrap;">
-          <canvas id="validate-fingerprint-identicon" width="84" height="84" style="width:84px;height:84px;border:1px solid var(--border);border-radius:8px;"></canvas>
-          <div style="min-width:220px;">
-            <p style="margin:0 0 0.25rem;font-size:0.9rem;"><strong>Validation code</strong></p>
-            <p id="validate-fingerprint-code" style="margin:0;font-family:monospace;word-break:break-all;font-size:0.9rem;"></p>
+<details style="margin-top:1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);">
+  <summary style="list-style:none;cursor:pointer;padding:0.75rem 0.9rem;display:flex;align-items:center;justify-content:space-between;gap:0.75rem;">
+    <span style="font-weight:700;">☰ Security &amp; Keys</span>
+    <span style="font-size:0.85rem;color:var(--text2);">Fingerprint, device keys, verification</span>
+  </summary>
+  <div style="padding:0 0.9rem 0.9rem;display:grid;gap:0.9rem;">
+    {% if safety_fingerprint %}
+      <section style="padding:0.9rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+          <h3 style="margin:0;">Safety Fingerprint</h3>
+          <button class="btn" id="toggle-fingerprint-panel" type="button" aria-expanded="true" aria-controls="fingerprint-panel-body">Hide fingerprint details</button>
+        </div>
+        <div id="fingerprint-panel-body" style="margin-top:0.8rem;">
+          <p style="margin:0 0 0.45rem;font-family:monospace;word-break:break-all;">{{ safety_fingerprint }}</p>
+          <p style="margin:0;color:var(--text2);font-size:0.92rem;">Identicon seed contract: <span style="font-family:monospace;">{{ identicon_seed }}</span></p>
+          <div id="fingerprint-validate-panel" style="margin-top:0.7rem;padding-top:0.6rem;border-top:1px dashed var(--border);">
+            <button class="btn" id="validate-fingerprint-btn" type="button">Validate fingerprint</button>
+            <p id="validate-fingerprint-status" style="margin:0.5rem 0 0;color:var(--text2);font-size:0.92rem;">Generate a deterministic check code and visual marker for this contract.</p>
+            <div id="validate-fingerprint-output" style="display:none;margin-top:0.55rem;align-items:flex-start;gap:0.7rem;flex-wrap:wrap;">
+              <canvas id="validate-fingerprint-identicon" width="84" height="84" style="width:84px;height:84px;border:1px solid var(--border);border-radius:8px;"></canvas>
+              <div style="min-width:220px;">
+                <p style="margin:0 0 0.25rem;font-size:0.9rem;"><strong>Validation code</strong></p>
+                <p id="validate-fingerprint-code" style="margin:0;font-family:monospace;word-break:break-all;font-size:0.9rem;"></p>
+              </div>
+            </div>
           </div>
+          {% if key_change_warning %}
+            <div style="margin-top:0.75rem;padding:0.8rem;border:1px solid var(--danger);border-radius:8px;background:color-mix(in srgb, var(--danger) 8%, var(--surface));">
+              <p style="margin:0 0 0.5rem;"><strong>Key change warning:</strong> {{ key_change_warning }}</p>
+              <p style="margin:0 0 0.65rem;color:var(--text2);font-size:0.92rem;">Current remote key id: <span style="font-family:monospace;">{{ current_remote_key_id }}</span></p>
+              <form method="post" action="{% url 'private_messages:acknowledge-key' conversation.id %}">
+                {% csrf_token %}
+                <button class="btn" type="submit">I verified this new key</button>
+              </form>
+            </div>
+          {% endif %}
         </div>
-      </div>
-      {% if key_change_warning %}
-        <div style="margin-top:0.75rem;padding:0.8rem;border:1px solid var(--danger);border-radius:8px;background:color-mix(in srgb, var(--danger) 8%, var(--surface));">
-          <p style="margin:0 0 0.5rem;"><strong>Key change warning:</strong> {{ key_change_warning }}</p>
-          <p style="margin:0 0 0.65rem;color:var(--text2);font-size:0.92rem;">Current remote key id: <span style="font-family:monospace;">{{ current_remote_key_id }}</span></p>
-          <form method="post" action="{% url 'private_messages:acknowledge-key' conversation.id %}">
-            {% csrf_token %}
-            <button class="btn" type="submit">I verified this new key</button>
-          </form>
-        </div>
-      {% endif %}
-    </div>
-  </section>
-{% else %}
-  <p style="margin-top:1rem;color:var(--text2);">Safety fingerprint will appear once both participants have active identity keys.</p>
-{% endif %}
+      </section>
+    {% else %}
+      <p style="margin:0;color:var(--text2);">Safety fingerprint will appear once both participants have active identity keys.</p>
+    {% endif %}
 
-<section style="margin-top:1rem;padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
-  <h3 style="margin:0 0 0.65rem;">Device &amp; Key Inventory</h3>
-  <p style="margin:0 0 0.55rem;color:var(--text2);font-size:0.92rem;">Compare server-side active keys with this browser's local key state before sending encrypted messages.</p>
-  <p id="local-device-key-inventory-status" style="margin:0 0 0.55rem;color:var(--text2);font-size:0.92rem;">Checking browser private-key availability...</p>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.75rem;">
-    <article style="padding:0.7rem;border:1px dashed var(--border);border-radius:8px;">
-      <p style="margin:0 0 0.35rem;"><strong>Your server keys</strong></p>
-      {% if local_identity_keys %}
-        <ul style="margin:0;padding-left:1rem;display:grid;gap:0.25rem;">
-          {% for key in local_identity_keys %}
-            <li style="font-size:0.9rem;">
-              <span style="font-family:monospace;">{{ key.key_id }}</span>
-              {% if key.is_active %}<span style="color:var(--accent);">(active)</span>{% endif %}
-              <span style="color:var(--text2);">· {{ key.algorithm }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p style="margin:0;color:var(--text2);font-size:0.9rem;">No registered keys yet.</p>
-      {% endif %}
-    </article>
-    <article style="padding:0.7rem;border:1px dashed var(--border);border-radius:8px;">
-      <p style="margin:0 0 0.35rem;"><strong>Remote server keys</strong></p>
-      {% if remote_identity_keys %}
-        <ul style="margin:0;padding-left:1rem;display:grid;gap:0.25rem;">
-          {% for key in remote_identity_keys %}
-            <li style="font-size:0.9rem;">
-              <span style="font-family:monospace;">{{ key.key_id }}</span>
-              {% if key.is_active %}<span style="color:var(--accent);">(active)</span>{% endif %}
-              <span style="color:var(--text2);">· {{ key.algorithm }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p style="margin:0;color:var(--text2);font-size:0.9rem;">No remote key inventory available yet.</p>
-      {% endif %}
-    </article>
+    <section style="padding:0.9rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);">
+      <h3 style="margin:0 0 0.65rem;">Device &amp; Key Inventory</h3>
+      <p style="margin:0 0 0.55rem;color:var(--text2);font-size:0.92rem;">Compare server-side active keys with this browser's local key state before sending encrypted messages.</p>
+      <p id="local-device-key-inventory-status" style="margin:0 0 0.55rem;color:var(--text2);font-size:0.92rem;">Checking browser private-key availability...</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.75rem;">
+        <article style="padding:0.7rem;border:1px dashed var(--border);border-radius:8px;">
+          <p style="margin:0 0 0.35rem;"><strong>Your server keys</strong></p>
+          {% if local_identity_keys %}
+            <ul style="margin:0;padding-left:1rem;display:grid;gap:0.25rem;">
+              {% for key in local_identity_keys %}
+                <li style="font-size:0.9rem;">
+                  <span style="font-family:monospace;">{{ key.key_id }}</span>
+                  {% if key.is_active %}<span style="color:var(--accent);">(active)</span>{% endif %}
+                  <span style="color:var(--text2);">· {{ key.algorithm }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p style="margin:0;color:var(--text2);font-size:0.9rem;">No registered keys yet.</p>
+          {% endif %}
+        </article>
+        <article style="padding:0.7rem;border:1px dashed var(--border);border-radius:8px;">
+          <p style="margin:0 0 0.35rem;"><strong>Remote server keys</strong></p>
+          {% if remote_identity_keys %}
+            <ul style="margin:0;padding-left:1rem;display:grid;gap:0.25rem;">
+              {% for key in remote_identity_keys %}
+                <li style="font-size:0.9rem;">
+                  <span style="font-family:monospace;">{{ key.key_id }}</span>
+                  {% if key.is_active %}<span style="color:var(--accent);">(active)</span>{% endif %}
+                  <span style="color:var(--text2);">· {{ key.algorithm }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p style="margin:0;color:var(--text2);font-size:0.9rem;">No remote key inventory available yet.</p>
+          {% endif %}
+        </article>
+      </div>
+      <p style="margin:0.75rem 0 0;color:var(--text2);font-size:0.92rem;">Acknowledged remote key id: <span style="font-family:monospace;">{{ acknowledged_remote_key_id|default:"(none)" }}</span></p>
+      <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;"><strong>Recovery:</strong> if this browser is missing your private key, use "Generate browser keypair for this device" to rotate and recover this device. You will need to re-verify the safety fingerprint after key rotation.</p>
+    </section>
   </div>
-  <p style="margin:0.75rem 0 0;color:var(--text2);font-size:0.92rem;">Acknowledged remote key id: <span style="font-family:monospace;">{{ acknowledged_remote_key_id|default:"(none)" }}</span></p>
-  <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;"><strong>Recovery:</strong> if this browser is missing your private key, use "Generate browser keypair for this device" to rotate and recover this device. You will need to re-verify the safety fingerprint after key rotation.</p>
-</section>
+</details>
 
 <section style="margin-top:1rem;">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
