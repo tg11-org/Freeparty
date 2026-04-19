@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Conversation · Freeparty{% endblock %}
 {% block content %}
+<section data-section-anchors="1">
 <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
   <div style="display:flex;flex-wrap:wrap;gap:0.9rem;align-items:flex-start;">
     {% for participant in other_participants %}
@@ -1155,4 +1156,6 @@
     });
   })();
 </script>
+
+</section>
 {% endblock %}

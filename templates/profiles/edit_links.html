@@ -3,6 +3,7 @@
 {% block title %}Edit links · Freeparty{% endblock %}
 
 {% block content %}
+<section data-section-anchors="1">
 <h2>Edit links page</h2>
 <p style="color:var(--text2);margin-top:0;">Build your personal links page (Linktree-style) and share it anywhere.</p>
 <p><a class="btn" href="{{ public_link_page_url }}" target="_blank" rel="noopener noreferrer">View public links page</a></p>
@@ -36,4 +37,5 @@
 {% else %}
   <p style="color:var(--text2);">No links yet.</p>
 {% endif %}
+</section>
 {% endblock %}

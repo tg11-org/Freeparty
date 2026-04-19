@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<section data-section-anchors="1">
 <h2>Report {{ report.id }}</h2>
 <p><strong>Reason:</strong> {{ report.get_reason_display }} ({{ report.reason }})</p>
 <p><strong>Severity:</strong> {{ report.get_severity_display }} ({{ report.severity }})</p>
@@ -88,4 +89,5 @@
 {% empty %}
   <p>No internal notes yet.</p>
 {% endfor %}
+</section>
 {% endblock %}

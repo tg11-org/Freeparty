@@ -2,6 +2,7 @@
 
 {% block title %}Guardian Controls · Freeparty{% endblock %}
 {% block content %}
+<section data-section-anchors="1">
 <h2>Guardian controls for @{{ profile.actor.handle }}</h2>
 <p style="color:var(--text2);margin-top:0;">Use this page to set the child's stored age details and decide whether underage access can include NSFW or 16+ posts. This does not grant access to 18+ content.</p>
 
@@ -84,4 +85,5 @@
 
   <button class="button" type="submit">Save guardian settings</button>
 </form>
+</section>
 {% endblock %}

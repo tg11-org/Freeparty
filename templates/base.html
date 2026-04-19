@@ -425,6 +425,31 @@
         font-size: 0.85rem;
         margin-bottom: 1.2rem;
       }
+      .section-anchor-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.2rem;
+        margin-right: 0.35rem;
+        color: var(--text2);
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: 700;
+        opacity: 0.75;
+      }
+      .section-anchor-link:hover,
+      .section-anchor-link:focus-visible {
+        color: var(--accent);
+        opacity: 1;
+        text-decoration: none;
+      }
+      .section-anchor-flash {
+        animation: section-anchor-flash 1.2s ease;
+      }
+      @keyframes section-anchor-flash {
+        0% { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+        100% { background: transparent; }
+      }
     </style>
   </head>
   <body>
@@ -845,6 +870,121 @@
       window.closeShareSheet = closeShareSheet;
       window.shareSheetCopyLink = shareSheetCopyLink;
       window.shareSheetNative = shareSheetNative;
+    })();
+    </script>
+    <script>
+    (function () {
+      function slugify(text) {
+        return (text || "")
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9\s-]/g, "")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "") || "section";
+      }
+
+      function buildAbsoluteAnchor(id) {
+        return window.location.origin + window.location.pathname + window.location.search + "#" + id;
+      }
+
+      function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+          try {
+            var temp = document.createElement("textarea");
+            temp.value = text;
+            temp.style.position = "fixed";
+            temp.style.opacity = "0";
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand("copy");
+            document.body.removeChild(temp);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
+
+      function ensureUniqueId(baseId, usedIds) {
+        var candidate = baseId;
+        var counter = 2;
+        while (usedIds.has(candidate) || document.getElementById(candidate)) {
+          candidate = baseId + "-" + counter;
+          counter += 1;
+        }
+        usedIds.add(candidate);
+        return candidate;
+      }
+
+      function addAnchorToHeading(heading, usedIds) {
+        if (!heading || heading.querySelector(".section-anchor-link")) {
+          return;
+        }
+        var headingText = heading.textContent || "";
+        if (!heading.id) {
+          heading.id = ensureUniqueId(slugify(headingText), usedIds);
+        } else {
+          usedIds.add(heading.id);
+        }
+
+        var anchor = document.createElement("a");
+        anchor.className = "section-anchor-link";
+        anchor.href = "#" + heading.id;
+        anchor.setAttribute("aria-label", "Copy link to this section");
+        anchor.title = "Copy section link";
+        anchor.textContent = "§";
+        anchor.addEventListener("click", function (event) {
+          event.preventDefault();
+          var url = buildAbsoluteAnchor(heading.id);
+          copyToClipboard(url).then(function () {
+            anchor.title = "Copied";
+            window.history.replaceState(null, "", "#" + heading.id);
+            heading.classList.add("section-anchor-flash");
+            window.setTimeout(function () {
+              anchor.title = "Copy section link";
+              heading.classList.remove("section-anchor-flash");
+            }, 1200);
+          }).catch(function () {
+            window.location.hash = heading.id;
+          });
+        });
+
+        heading.insertBefore(anchor, heading.firstChild);
+      }
+
+      function initializeSectionAnchors() {
+        var roots = document.querySelectorAll("[data-section-anchors='1']");
+        if (!roots.length) {
+          return;
+        }
+        var usedIds = new Set();
+        roots.forEach(function (root) {
+          var headings = root.querySelectorAll("h2, h3");
+          headings.forEach(function (heading) {
+            addAnchorToHeading(heading, usedIds);
+          });
+        });
+
+        if (window.location.hash) {
+          var target = document.getElementById(window.location.hash.slice(1));
+          if (target) {
+            target.classList.add("section-anchor-flash");
+            window.setTimeout(function () {
+              target.classList.remove("section-anchor-flash");
+            }, 1200);
+          }
+        }
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializeSectionAnchors);
+      } else {
+        initializeSectionAnchors();
+      }
     })();
     </script>
     <!-- Badge API for PWA app badge count (Android/Chrome only, iOS Safari not supported) -->

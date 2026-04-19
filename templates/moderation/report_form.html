@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Report Content · Freeparty{% endblock %}
 {% block content %}
+<section data-section-anchors="1">
 <h2 style="margin-top:0;">Submit Report</h2>
 {% if target_actor %}
   <p>Reporting actor: <strong>@{{ target_actor.handle }}</strong></p>
@@ -31,4 +32,5 @@
     <a class="btn" href="javascript:history.back()">Cancel</a>
   </div>
 </form>
+</section>
 {% endblock %}
