@@ -51,8 +51,9 @@
   <h3 style="margin-top:1.2rem;">Minor Safety and Parental Controls</h3>
   <p class="field-help" style="margin-top:0;">For minor accounts, sensitive privacy/content changes can be locked behind guardian email approval.</p>
   {% if profile.is_minor_account and profile.guardian_email %}
-    <p class="field-help" style="margin-top:0;">
-      For minor accounts, guardian-managed toggles are request-only. Save your desired changes here and a guardian approval link will be emailed.
+    <p class="field-help" style="margin-top:0;padding:0.55rem 0.65rem;border:1px solid var(--border);border-radius:8px;background:var(--surface2);">
+      Minor account safety notice: privacy/content visibility changes and other guardian-managed settings are request-only and send a guardian review email.
+      This still applies even if the "Lock settings behind guardian approval" toggle is currently off.
     </p>
   {% endif %}
 
