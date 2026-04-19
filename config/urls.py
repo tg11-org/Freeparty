@@ -3,6 +3,14 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import include, path
+from django.shortcuts import render
+
+
+def handler404(request, exception=None):
+    return render(request, "404.html", status=404)
+
+
+handler404 = handler404  # noqa: F811 — registers with Django's URL resolver
 
 urlpatterns = [
     path("admin/", admin.site.urls),

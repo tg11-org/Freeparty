@@ -101,9 +101,35 @@ _PRIVATE_NETS = [
 # Cloud metadata endpoints that must be blocked
 _BLOCKED_HOSTS = {"169.254.169.254", "metadata.google.internal", "metadata.internal"}
 _OEMBED_PROVIDERS = {
+    # Video
     "youtube.com": "https://www.youtube.com/oembed",
     "youtu.be": "https://www.youtube.com/oembed",
     "vimeo.com": "https://vimeo.com/api/oembed.json",
+    "dailymotion.com": "https://www.dailymotion.com/services/oembed",
+    "twitch.tv": "https://api.twitch.tv/v5/oembed",
+    "tiktok.com": "https://www.tiktok.com/oembed",
+    # Audio
+    "soundcloud.com": "https://soundcloud.com/oembed",
+    "mixcloud.com": "https://www.mixcloud.com/oembed/",
+    "bandcamp.com": "https://bandcamp.com/oembed",
+    "spotify.com": "https://open.spotify.com/oembed",
+    # Social / microblog
+    "twitter.com": "https://publish.twitter.com/oembed",
+    "x.com": "https://publish.twitter.com/oembed",
+    "tumblr.com": "https://www.tumblr.com/oembed/1.0",
+    # Photos / design
+    "flickr.com": "https://www.flickr.com/services/oembed/",
+    "flic.kr": "https://www.flickr.com/services/oembed/",
+    "dribbble.com": "https://dribbble.com/services/oembed",
+    "giphy.com": "https://giphy.com/services/oembed",
+    # Code / dev
+    "codepen.io": "https://codepen.io/api/oembed",
+    "github.com": "https://github.com/api/oembed",
+    # Presentations / docs
+    "speakerdeck.com": "https://speakerdeck.com/oembed.json",
+    "slideshare.net": "https://www.slideshare.net/api/oembed/2",
+    # Crowdfunding
+    "kickstarter.com": "https://www.kickstarter.com/services/oembed",
 }
 
 
