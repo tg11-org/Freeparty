@@ -202,7 +202,7 @@
         <button class="btn" type="button" title="Share post" onclick="openShareSheet(this)"
           data-share-url="{{ request.scheme }}://{{ request.get_host }}/posts/{{ post.id }}/"
           data-share-title="{{ post.author.handle }}: {{ post.content|truncatechars:80 }}"
-          data-dm-url="/messages/start/{{ post.author.handle }}/?share_post={{ post.id }}">📤</button>
+          data-post-id="{{ post.id }}">📤</button>
         <a class="btn btn-danger" href="/moderation/report/?target_post_id={{ post.id }}" title="Report post">⚑</a>
         {% if user.actor.id == post.author.id %}
           <a class="btn" href="/posts/{{ post.id }}/edit/" title="Edit post">Edit</a>

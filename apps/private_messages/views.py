@@ -150,6 +150,31 @@ def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMe
 
 @login_required
 @require_GET
+def share_to_dm_view(request: HttpRequest) -> HttpResponse:
+    """Show a picker of existing DM conversations to share a post link into."""
+    post_id = request.GET.get("post_id", "").strip()
+    post_url = request.GET.get("post_url", "").strip()
+    if not post_id and not post_url:
+        return redirect("private_messages:list")
+
+    actor = request.user.actor
+    if not is_private_messages_enabled():
+        messages.error(request, "Private messaging is not enabled yet.")
+        return redirect("core:index")
+
+    conversations = populate_conversation_activity(
+        actor=actor,
+        conversations=get_conversation_queryset_for_actor(actor=actor),
+    )
+    return render(request, "private_messages/share_picker.html", {
+        "conversations": conversations,
+        "post_id": post_id,
+        "post_url": post_url,
+    })
+
+
+@login_required
+@require_GET
 def conversation_list_view(request: HttpRequest) -> HttpResponse:
     actor = request.user.actor
     if not is_private_messages_enabled():

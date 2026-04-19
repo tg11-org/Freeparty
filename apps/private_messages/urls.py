@@ -8,6 +8,7 @@ from apps.private_messages.views import (
     conversation_updates_view,
     register_identity_key_view,
     send_encrypted_message_view,
+    share_to_dm_view,
     start_direct_conversation_view,
 )
 
@@ -15,6 +16,7 @@ app_name = "private_messages"
 
 urlpatterns = [
     path("", conversation_list_view, name="list"),
+    path("share/", share_to_dm_view, name="share"),
     path("keys/bootstrap/", bootstrap_identity_key_view, name="bootstrap-key"),
     path("keys/register/", register_identity_key_view, name="register-key"),
     path("start/<str:handle>/", start_direct_conversation_view, name="start-direct"),

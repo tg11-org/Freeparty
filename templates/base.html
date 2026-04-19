@@ -798,8 +798,8 @@
           "mailto:?subject=" + enc(_shareTitle) + "&body=" + enc(_shareTitle + "\n\n" + _shareUrl);
         document.getElementById("share-sms-btn").href =
           "sms:?body=" + enc(_shareTitle + " " + _shareUrl);
-        document.getElementById("share-dm-btn").href = _shareDmUrl || "#";
-        document.getElementById("share-dm-btn").style.display = _shareDmUrl ? "" : "none";
+        document.getElementById("share-dm-btn").href = "/messages/share/?post_url=" + enc(_shareUrl) + "&post_id=" + enc(btn.dataset.postId || "");
+        document.getElementById("share-dm-btn").style.display = "";
         document.getElementById("share-twitter-btn").href =
           "https://twitter.com/intent/tweet?text=" + enc(_shareTitle + " " + _shareUrl);
         document.getElementById("share-facebook-btn").href =
