@@ -180,15 +180,19 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 		previous_location = profile.location
 		previous_website_url = profile.website_url
 		changed_fields = set(form.changed_data)
+		locked_field_changes = {
+			field_name
+			for field_name in restricted_fields
+			if field_name in form.cleaned_data and form.cleaned_data.get(field_name) != getattr(profile, field_name)
+		}
 		updated_profile = form.save(commit=False)
 
 		if "guardian_email" in changed_fields and "guardian_email" not in restricted_fields:
 			updated_profile.guardian_email_verified_at = None
 
-		if guardian_approval_possible and restricted_fields.intersection(changed_fields):
-			for field_name in restricted_fields:
-				if field_name in changed_fields:
-					setattr(updated_profile, field_name, getattr(profile, field_name))
+		if guardian_approval_possible and locked_field_changes:
+			for field_name in locked_field_changes:
+				setattr(updated_profile, field_name, getattr(profile, field_name))
 			updated_profile.guardian_email_verified_at = profile.guardian_email_verified_at
 			locked_changes_queued = True
 
