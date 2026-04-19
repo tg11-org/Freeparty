@@ -165,7 +165,7 @@
         {{ message_form.non_field_errors }}
         <div>
           <label for="plaintext_message"><strong>Message</strong></label>
-          <textarea id="plaintext_message" rows="3" style="width:100%;"></textarea>
+          <textarea id="plaintext_message" rows="3" style="width:100%;">{% if share_post_id %}{{ request.scheme }}://{{ request.get_host }}/posts/{{ share_post_id }}/{% endif %}</textarea>
         </div>
         <div style="display:none;">
           {{ message_form.ciphertext }}

@@ -13,7 +13,7 @@ from django.db import models
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.dateparse import parse_datetime
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.utils import timezone
 
 from apps.actors.models import Actor
@@ -184,7 +184,7 @@ def conversation_list_view(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def start_direct_conversation_view(request: HttpRequest, handle: str) -> HttpResponse:
     if not is_private_messages_enabled():
         messages.error(request, "Private messaging is not enabled yet.")
@@ -205,7 +205,11 @@ def start_direct_conversation_view(request: HttpRequest, handle: str) -> HttpRes
         participant_b=target,
     )
     messages.success(request, f"DM {'started' if created else 'opened'} with @{target.handle}.")
-    return redirect("private_messages:detail", conversation_id=conversation.id)
+    redirect_url = f"/messages/{conversation.id}/"
+    share_post = request.GET.get("share_post") or request.POST.get("share_post")
+    if share_post:
+        redirect_url += f"?share_post={share_post}"
+    return redirect(redirect_url)
 
 
 @login_required
@@ -222,7 +226,9 @@ def conversation_detail_view(request: HttpRequest, conversation_id: str) -> Http
         participants__actor=actor,
     )
     mark_conversation_read(conversation=conversation, actor=actor)
-    return render(request, "private_messages/detail.html", _build_conversation_detail_context(actor=actor, conversation=conversation))
+    context = _build_conversation_detail_context(actor=actor, conversation=conversation)
+    context["share_post_id"] = request.GET.get("share_post", "")
+    return render(request, "private_messages/detail.html", context)
 
 
 @login_required
