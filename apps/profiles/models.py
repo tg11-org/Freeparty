@@ -215,6 +215,7 @@ class ParentalControlChangeRequest(TimeStampedModel):
 	proposed_bio = models.TextField(blank=True)
 	proposed_location = models.CharField(max_length=255, blank=True)
 	proposed_website_url = models.URLField(blank=True)
+	rejected_at = models.DateTimeField(null=True, blank=True)
 
 	class Meta:
 		indexes = [models.Index(fields=["token"]), models.Index(fields=["expires_at"])]
@@ -225,5 +226,5 @@ class ParentalControlChangeRequest(TimeStampedModel):
 
 	@property
 	def is_usable(self) -> bool:
-		return self.used_at is None and not self.is_expired
+		return self.used_at is None and self.rejected_at is None and not self.is_expired
 

@@ -38,7 +38,8 @@
 
   <form method="post" style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">
     {% csrf_token %}
-    <button class="button" type="submit">Approve and apply changes</button>
+    <button class="button" type="submit" name="action" value="approve">Approve and apply changes</button>
+    <button class="button" type="submit" name="action" value="reject" style="background:var(--danger,#c33);color:#fff;">Reject changes</button>
     <a class="btn" href="/">Cancel</a>
   </form>
 </section>

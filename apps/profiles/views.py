@@ -355,6 +355,15 @@ def approve_parental_change_view(request: HttpRequest, token: str) -> HttpRespon
 		)
 
 	now = timezone.now()
+
+	# ---- Reject path ----
+	if request.POST.get("action") == "reject":
+		change_request.rejected_at = now
+		change_request.save(update_fields=["rejected_at", "updated_at"])
+		messages.success(request, f"Change request for @{profile.actor.handle} has been rejected.")
+		return redirect("home")
+
+	# ---- Approve path ----
 	profile.is_private_account = change_request.proposed_is_private_account
 	profile.auto_reveal_spoilers = change_request.proposed_auto_reveal_spoilers
 	profile.show_follower_count = change_request.proposed_show_follower_count
