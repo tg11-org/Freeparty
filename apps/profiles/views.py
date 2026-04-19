@@ -197,79 +197,80 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 
 	form = ProfileForm(request.POST or None, request.FILES or None, instance=profile)
 	can_manage_linked_minors = _is_non_minor_guardian_user(request.user)
-	if request.method == "POST" and form.is_valid():
-		locked_changes_queued = False
-		restricted_fields = _locked_fields_for_profile(profile)
-		guardian_approval_possible = bool(profile.guardian_email)
-		previous_bio = profile.bio
-		previous_location = profile.location
-		previous_website_url = profile.website_url
-		changed_fields = set(form.changed_data)
 
-		# Snapshot original values BEFORE form.save(commit=False) mutates the
-		# profile object (ModelForm writes to the same instance in memory).
-		original_values = {
-			field_name: getattr(profile, field_name)
-			for field_name in restricted_fields
-			if field_name in form.cleaned_data
-		}
-		locked_field_changes = {
-			field_name
-			for field_name, original_value in original_values.items()
-			if form.cleaned_data.get(field_name) != original_value
-		}
-		original_guardian_email_verified_at = profile.guardian_email_verified_at
+	if request.method == "POST":
+		# ---- Snapshot BEFORE form.is_valid() ----
+		# Django's ModelForm._post_clean() calls construct_instance() during
+		# is_valid(), which mutates the profile instance in-place.  We must
+		# capture DB-state values *before* that happens so locked-field
+		# detection and revert use the real originals.
+		_all_lockable = PROTECTED_PARENTAL_FIELDS | LOCK_CONFIGURATION_FIELDS | BASIC_PROFILE_FIELDS
+		_original = {fn: getattr(profile, fn) for fn in _all_lockable}
+		_original_verified = profile.guardian_email_verified_at
+		_restricted = _locked_fields_for_profile(profile)
 
-		logger.info(
-			"edit_profile profile=%s is_minor=%s guardian=%s restricted=%s changed=%s locked_changes=%s",
-			profile.id, profile.is_minor_account, profile.guardian_email,
-			restricted_fields, changed_fields, locked_field_changes,
-		)
+		if form.is_valid():
+			locked_changes_queued = False
+			guardian_approval_possible = bool(_original.get("guardian_email"))
+			changed_fields = set(form.changed_data)
 
-		updated_profile = form.save(commit=False)
+			locked_field_changes = {
+				field_name
+				for field_name in _restricted
+				if field_name in form.cleaned_data
+				and form.cleaned_data.get(field_name) != _original.get(field_name)
+			}
 
-		if "guardian_email" in changed_fields and "guardian_email" not in restricted_fields:
-			updated_profile.guardian_email_verified_at = None
-
-		if guardian_approval_possible and locked_field_changes:
-			for field_name in locked_field_changes:
-				setattr(updated_profile, field_name, original_values[field_name])
-			updated_profile.guardian_email_verified_at = original_guardian_email_verified_at
-			locked_changes_queued = True
-
-		updated_profile.save()
-
-		if "guardian_email" in changed_fields and not locked_changes_queued and updated_profile.guardian_email:
-			if _issue_guardian_verification(request, updated_profile):
-				messages.info(request, "Guardian verification email sent. Parental lock activates after verification.")
-			else:
-				messages.error(request, "Guardian verification email could not be sent. Check mail settings and try again.")
-
-		if locked_changes_queued:
-			if _issue_parental_change_approval(request, updated_profile, request.user, form.cleaned_data):
-				messages.warning(
-					request,
-					"Protected settings were not changed yet. A guardian approval email was sent.",
-				)
-			else:
-				messages.error(request, "Protected changes were queued, but guardian approval email failed to send.")
-
-		if {"bio", "location", "website_url"}.intersection(changed_fields):
-			ProfileEditHistory.objects.create(
-				profile=updated_profile,
-				editor=request.user,
-				previous_bio=previous_bio,
-				new_bio=updated_profile.bio,
-				previous_location=previous_location,
-				new_location=updated_profile.location,
-				previous_website_url=previous_website_url,
-				new_website_url=updated_profile.website_url,
+			logger.info(
+				"edit_profile profile=%s is_minor=%s guardian=%s restricted=%s changed=%s locked_changes=%s",
+				profile.id, _original.get("is_minor_account"), _original.get("guardian_email"),
+				_restricted, changed_fields, locked_field_changes,
 			)
-		if locked_changes_queued:
-			messages.success(request, "Profile updated. Guardian approval is pending for protected changes.")
-		else:
-			messages.success(request, "Profile updated.")
-		return redirect("actors:detail", handle=actor.handle)
+
+			updated_profile = form.save(commit=False)
+
+			if "guardian_email" in changed_fields and "guardian_email" not in _restricted:
+				updated_profile.guardian_email_verified_at = None
+
+			if guardian_approval_possible and locked_field_changes:
+				for field_name in locked_field_changes:
+					setattr(updated_profile, field_name, _original[field_name])
+				updated_profile.guardian_email_verified_at = _original_verified
+				locked_changes_queued = True
+
+			updated_profile.save()
+
+			if "guardian_email" in changed_fields and not locked_changes_queued and updated_profile.guardian_email:
+				if _issue_guardian_verification(request, updated_profile):
+					messages.info(request, "Guardian verification email sent. Parental lock activates after verification.")
+				else:
+					messages.error(request, "Guardian verification email could not be sent. Check mail settings and try again.")
+
+			if locked_changes_queued:
+				if _issue_parental_change_approval(request, updated_profile, request.user, form.cleaned_data):
+					messages.warning(
+						request,
+						"Protected settings were not changed yet. A guardian approval email was sent.",
+					)
+				else:
+					messages.error(request, "Protected changes were queued, but guardian approval email failed to send.")
+
+			if {"bio", "location", "website_url"}.intersection(changed_fields):
+				ProfileEditHistory.objects.create(
+					profile=updated_profile,
+					editor=request.user,
+					previous_bio=_original.get("bio", ""),
+					new_bio=updated_profile.bio,
+					previous_location=_original.get("location", ""),
+					new_location=updated_profile.location,
+					previous_website_url=_original.get("website_url", ""),
+					new_website_url=updated_profile.website_url,
+				)
+			if locked_changes_queued:
+				messages.success(request, "Profile updated. Guardian approval is pending for protected changes.")
+			else:
+				messages.success(request, "Profile updated.")
+			return redirect("actors:detail", handle=actor.handle)
 
 	return render(
 		request,
