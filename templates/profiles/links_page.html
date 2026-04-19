@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load mention_tags %}
 
 {% block title %}@{{ actor.handle }} links · Freeparty{% endblock %}
 
@@ -12,7 +13,7 @@
     {% endif %}
     <h2 style="margin:0.75rem 0 0;">@{{ actor.handle }}</h2>
     {% if profile.bio %}
-      <p class="multiline-scroll multiline-scroll-sm" style="margin:0.4rem auto 0;max-width:520px;">{{ profile.bio|linebreaksbr }}</p>
+      <p class="multiline-scroll multiline-scroll-sm" style="margin:0.4rem auto 0;max-width:520px;">{{ profile.bio|linkify_mentions|linebreaksbr }}</p>
     {% endif %}
   </div>
 

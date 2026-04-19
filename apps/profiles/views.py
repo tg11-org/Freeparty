@@ -89,9 +89,15 @@ def _issue_guardian_verification(request: HttpRequest, profile: Profile) -> bool
 def initialize_minor_profile_for_signup(request: HttpRequest, profile: Profile, guardian_email: str) -> None:
 	profile.is_minor_account = True
 	profile.parental_controls_enabled = True
+	profile.guardian_locks_visibility_settings = True
+	profile.guardian_locks_account_protection = True
 	profile.guardian_email = guardian_email.strip().lower()
 	profile.guardian_email_verified_at = None
-	profile.save(update_fields=["is_minor_account", "parental_controls_enabled", "guardian_email", "guardian_email_verified_at", "updated_at"])
+	profile.save(update_fields=[
+		"is_minor_account", "parental_controls_enabled",
+		"guardian_locks_visibility_settings", "guardian_locks_account_protection",
+		"guardian_email", "guardian_email_verified_at", "updated_at",
+	])
 	_issue_guardian_verification(request, profile)
 
 

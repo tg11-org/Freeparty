@@ -1,4 +1,5 @@
 <!doctype html>
+{% load static %}
 <html lang="en" data-theme="light" data-contrast="normal" data-font="default" data-text-size="normal" data-spacing="normal" data-motion="normal" data-links="normal">
   <head>
     <meta charset="utf-8">
@@ -13,6 +14,8 @@
       <meta name="twitter:site" content="@freeparty">
     {% endblock %}
     <title>{% block title %}Freeparty{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'favicon.png' %}">
     <script>
       (function () {
         var t = localStorage.getItem("fp-theme") || "auto";

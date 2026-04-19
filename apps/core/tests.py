@@ -32,6 +32,38 @@ class MentionAndHashtagLinkifyTests(SimpleTestCase):
         self.assertIn('href="/actors/search/?q=%23woo"', rendered)
         self.assertIn('href="/actors/search/?q=%23hoo"', rendered)
 
+    def test_linkify_http_url(self):
+        rendered = linkify_mentions("Read https://example.com/path?q=1")
+        self.assertIn('href="https://example.com/path?q=1"', rendered)
+        self.assertIn('target="_blank"', rendered)
+        self.assertIn('>https://example.com/path?q=1</a>', rendered)
+
+    def test_linkify_www_url_adds_https_href(self):
+        rendered = linkify_mentions("Visit www.example.com now")
+        self.assertIn('href="https://www.example.com"', rendered)
+        self.assertIn('>www.example.com</a>', rendered)
+
+    def test_linkify_bare_domain_adds_https_href(self):
+        rendered = linkify_mentions("Check tg11.org/news")
+        self.assertIn('href="https://tg11.org/news"', rendered)
+        self.assertIn('>tg11.org/news</a>', rendered)
+
+    def test_linkify_url_excludes_trailing_punctuation(self):
+        rendered = linkify_mentions("Visit https://example.com/test).")
+        self.assertIn('href="https://example.com/test"', rendered)
+        self.assertIn('</a>).', rendered)
+
+    def test_email_domain_is_not_linkified(self):
+        rendered = linkify_mentions("Email hello@tg11.org for support")
+        self.assertNotIn('href="https://tg11.org"', rendered)
+        self.assertIn('hello@tg11.org', rendered)
+
+    def test_linkify_escapes_html_outside_links(self):
+        rendered = linkify_mentions('<script>alert(1)</script> https://example.com')
+        self.assertIn('&lt;script&gt;alert(1)&lt;/script&gt;', rendered)
+        self.assertIn('href="https://example.com"', rendered)
+        self.assertNotIn('<script>', rendered)
+
 
 class ProductionConfigGuardrailChecksTests(SimpleTestCase):
     @override_settings(
