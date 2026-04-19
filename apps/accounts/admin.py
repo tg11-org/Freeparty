@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from apps.accounts.models import EmailVerificationToken, User
+from apps.accounts.models import AccountActionToken, EmailVerificationToken, User
 
 
 @admin.register(User)
@@ -36,6 +36,17 @@ class UserAdmin(BaseUserAdmin):
 				),
 			},
 		),
+		(
+			"Lifecycle",
+			{
+				"fields": (
+					"deactivated_at",
+					"deactivation_recovery_deadline_at",
+					"deletion_requested_at",
+					"deletion_scheduled_for_at",
+				),
+			},
+		),
 		("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
 		("Important dates", {"fields": ("last_login", "created_at", "updated_at")}),
 	)
@@ -55,4 +66,11 @@ class UserAdmin(BaseUserAdmin):
 class EmailVerificationTokenAdmin(admin.ModelAdmin):
 	list_display = ("user", "token", "expires_at", "used_at", "created_at")
 	list_filter = ("used_at",)
+	search_fields = ("user__email", "token")
+
+
+@admin.register(AccountActionToken)
+class AccountActionTokenAdmin(admin.ModelAdmin):
+	list_display = ("user", "action", "expires_at", "used_at", "created_at")
+	list_filter = ("action", "used_at")
 	search_fields = ("user__email", "token")

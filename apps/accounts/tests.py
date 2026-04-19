@@ -2,13 +2,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.conf import settings
+from django.core import mail
 from django.core.exceptions import ValidationError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.accounts.models import User
-from apps.accounts.services import VerificationService
+from apps.accounts.models import AccountActionToken, User
+from apps.accounts.services import AccountLifecycleService, VerificationService
 from apps.accounts.tasks import _deliver_transactional_email, send_password_reset_email
 from apps.core.models import AsyncTaskExecution
 
@@ -203,3 +204,63 @@ class SignupLegalConsentTests(TestCase):
 		self.assertLessEqual(user.guidelines_accepted_at, timezone.now())
 		self.assertEqual(user.tos_version_accepted, "1.2")
 		self.assertEqual(user.guidelines_version_accepted, "1.3")
+
+
+class AccountLifecycleFlowTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="life@example.com", username="lifeuser", password="secret123")
+		self.user.mark_email_verified()
+
+	def test_deactivation_flow_sets_retention_and_sends_recovery_email(self):
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse("accounts:manage"),
+			{"action": "deactivate", "confirm_deactivate": "on"},
+		)
+		self.assertEqual(response.status_code, 302)
+		self.user.refresh_from_db()
+		self.assertFalse(self.user.is_active)
+		self.assertIsNotNone(self.user.deactivated_at)
+		self.assertIsNotNone(self.user.deactivation_recovery_deadline_at)
+		self.assertEqual(len(mail.outbox), 1)
+		self.assertIn("reactivation", mail.outbox[0].subject.lower())
+
+	def test_deletion_request_flow_sets_schedule_and_sends_cancel_email(self):
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse("accounts:manage"),
+			{"action": "delete", "confirm_delete": "on"},
+		)
+		self.assertEqual(response.status_code, 302)
+		self.user.refresh_from_db()
+		self.assertFalse(self.user.is_active)
+		self.assertIsNotNone(self.user.deletion_requested_at)
+		self.assertIsNotNone(self.user.deletion_scheduled_for_at)
+		self.assertEqual(len(mail.outbox), 1)
+		self.assertIn("deletion", mail.outbox[0].subject.lower())
+
+	def test_reactivate_and_cancel_delete_links_restore_account(self):
+		self.user.request_account_deletion(retention_days=30)
+		token = AccountLifecycleService.create_action_token(
+			user=self.user,
+			action=AccountActionToken.ActionType.CANCEL_DELETION,
+			ttl_hours=24,
+		)
+		response = self.client.get(reverse("accounts:cancel-account-deletion", kwargs={"token": token}))
+		self.assertEqual(response.status_code, 302)
+		self.user.refresh_from_db()
+		self.assertTrue(self.user.is_active)
+		self.assertIsNone(self.user.deletion_requested_at)
+
+		self.user.deactivate_account(retention_days=365)
+		token2 = AccountLifecycleService.create_action_token(
+			user=self.user,
+			action=AccountActionToken.ActionType.REACTIVATE,
+			ttl_hours=24,
+		)
+		response2 = self.client.get(reverse("accounts:reactivate-account", kwargs={"token": token2}))
+		self.assertEqual(response2.status_code, 302)
+		self.user.refresh_from_db()
+		self.assertTrue(self.user.is_active)
+		self.assertIsNone(self.user.deactivated_at)

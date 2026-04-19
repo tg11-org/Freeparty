@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import secrets
 
 from django.conf import settings
 from django.core import signing
 from django.utils import timezone
 
-from apps.accounts.models import EmailVerificationToken, User
+from apps.accounts.models import AccountActionToken, EmailVerificationToken, User
 
 
 class VerificationService:
@@ -46,4 +47,31 @@ class VerificationService:
         token_obj.used_at = timezone.now()
         token_obj.save(update_fields=["used_at", "updated_at"])
         token_obj.user.mark_email_verified()
+        return token_obj.user
+
+
+class AccountLifecycleService:
+    @staticmethod
+    def create_action_token(*, user: User, action: str, ttl_hours: int = 24) -> str:
+        token = secrets.token_urlsafe(32)
+        AccountActionToken.objects.create(
+            user=user,
+            action=action,
+            token=token,
+            expires_at=timezone.now() + timedelta(hours=ttl_hours),
+        )
+        return token
+
+    @staticmethod
+    def consume_action_token(*, token: str, expected_action: str) -> User | None:
+        try:
+            token_obj = AccountActionToken.objects.select_related("user").get(token=token, action=expected_action)
+        except AccountActionToken.DoesNotExist:
+            return None
+
+        if not token_obj.is_usable:
+            return None
+
+        token_obj.used_at = timezone.now()
+        token_obj.save(update_fields=["used_at", "updated_at"])
         return token_obj.user

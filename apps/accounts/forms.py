@@ -66,3 +66,19 @@ class AsyncPasswordResetForm(PasswordResetForm):
             from_email=resolved_from_email,
             html_message=html_message,
         )
+
+
+class AccountDeactivationForm(forms.Form):
+    confirm_deactivate = forms.BooleanField(
+        required=True,
+        label="I understand this account will be deactivated and can be recovered within 12 months.",
+        error_messages={"required": "Please confirm account deactivation."},
+    )
+
+
+class AccountDeletionRequestForm(forms.Form):
+    confirm_delete = forms.BooleanField(
+        required=True,
+        label="I understand account deletion is scheduled for 30 days and can be cancelled before then.",
+        error_messages={"required": "Please confirm account deletion request."},
+    )

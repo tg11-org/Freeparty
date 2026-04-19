@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Account Lifecycle · Freeparty{% endblock %}
+
+{% block content %}
+<section style="max-width:760px;margin:1.2rem auto;">
+  <h2>Account Lifecycle</h2>
+  <p style="color:var(--text2);margin-top:0;">
+    Manage deactivation and deletion with retention-based recovery windows.
+  </p>
+
+  <article class="field-wrap" style="border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem;">
+    <h3 style="margin-top:0;">Deactivate Account</h3>
+    <p>
+      Deactivation signs you out and disables login. Your data is retained for
+      {{ deactivation_retention_days }} days (about 12 months) so you can recover if this action was unauthorized
+      or you changed your mind.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="deactivate">
+      <label>
+        {{ deactivate_form.confirm_deactivate }}
+        {{ deactivate_form.confirm_deactivate.label }}
+      </label>
+      {% if deactivate_form.confirm_deactivate.errors %}
+        <ul class="field-errors">{% for error in deactivate_form.confirm_deactivate.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      {% endif %}
+      <div style="margin-top:0.7rem;">
+        <button class="button" type="submit">Deactivate account</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="field-wrap" style="border:1px solid #8b2b2b;border-radius:10px;padding:1rem;">
+    <h3 style="margin-top:0;">Request Account Deletion</h3>
+    <p>
+      Deletion is scheduled after {{ deletion_retention_days }} days. During that retention period,
+      a cancellation link sent to your email can restore account access.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="delete">
+      <label>
+        {{ delete_form.confirm_delete }}
+        {{ delete_form.confirm_delete.label }}
+      </label>
+      {% if delete_form.confirm_delete.errors %}
+        <ul class="field-errors">{% for error in delete_form.confirm_delete.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      {% endif %}
+      <div style="margin-top:0.7rem;">
+        <button class="button" type="submit" style="background:#7a1c1c;">Request deletion</button>
+      </div>
+    </form>
+  </article>
+</section>
+{% endblock %}

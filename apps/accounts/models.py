@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
@@ -63,6 +64,10 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 	tos_version_accepted = models.CharField(max_length=32, blank=True)
 	guidelines_accepted_at = models.DateTimeField(null=True, blank=True)
 	guidelines_version_accepted = models.CharField(max_length=32, blank=True)
+	deactivated_at = models.DateTimeField(null=True, blank=True)
+	deactivation_recovery_deadline_at = models.DateTimeField(null=True, blank=True)
+	deletion_requested_at = models.DateTimeField(null=True, blank=True)
+	deletion_scheduled_for_at = models.DateTimeField(null=True, blank=True)
 
 	objects = UserManager()
 
@@ -82,6 +87,68 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 			self.state = self.AccountState.ACTIVE
 		self.save(update_fields=["email_verified_at", "state", "updated_at"])
 
+	@property
+	def is_deactivated(self) -> bool:
+		return self.deactivated_at is not None and self.is_active is False
+
+	@property
+	def is_pending_deletion(self) -> bool:
+		return self.deletion_requested_at is not None and self.deletion_scheduled_for_at is not None
+
+	def deactivate_account(self, *, retention_days: int) -> None:
+		now = timezone.now()
+		self.is_active = False
+		self.deactivated_at = now
+		self.deactivation_recovery_deadline_at = now + timedelta(days=retention_days)
+		self.save(
+			update_fields=[
+				"is_active",
+				"deactivated_at",
+				"deactivation_recovery_deadline_at",
+				"updated_at",
+			],
+		)
+
+	def request_account_deletion(self, *, retention_days: int) -> None:
+		now = timezone.now()
+		self.is_active = False
+		self.deletion_requested_at = now
+		self.deletion_scheduled_for_at = now + timedelta(days=retention_days)
+		if self.deactivated_at is None:
+			self.deactivated_at = now
+		self.save(
+			update_fields=[
+				"is_active",
+				"deactivated_at",
+				"deletion_requested_at",
+				"deletion_scheduled_for_at",
+				"updated_at",
+			],
+		)
+
+	def reactivate_account(self) -> None:
+		self.is_active = True
+		self.deactivated_at = None
+		self.deactivation_recovery_deadline_at = None
+		self.deletion_requested_at = None
+		self.deletion_scheduled_for_at = None
+		self.save(
+			update_fields=[
+				"is_active",
+				"deactivated_at",
+				"deactivation_recovery_deadline_at",
+				"deletion_requested_at",
+				"deletion_scheduled_for_at",
+				"updated_at",
+			],
+		)
+
+	def cancel_deletion_request(self) -> None:
+		self.deletion_requested_at = None
+		self.deletion_scheduled_for_at = None
+		self.is_active = True
+		self.save(update_fields=["deletion_requested_at", "deletion_scheduled_for_at", "is_active", "updated_at"])
+
 	def __str__(self) -> str:
 		return self.username
 
@@ -95,6 +162,30 @@ class EmailVerificationToken(TimeStampedModel):
 
 	class Meta:
 		indexes = [models.Index(fields=["token"]), models.Index(fields=["expires_at"])]
+
+	@property
+	def is_expired(self) -> bool:
+		return timezone.now() > self.expires_at
+
+	@property
+	def is_usable(self) -> bool:
+		return self.used_at is None and not self.is_expired
+
+
+class AccountActionToken(TimeStampedModel):
+	class ActionType(models.TextChoices):
+		REACTIVATE = "reactivate", "Reactivate"
+		CANCEL_DELETION = "cancel_deletion", "Cancel deletion"
+
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="account_action_tokens")
+	action = models.CharField(max_length=32, choices=ActionType.choices)
+	token = models.CharField(max_length=255, unique=True)
+	expires_at = models.DateTimeField()
+	used_at = models.DateTimeField(null=True, blank=True)
+
+	class Meta:
+		indexes = [models.Index(fields=["token"]), models.Index(fields=["expires_at"]), models.Index(fields=["action"])]
 
 	@property
 	def is_expired(self) -> bool:

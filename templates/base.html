@@ -440,6 +440,7 @@
           <a class="nav-link-with-badge" href="/inbox/">Inbox{% if nav_unread_inbox_count %}<span class="nav-badge">{{ nav_unread_inbox_count }}</span>{% endif %}</a>
           <a class="nav-link-with-badge" href="/messages/">Messages{% if nav_unread_message_count %}<span class="nav-badge">{{ nav_unread_message_count }}</span>{% endif %}</a>
           <a href="/social/bookmarks/">Bookmarks</a>
+          <a href="/accounts/manage/">Account</a>
           <a href="/social/follow-requests/">Requests</a>
           <a class="nav-link-with-badge" href="/notifications/">Notifications{% if nav_unread_notification_count %}<span class="nav-badge">{{ nav_unread_notification_count }}</span>{% endif %}</a>
           {% if user.is_staff %}<a href="/moderation/">Moderation</a>{% endif %}
