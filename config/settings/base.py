@@ -4,6 +4,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
 import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -46,6 +47,16 @@ env = environ.Env(
     CORS_ALLOWED_ORIGINS=(list, []),
     CSRF_TRUSTED_ORIGINS=(list, []),
     EMAIL_VERIFICATION_REQUIRED=(bool, True),
+    LEGAL_TOS_VERSION=(str, "1.0"),
+    LEGAL_GUIDELINES_VERSION=(str, "1.0"),
+    ACCOUNT_DELETION_RETENTION_DAYS=(int, 30),
+    ACCOUNT_DEACTIVATION_RETENTION_DAYS=(int, 365),
+    ACCOUNT_PURGE_ENABLED=(bool, True),
+    ACCOUNT_PURGE_CRON_HOUR=(int, 3),
+    ACCOUNT_PURGE_CRON_MINUTE=(int, 15),
+    MAIL_SERVER_HOST=(str, ""),
+    MAIL_SERVER_IPV4=(str, ""),
+    MAIL_SERVER_IPV6=(str, ""),
 )
 
 environ.Env.read_env(BASE_DIR / ".env")
@@ -240,6 +251,12 @@ LEGAL_TOS_VERSION = env("LEGAL_TOS_VERSION", default="1.0")
 LEGAL_GUIDELINES_VERSION = env("LEGAL_GUIDELINES_VERSION", default="1.0")
 ACCOUNT_DELETION_RETENTION_DAYS = env.int("ACCOUNT_DELETION_RETENTION_DAYS", default=30)
 ACCOUNT_DEACTIVATION_RETENTION_DAYS = env.int("ACCOUNT_DEACTIVATION_RETENTION_DAYS", default=365)
+ACCOUNT_PURGE_ENABLED = env.bool("ACCOUNT_PURGE_ENABLED", default=True)
+ACCOUNT_PURGE_CRON_HOUR = env.int("ACCOUNT_PURGE_CRON_HOUR", default=3)
+ACCOUNT_PURGE_CRON_MINUTE = env.int("ACCOUNT_PURGE_CRON_MINUTE", default=15)
+MAIL_SERVER_HOST = env("MAIL_SERVER_HOST", default="")
+MAIL_SERVER_IPV4 = env("MAIL_SERVER_IPV4", default="")
+MAIL_SERVER_IPV6 = env("MAIL_SERVER_IPV6", default="")
 REQUEST_SLOW_MS = env.int("REQUEST_SLOW_MS", default=700)
 FEATURE_PM_E2E_ENABLED = env.bool("FEATURE_PM_E2E_ENABLED", default=False)
 FEATURE_PM_DEV_CIPHERTEXT_PREVIEW = env.bool("FEATURE_PM_DEV_CIPHERTEXT_PREVIEW", default=False)
@@ -283,3 +300,11 @@ DEAD_LETTER_REPLAY_MAX_COUNT = env.int("DEAD_LETTER_REPLAY_MAX_COUNT", default=5
 DEAD_LETTER_REPLAY_COOLDOWN_SECONDS = env.int("DEAD_LETTER_REPLAY_COOLDOWN_SECONDS", default=300)
 FEDERATION_SHARED_SECRET = env.str("FEDERATION_SHARED_SECRET", default="")
 FEDERATION_SIGNATURE_MAX_AGE_SECONDS = env.int("FEDERATION_SIGNATURE_MAX_AGE_SECONDS", default=300)
+
+if ACCOUNT_PURGE_ENABLED:
+    CELERY_BEAT_SCHEDULE = {
+        "accounts-purge-expired": {
+            "task": "apps.accounts.tasks.purge_expired_accounts_task",
+            "schedule": crontab(hour=ACCOUNT_PURGE_CRON_HOUR, minute=ACCOUNT_PURGE_CRON_MINUTE),
+        }
+    }

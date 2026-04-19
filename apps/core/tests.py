@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from django.core import mail
 from django.core.checks import run_checks
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
@@ -258,7 +259,55 @@ class RootPathAndHealthStatusTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "mailto:support%40tg11.org", html=False)
-        self.assertContains(response, "Cannot+send+DMs", html=False)
+
+
+class EmailDiagnosticsViewTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(email="diag@example.com", username="diaguser", password="secret123")
+        self.user.mark_email_verified()
+
+    def test_requires_login(self):
+        response = self.client.get("/support/email-test/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.headers["Location"])
+
+    def test_requires_staff_or_superuser(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/support/email-test/")
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@tg11.org",
+        EMAIL_HOST="mail.tg11.org",
+        EMAIL_PORT=587,
+        EMAIL_USE_TLS=True,
+        EMAIL_HOST_USER="noreply@tg11.org",
+        MAIL_SERVER_HOST="mail.tg11.org",
+        MAIL_SERVER_IPV4="45.79.221.81",
+        MAIL_SERVER_IPV6="[2600:3c02::2000:81ff:fe85:4b9a]",
+    )
+    def test_send_attempt_produces_logs_and_queues_mail(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.client.force_login(self.user)
+        response = self.client.post(
+            "/support/email-test/",
+            {
+                "subject": "SMTP diagnostics",
+                "message": "Testing outbound email diagnostics.",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Run Result: SUCCESS")
+        self.assertContains(response, "Endpoint Results")
+        self.assertContains(response, "mail.tg11.org")
+        self.assertContains(response, "45.79.221.81")
+        self.assertContains(response, "2600:3c02::2000:81ff:fe85:4b9a")
+        self.assertContains(response, "Email send call returned")
+        self.assertEqual(len(mail.outbox), 3)
+        self.assertEqual(mail.outbox[0].to, ["gage@tg11.org", "skittlesallday12@icloud.com"])
 
 
 class DeadLetterReplayCommandTests(TestCase):

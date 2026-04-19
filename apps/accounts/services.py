@@ -5,6 +5,7 @@ import secrets
 
 from django.conf import settings
 from django.core import signing
+from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import AccountActionToken, EmailVerificationToken, User
@@ -75,3 +76,34 @@ class AccountLifecycleService:
         token_obj.used_at = timezone.now()
         token_obj.save(update_fields=["used_at", "updated_at"])
         return token_obj.user
+
+    @staticmethod
+    def purge_expired_accounts(*, dry_run: bool = False) -> dict[str, int]:
+        now = timezone.now()
+
+        deletion_qs = User.objects.filter(
+            deletion_scheduled_for_at__isnull=False,
+            deletion_scheduled_for_at__lte=now,
+        )
+        deactivation_qs = User.objects.filter(
+            deletion_scheduled_for_at__isnull=True,
+            deactivation_recovery_deadline_at__isnull=False,
+            deactivation_recovery_deadline_at__lte=now,
+            is_active=False,
+        )
+
+        to_delete_ids = set(deletion_qs.values_list("id", flat=True))
+        to_delete_ids.update(deactivation_qs.values_list("id", flat=True))
+
+        result = {
+            "purged_total": len(to_delete_ids),
+            "purged_after_deletion_window": deletion_qs.count(),
+            "purged_after_deactivation_window": deactivation_qs.count(),
+        }
+
+        if dry_run or not to_delete_ids:
+            return result
+
+        with transaction.atomic():
+            User.objects.filter(id__in=to_delete_ids).delete()
+        return result

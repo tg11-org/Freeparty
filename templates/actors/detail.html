@@ -11,9 +11,16 @@
     <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
       <div class="identity-stack" style="gap:0.15rem;">
         {% with display_name=actor.user.display_name %}
-          <h2 style="margin:0;">{{ display_name|default:actor.handle }}</h2>
+          <h2 style="margin:0;display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">
+            <span>{{ display_name|default:actor.handle }}</span>
+            {% if actor.is_verified %}
+              <span title="Verified account" style="display:inline-flex;align-items:center;gap:0.2rem;padding:0.1rem 0.45rem;border-radius:999px;background:#0f766e;color:#eafffb;font-size:0.72rem;font-weight:700;line-height:1;">✔ Verified</span>
+            {% endif %}
+          </h2>
           {% if display_name %}
-            <div class="identity-handle">@{{ actor.handle }}</div>
+            <div class="identity-handle">@{{ actor.handle }}{% if actor.handle_locked %} · locked{% endif %}</div>
+          {% elif actor.handle_locked %}
+            <div class="identity-handle">@{{ actor.handle }} · locked</div>
           {% endif %}
         {% endwith %}
       </div>

@@ -12,6 +12,10 @@ class ActorSerializer(serializers.ModelSerializer):
             "canonical_uri",
             "actor_type",
             "state",
+            "is_verified",
+            "verified_at",
+            "verified_label",
+            "handle_locked",
             "remote_domain",
             "created_at",
         ]

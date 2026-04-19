@@ -52,6 +52,16 @@ class ActorDetailSelfControlsTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertNotContains(response, "Edit profile")
 
+	def test_verified_badge_and_locked_handle_are_rendered(self):
+		self.user.actor.is_verified = True
+		self.user.actor.handle_locked = True
+		self.user.actor.save(update_fields=["is_verified", "handle_locked", "updated_at"])
+		self.client.force_login(self.user)
+		response = self.client.get(f"/actors/{self.user.actor.handle}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Verified")
+		self.assertContains(response, "locked")
+
 
 class ActorHashtagSearchTests(TestCase):
 	def setUp(self):

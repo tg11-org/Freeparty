@@ -9,6 +9,7 @@ from django.core.mail import send_mail
 from django.urls import reverse
 
 from apps.accounts.services import VerificationService
+from apps.accounts.services import AccountLifecycleService
 from apps.core.services.email_observability import log_smtp_delivery_event
 from apps.core.services.task_observability import observe_celery_task
 from apps.core.services.task_reliability import (
@@ -315,3 +316,9 @@ def send_system_email(
                 payload=payload,
             )
             raise
+
+
+@shared_task(bind=True)
+def purge_expired_accounts_task(self, dry_run: bool = False) -> dict:
+    with observe_celery_task(self, correlation_id=None):
+        return AccountLifecycleService.purge_expired_accounts(dry_run=dry_run)

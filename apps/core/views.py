@@ -1,14 +1,18 @@
 from urllib.parse import urlencode
+import traceback
 
+from django.conf import settings
+from django.contrib import messages
 from django.core.cache import cache
+from django.core.mail import EmailMessage, get_connection
 from django.db import connections
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from apps.core.forms import SupportRequestForm
+from apps.core.forms import EmailDiagnosticsForm, SupportRequestForm
 from apps.core.pagination import paginate_queryset
 from apps.notifications.models import Notification
 from apps.private_messages.models import EncryptedMessageEnvelope
@@ -194,6 +198,130 @@ def support_view(request: HttpRequest) -> HttpResponse:
 			"support_form": form,
 			"mailto_url": mailto_url,
 			"support_email": "support@tg11.org",
+		},
+	)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def email_test_view(request: HttpRequest) -> HttpResponse:
+	if not (request.user.is_staff or request.user.is_superuser):
+		return HttpResponseForbidden("Staff or superuser access required.")
+
+	recipients = ["gage@tg11.org", "skittlesallday12@icloud.com"]
+	logs: list[str] = []
+	result = ""
+	endpoint_results: list[dict[str, str]] = []
+
+	endpoint_candidates = [
+		str(getattr(settings, "EMAIL_HOST", "") or "").strip(),
+		str(getattr(settings, "MAIL_SERVER_HOST", "") or "").strip(),
+		str(getattr(settings, "MAIL_SERVER_IPV4", "") or "").strip(),
+		str(getattr(settings, "MAIL_SERVER_IPV6", "") or "").strip(),
+	]
+	endpoints: list[str] = []
+	for raw_endpoint in endpoint_candidates:
+		if not raw_endpoint:
+			continue
+		normalized = raw_endpoint.strip()
+		if normalized.startswith("[") and normalized.endswith("]"):
+			normalized = normalized[1:-1]
+		if normalized and normalized not in endpoints:
+			endpoints.append(normalized)
+
+	form = EmailDiagnosticsForm(request.POST or None)
+	if request.method == "POST" and form.is_valid():
+		logs.append(f"[{timezone.now().isoformat()}] Starting email diagnostics run")
+		logs.append(f"Email backend: {getattr(settings, 'EMAIL_BACKEND', '')}")
+		logs.append(f"SMTP port: {getattr(settings, 'EMAIL_PORT', '')}")
+		logs.append(f"TLS enabled: {getattr(settings, 'EMAIL_USE_TLS', False)}")
+		logs.append(f"SMTP auth user: {getattr(settings, 'EMAIL_HOST_USER', '')}")
+		logs.append(f"From address: {getattr(settings, 'DEFAULT_FROM_EMAIL', '')}")
+		logs.append(f"Recipients: {', '.join(recipients)}")
+		logs.append(f"Endpoint matrix: {', '.join(endpoints) if endpoints else '(none)'}")
+
+		total_successes = 0
+		for endpoint in endpoints:
+			logs.append("-" * 60)
+			logs.append(f"[Endpoint] {endpoint}")
+			connection = get_connection(
+				fail_silently=False,
+				host=endpoint,
+				port=int(getattr(settings, "EMAIL_PORT", 0) or 0),
+				username=getattr(settings, "EMAIL_HOST_USER", ""),
+				password=getattr(settings, "EMAIL_HOST_PASSWORD", ""),
+				use_tls=bool(getattr(settings, "EMAIL_USE_TLS", False)),
+			)
+			logs.append("Created Django mail connection object")
+
+			connection_open = False
+			endpoint_status = "failed"
+			try:
+				open_result = connection.open()
+				connection_open = True
+				logs.append(f"connection.open() returned: {open_result}")
+			except Exception as exc:
+				logs.append(f"connection.open() failed: {exc.__class__.__name__}: {exc}")
+				logs.append(traceback.format_exc())
+
+			if connection_open:
+				message = EmailMessage(
+					subject=f"{form.cleaned_data['subject'].strip()} [{endpoint}]",
+					body=(
+						f"{form.cleaned_data['message'].strip()}\n\n"
+						f"Endpoint under test: {endpoint}\n"
+						f"Timestamp: {timezone.now().isoformat()}"
+					),
+					from_email=getattr(settings, "DEFAULT_FROM_EMAIL", ""),
+					to=recipients,
+					connection=connection,
+				)
+				message.extra_headers = {
+					"X-Freeparty-Diagnostics": "smtp-test",
+					"X-Freeparty-Diagnostics-At": timezone.now().isoformat(),
+					"X-Freeparty-Diagnostics-Endpoint": endpoint,
+				}
+				try:
+					sent_count = message.send(fail_silently=False)
+					logs.append(f"Email send call returned: {sent_count}")
+					endpoint_status = "success"
+					total_successes += 1
+				except Exception as exc:
+					logs.append(f"Email send failed: {exc.__class__.__name__}: {exc}")
+					logs.append(traceback.format_exc())
+				finally:
+					try:
+						connection.close()
+						logs.append("connection.close() completed")
+					except Exception as exc:
+						logs.append(f"connection.close() failed: {exc.__class__.__name__}: {exc}")
+
+			endpoint_results.append({"endpoint": endpoint, "status": endpoint_status})
+
+		if endpoints and total_successes == len(endpoints):
+			result = "success"
+			messages.success(request, "Email diagnostics completed successfully for all endpoints.")
+		elif total_successes > 0:
+			result = "partial"
+			messages.warning(request, "Email diagnostics partially succeeded. Review endpoint matrix below.")
+		else:
+			result = "failed"
+			messages.error(request, "Email diagnostics failed for all endpoints. Review verbose logs below.")
+
+		if not endpoints:
+			result = "failed"
+			messages.error(request, "No SMTP endpoints configured. Set EMAIL_HOST or MAIL_SERVER_* values.")
+
+	return render(
+		request,
+		"core/email_test.html",
+		{
+			"email_test_form": form,
+			"email_test_logs": logs,
+			"email_test_result": result,
+			"email_test_recipients": recipients,
+			"email_test_endpoints": endpoints,
+			"email_test_endpoint_results": endpoint_results,
 		},
 	)
 

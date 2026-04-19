@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.conf import settings
@@ -264,3 +265,35 @@ class AccountLifecycleFlowTests(TestCase):
 		self.user.refresh_from_db()
 		self.assertTrue(self.user.is_active)
 		self.assertIsNone(self.user.deactivated_at)
+
+
+class AccountRetentionPurgeTests(TestCase):
+	def test_purge_expired_accounts_deletes_expired_records(self):
+		now = timezone.now()
+		expired_delete = User.objects.create_user(email="expired-delete@example.com", username="expdel", password="secret123")
+		expired_delete.request_account_deletion(retention_days=30)
+		expired_delete.deletion_scheduled_for_at = now - timedelta(days=1)
+		expired_delete.save(update_fields=["deletion_scheduled_for_at", "updated_at"])
+
+		expired_deactivate = User.objects.create_user(email="expired-deactivate@example.com", username="expdeact", password="secret123")
+		expired_deactivate.deactivate_account(retention_days=365)
+		expired_deactivate.deactivation_recovery_deadline_at = now - timedelta(days=1)
+		expired_deactivate.save(update_fields=["deactivation_recovery_deadline_at", "updated_at"])
+
+		active_user = User.objects.create_user(email="active-keep@example.com", username="activekeep", password="secret123")
+
+		result = AccountLifecycleService.purge_expired_accounts(dry_run=False)
+		self.assertEqual(result["purged_total"], 2)
+		self.assertFalse(User.objects.filter(id=expired_delete.id).exists())
+		self.assertFalse(User.objects.filter(id=expired_deactivate.id).exists())
+		self.assertTrue(User.objects.filter(id=active_user.id).exists())
+
+	def test_purge_dry_run_reports_without_deleting(self):
+		u = User.objects.create_user(email="dryrun-delete@example.com", username="dryrundelete", password="secret123")
+		u.request_account_deletion(retention_days=30)
+		u.deletion_scheduled_for_at = timezone.now() - timedelta(days=2)
+		u.save(update_fields=["deletion_scheduled_for_at", "updated_at"])
+
+		result = AccountLifecycleService.purge_expired_accounts(dry_run=True)
+		self.assertEqual(result["purged_total"], 1)
+		self.assertTrue(User.objects.filter(id=u.id).exists())

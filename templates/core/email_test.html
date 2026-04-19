@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}SMTP Email Diagnostics · Freeparty{% endblock %}
+{% block content %}
+<section style="max-width:860px;margin:1rem auto;">
+  <h1>SMTP Email Diagnostics</h1>
+  <p style="color:var(--text2);margin-top:0;">
+    Sends a test email to the configured recipients and prints verbose connection/send logs.
+  </p>
+
+  <div style="border:1px solid var(--border);border-radius:10px;padding:0.8rem;margin-bottom:0.8rem;background:var(--surface2);">
+    <strong>Recipients:</strong> {{ email_test_recipients|join:", " }}
+  </div>
+
+  <div style="border:1px solid var(--border);border-radius:10px;padding:0.8rem;margin-bottom:0.8rem;background:var(--surface2);">
+    <strong>Endpoints under test:</strong>
+    {% if email_test_endpoints %}
+      {{ email_test_endpoints|join:", " }}
+    {% else %}
+      (none configured)
+    {% endif %}
+  </div>
+
+  <form method="post" style="display:grid;gap:0.75rem;">
+    {% csrf_token %}
+    {% if email_test_form.non_field_errors %}
+      <ul class="field-errors">{% for error in email_test_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="field-wrap">
+      <label for="{{ email_test_form.subject.id_for_label }}">Subject</label>
+      {{ email_test_form.subject }}
+      {% if email_test_form.subject.errors %}<ul class="field-errors">{% for error in email_test_form.subject.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+
+    <div class="field-wrap">
+      <label for="{{ email_test_form.message.id_for_label }}">Message body</label>
+      {{ email_test_form.message }}
+      {% if email_test_form.message.errors %}<ul class="field-errors">{% for error in email_test_form.message.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+
+    <button class="button" type="submit">Send diagnostics test email</button>
+  </form>
+
+  {% if email_test_result %}
+    <h2 style="margin-top:1rem;">Run Result: {{ email_test_result|upper }}</h2>
+  {% endif %}
+
+  {% if email_test_endpoint_results %}
+    <h2>Endpoint Results</h2>
+    <ul>
+      {% for item in email_test_endpoint_results %}
+        <li><strong>{{ item.endpoint }}</strong>: {{ item.status|upper }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if email_test_logs %}
+    <h2>Verbose Logs</h2>
+    <pre style="white-space:pre-wrap;word-break:break-word;border:1px solid var(--border);border-radius:10px;padding:0.8rem;background:#0f1115;color:#d6e2ff;max-height:420px;overflow:auto;">{% for line in email_test_logs %}{{ line }}
+{% endfor %}</pre>
+  {% else %}
+    <p style="color:var(--text2);">No logs yet. Submit the form to run diagnostics.</p>
+  {% endif %}
+</section>
+{% endblock %}

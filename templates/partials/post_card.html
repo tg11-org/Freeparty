@@ -13,7 +13,12 @@
     <div class="post-meta">
       {% with display_name=post.author.user.display_name %}
         <span class="identity-stack">
-          <a href="/actors/{{ post.author.handle }}/" class="identity-name">{{ display_name|default:post.author.handle }}</a>
+          <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+            <a href="/actors/{{ post.author.handle }}/" class="identity-name">{{ display_name|default:post.author.handle }}</a>
+            {% if post.author.is_verified %}
+              <span title="Verified account" style="display:inline-flex;align-items:center;padding:0.05rem 0.35rem;border-radius:999px;background:#0f766e;color:#eafffb;font-size:0.67rem;font-weight:700;line-height:1;">✔</span>
+            {% endif %}
+          </span>
           {% if display_name %}
             <a href="/actors/{{ post.author.handle }}/" class="identity-handle">@{{ post.author.handle }}</a>
           {% endif %}

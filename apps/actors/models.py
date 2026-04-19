@@ -25,6 +25,10 @@ class Actor(TimeStampedModel):
 	handle = models.CharField(max_length=128, unique=True)
 	canonical_uri = models.URLField(max_length=500, unique=True)
 	local_username = models.CharField(max_length=30, blank=True)
+	is_verified = models.BooleanField(default=False)
+	verified_at = models.DateTimeField(null=True, blank=True)
+	verified_label = models.CharField(max_length=80, blank=True)
+	handle_locked = models.BooleanField(default=False)
 
 	remote_domain = models.CharField(max_length=255, blank=True)
 	inbox_url = models.URLField(max_length=500, blank=True)
@@ -38,6 +42,7 @@ class Actor(TimeStampedModel):
 		indexes = [
 			models.Index(fields=["actor_type", "state"]),
 			models.Index(fields=["remote_domain"]),
+			models.Index(fields=["is_verified", "handle_locked"]),
 		]
 
 	def __str__(self) -> str:
