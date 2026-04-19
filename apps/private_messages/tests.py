@@ -154,6 +154,35 @@ class PrivateMessagesModelTests(TestCase):
         )
         self.assertEqual(serialize_encrypted_envelope(envelope)["id"], str(envelope.id))
 
+    @override_settings(FEATURE_PM_WEBSOCKET_ENABLED=True)
+    @patch("apps.private_messages.services.get_channel_layer")
+    def test_store_encrypted_message_succeeds_when_websocket_publish_fails(self, mocked_get_channel_layer):
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+
+        class FailingLayer:
+            async def group_send(self, group_name, payload):
+                raise RuntimeError("channels backend unavailable")
+
+        mocked_get_channel_layer.return_value = FailingLayer()
+
+        envelope = store_encrypted_message(
+            conversation=conversation,
+            sender=self.alice.actor,
+            recipient_actor=self.bob.actor,
+            ciphertext="base64:ciphertext",
+            message_nonce="base64:nonce",
+            sender_key_id="alice-key-1",
+            recipient_key_id="bob-key-1",
+            client_message_id="client-msg-ws-fail-open",
+        )
+
+        self.assertIsNotNone(envelope)
+        self.assertTrue(EncryptedMessageEnvelope.objects.filter(id=envelope.id).exists())
+
 
 @override_settings(
     FEATURE_PM_E2E_ENABLED=True,

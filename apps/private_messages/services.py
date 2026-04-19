@@ -1,4 +1,5 @@
 from datetime import timedelta
+import logging
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -13,6 +14,9 @@ import secrets
 import uuid
 
 from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageAttachment, EncryptedMessageEnvelope, UserIdentityKey
+
+
+logger = logging.getLogger("apps.private_messages")
 
 
 def _get_profile_or_none(actor):
@@ -118,19 +122,28 @@ def serialize_encrypted_envelope(envelope: EncryptedMessageEnvelope) -> dict:
 def publish_direct_message_event(envelope: EncryptedMessageEnvelope) -> None:
     if not is_private_message_websocket_enabled():
         return
-    channel_layer = get_channel_layer()
-    if channel_layer is None:
-        return
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
 
-    payload = {
-        "ok": True,
-        "type": "dm.envelope",
-        "envelope": serialize_encrypted_envelope(envelope),
-    }
-    async_to_sync(channel_layer.group_send)(
-        f"dm_conversation_{envelope.conversation_id}",
-        {"type": "dm_envelope", "payload": payload},
-    )
+        payload = {
+            "ok": True,
+            "type": "dm.envelope",
+            "envelope": serialize_encrypted_envelope(envelope),
+        }
+        async_to_sync(channel_layer.group_send)(
+            f"dm_conversation_{envelope.conversation_id}",
+            {"type": "dm_envelope", "payload": payload},
+        )
+    except Exception as exc:
+        # WebSocket publishing is best-effort. Do not fail message writes when
+        # the channel layer/backplane is temporarily unavailable.
+        logger.warning(
+            "Failed to publish DM websocket event for envelope %s: %s",
+            envelope.id,
+            exc,
+        )
 
 
 def get_conversation_queryset_for_actor(*, actor):
