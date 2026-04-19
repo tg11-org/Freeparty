@@ -253,6 +253,23 @@
     let pollInFlight = false;
     let dmSocket = null;
 
+    function readCsrfToken() {
+      if (csrfToken) {
+        return csrfToken;
+      }
+      const cookieMatch = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+      return cookieMatch ? decodeURIComponent(cookieMatch[1]) : "";
+    }
+
+    async function parseJsonOrText(response) {
+      const raw = await response.text();
+      try {
+        return { json: JSON.parse(raw), raw: raw };
+      } catch (_err) {
+        return { json: null, raw: raw };
+      }
+    }
+
     function setLiveStatus(mode, detail) {
       if (!liveStatusNode) {
         return;
@@ -954,15 +971,19 @@
       const response = await window.fetch(registerUrl, {
         method: "POST",
         headers: {
-          "X-CSRFToken": csrfToken,
+          "X-CSRFToken": readCsrfToken(),
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: body.toString(),
         credentials: "same-origin",
       });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Failed to register browser identity key.");
+      const parsed = await parseJsonOrText(response);
+      const payload = parsed.json;
+      if (!response.ok || !payload || !payload.ok) {
+        const fallback = parsed.raw && parsed.raw.trim()
+          ? parsed.raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220)
+          : "Failed to register browser identity key.";
+        throw new Error((payload && payload.error) || fallback);
       }
 
       window.localStorage.setItem(privateKeyStorageKey(keyId), toBase64(pkcs8));
@@ -1103,11 +1124,16 @@
             credentials: "same-origin",
             headers: {
               "X-Requested-With": "XMLHttpRequest",
+              "X-CSRFToken": readCsrfToken(),
             },
           });
-          const payload = await response.json();
-          if (!response.ok || !payload.ok) {
-            throw new Error((payload && payload.error) || "Message upload failed.");
+          const parsed = await parseJsonOrText(response);
+          const payload = parsed.json;
+          if (!response.ok || !payload || !payload.ok) {
+            const fallback = parsed.raw && parsed.raw.trim()
+              ? parsed.raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220)
+              : "Message upload failed.";
+            throw new Error((payload && payload.error) || fallback);
           }
           window.location.reload();
         } catch (error) {
