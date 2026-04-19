@@ -7,13 +7,35 @@ from apps.accounts.models import EmailVerificationToken, User
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
 	ordering = ("-created_at",)
-	list_display = ("email", "username", "state", "is_staff", "is_active", "email_verified_at", "created_at")
+	list_display = (
+		"email",
+		"username",
+		"state",
+		"is_staff",
+		"is_active",
+		"email_verified_at",
+		"tos_accepted_at",
+		"guidelines_accepted_at",
+		"created_at",
+	)
 	list_filter = ("state", "is_staff", "is_active")
 	search_fields = ("email", "username", "display_name")
 	fieldsets = (
 		(None, {"fields": ("email", "username", "password")}),
 		("Profile", {"fields": ("display_name", "last_seen_at")}),
-		("Verification", {"fields": ("email_verified_at", "state")}),
+		(
+			"Verification and Legal",
+			{
+				"fields": (
+					"email_verified_at",
+					"state",
+					"tos_accepted_at",
+					"tos_version_accepted",
+					"guidelines_accepted_at",
+					"guidelines_version_accepted",
+				),
+			},
+		),
 		("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
 		("Important dates", {"fields": ("last_login", "created_at", "updated_at")}),
 	)

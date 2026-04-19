@@ -59,6 +59,10 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 	email_verified_at = models.DateTimeField(null=True, blank=True)
 	state = models.CharField(max_length=32, choices=AccountState.choices, default=AccountState.PENDING_VERIFICATION)
 	last_seen_at = models.DateTimeField(null=True, blank=True)
+	tos_accepted_at = models.DateTimeField(null=True, blank=True)
+	tos_version_accepted = models.CharField(max_length=32, blank=True)
+	guidelines_accepted_at = models.DateTimeField(null=True, blank=True)
+	guidelines_version_accepted = models.CharField(max_length=32, blank=True)
 
 	objects = UserManager()
 

@@ -1,7 +1,16 @@
+from datetime import timedelta
+
+from django.core import mail
 from django.test import Client, TestCase
+from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.profiles.models import ProfileEditHistory, ProfileLink
+from apps.profiles.models import (
+	GuardianEmailVerificationToken,
+	ParentalControlChangeRequest,
+	ProfileEditHistory,
+	ProfileLink,
+)
 
 
 class ProfileEditHistoryTests(TestCase):
@@ -71,3 +80,129 @@ class ProfileLinksTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Docs")
 		self.assertNotContains(response, "Hidden")
+
+
+class ParentalControlsTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="minoruser@example.com", username="minoruser", password="secret123")
+		self.user.mark_email_verified()
+
+	def _post_profile(self, **overrides):
+		payload = {
+			"bio": "",
+			"location": "",
+			"website_url": "",
+			"show_follower_count": True,
+			"show_following_count": True,
+			"is_private_account": False,
+			"auto_reveal_spoilers": False,
+			"is_minor_account": False,
+			"parental_controls_enabled": False,
+			"guardian_email": "",
+		}
+		payload.update(overrides)
+		return self.client.post("/profiles/me/edit/", payload)
+
+	def test_guardian_email_change_sends_verification_email(self):
+		self.client.force_login(self.user)
+		response = self._post_profile(
+			is_minor_account=True,
+			parental_controls_enabled=True,
+			guardian_email="parent@example.com",
+		)
+		self.assertEqual(response.status_code, 302)
+		self.assertTrue(
+			GuardianEmailVerificationToken.objects.filter(
+				profile=self.user.actor.profile,
+				guardian_email="parent@example.com",
+			).exists()
+		)
+		self.assertEqual(len(mail.outbox), 1)
+		self.assertIn("guardian", mail.outbox[0].subject.lower())
+
+	def test_guardian_verification_link_marks_profile_verified(self):
+		profile = self.user.actor.profile
+		profile.guardian_email = "parent@example.com"
+		profile.save(update_fields=["guardian_email", "updated_at"])
+		token = GuardianEmailVerificationToken.objects.create(
+			profile=profile,
+			guardian_email="parent@example.com",
+			token="verify-token-1",
+			expires_at=timezone.now() + timedelta(hours=1),
+		)
+
+		response = self.client.get(f"/profiles/guardian/verify/{token.token}/")
+		self.assertEqual(response.status_code, 302)
+		profile.refresh_from_db()
+		token.refresh_from_db()
+		self.assertIsNotNone(profile.guardian_email_verified_at)
+		self.assertIsNotNone(token.used_at)
+
+	def test_minor_locked_change_requires_guardian_approval(self):
+		self.client.force_login(self.user)
+		profile = self.user.actor.profile
+		profile.is_minor_account = True
+		profile.parental_controls_enabled = True
+		profile.guardian_email = "parent@example.com"
+		profile.guardian_email_verified_at = timezone.now()
+		profile.auto_reveal_spoilers = False
+		profile.save(
+			update_fields=[
+				"is_minor_account",
+				"parental_controls_enabled",
+				"guardian_email",
+				"guardian_email_verified_at",
+				"auto_reveal_spoilers",
+				"updated_at",
+			],
+		)
+
+		response = self._post_profile(
+			is_minor_account=True,
+			parental_controls_enabled=True,
+			guardian_email="parent@example.com",
+			auto_reveal_spoilers=True,
+		)
+		self.assertEqual(response.status_code, 302)
+		profile.refresh_from_db()
+		self.assertFalse(profile.auto_reveal_spoilers)
+
+		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
+		self.assertEqual(len(mail.outbox), 1)
+
+		approve_response = self.client.get(f"/profiles/guardian/approve/{change_request.token}/")
+		self.assertEqual(approve_response.status_code, 302)
+		profile.refresh_from_db()
+		change_request.refresh_from_db()
+		self.assertTrue(profile.auto_reveal_spoilers)
+		self.assertIsNotNone(change_request.used_at)
+
+	def test_minor_cannot_disable_parental_lock_without_approval(self):
+		self.client.force_login(self.user)
+		profile = self.user.actor.profile
+		profile.is_minor_account = True
+		profile.parental_controls_enabled = True
+		profile.guardian_email = "parent@example.com"
+		profile.guardian_email_verified_at = timezone.now()
+		profile.save(
+			update_fields=[
+				"is_minor_account",
+				"parental_controls_enabled",
+				"guardian_email",
+				"guardian_email_verified_at",
+				"updated_at",
+			],
+		)
+
+		response = self._post_profile(
+			is_minor_account=True,
+			parental_controls_enabled=False,
+			guardian_email="parent@example.com",
+		)
+		self.assertEqual(response.status_code, 302)
+		profile.refresh_from_db()
+		self.assertTrue(profile.parental_controls_enabled)
+
+		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
+		self.assertFalse(change_request.proposed_parental_controls_enabled)

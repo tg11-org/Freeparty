@@ -44,6 +44,44 @@
     {{ form.location }}
   </div>
 
+  <h3 style="margin-top:1.2rem;">Minor Safety and Parental Controls</h3>
+  <p class="field-help" style="margin-top:0;">For minor accounts, sensitive privacy/content changes can be locked behind guardian email approval.</p>
+
+  <div class="field-wrap">
+    <label for="{{ form.guardian_email.id_for_label }}">{{ form.guardian_email.label }}:</label>
+    {% if form.guardian_email.errors %}<ul class="field-errors">{% for error in form.guardian_email.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.guardian_email }}
+    {% if profile.guardian_email and profile.guardian_email_verified_at %}
+      <p class="field-help">Guardian email verified on {{ profile.guardian_email_verified_at|date:"Y-m-d H:i" }}.</p>
+    {% elif profile.guardian_email %}
+      <p class="field-help">Guardian email pending verification. Saving after changing this address sends a verification email.</p>
+    {% else %}
+      <p class="field-help">Add a guardian email to enable secondary verification.</p>
+    {% endif %}
+  </div>
+
+  <div class="toggle-field">
+    {{ form.is_minor_account.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.is_minor_account.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Minor account protections</span>
+        <span class="toggle-help">Marks this account as minor-protected for legal/privacy handling.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.parental_controls_enabled.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.parental_controls_enabled.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Lock settings behind guardian approval</span>
+        <span class="toggle-help">Requires verified guardian consent for changes to privacy/content toggles.</span>
+      </span>
+    </label>
+  </div>
+
   <div class="toggle-field">
     {{ form.show_follower_count.as_widget|safe }}
     <label class="toggle-label" for="{{ form.show_follower_count.id_for_label }}">

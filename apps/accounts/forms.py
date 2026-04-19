@@ -3,6 +3,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordResetForm
 from django.template import loader
+from django.utils import timezone
 
 from apps.accounts.tasks import send_password_reset_email
 
@@ -12,6 +13,8 @@ User = get_user_model()
 class SignUpForm(forms.ModelForm):
     password1 = forms.CharField(widget=forms.PasswordInput)
     password2 = forms.CharField(widget=forms.PasswordInput)
+    accept_tos = forms.BooleanField(required=True, error_messages={"required": "You must accept the Terms of Service."})
+    accept_guidelines = forms.BooleanField(required=True, error_messages={"required": "You must accept the Community Guidelines."})
 
     class Meta:
         model = User
@@ -28,6 +31,11 @@ class SignUpForm(forms.ModelForm):
         user.email = user.email.lower()
         user.username = user.username.lower()
         user.set_password(self.cleaned_data["password1"])
+        now = timezone.now()
+        user.tos_accepted_at = now
+        user.guidelines_accepted_at = now
+        user.tos_version_accepted = str(getattr(settings, "LEGAL_TOS_VERSION", "1.0"))
+        user.guidelines_version_accepted = str(getattr(settings, "LEGAL_GUIDELINES_VERSION", "1.0"))
         if commit:
             user.save()
         return user

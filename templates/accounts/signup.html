@@ -2,8 +2,63 @@
 
 {% block content %}
 <h2>Create account</h2>
-<form method="post">{% csrf_token %}
-  {{ form.as_p }}
+<p style="color:var(--text2);margin-top:0;">Create your account and accept the platform rules before continuing.</p>
+<form method="post">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <ul class="field-errors">
+      {% for error in form.non_field_errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div class="field-wrap">
+    <label for="{{ form.email.id_for_label }}">Email:</label>
+    {% if form.email.errors %}<ul class="field-errors">{% for error in form.email.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.email }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.username.id_for_label }}">Username:</label>
+    {% if form.username.errors %}<ul class="field-errors">{% for error in form.username.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.username }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.display_name.id_for_label }}">Display name:</label>
+    {% if form.display_name.errors %}<ul class="field-errors">{% for error in form.display_name.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.display_name }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.password1.id_for_label }}">Password:</label>
+    {% if form.password1.errors %}<ul class="field-errors">{% for error in form.password1.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.password1 }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.password2.id_for_label }}">Confirm password:</label>
+    {% if form.password2.errors %}<ul class="field-errors">{% for error in form.password2.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.password2 }}
+  </div>
+
+  <div class="field-wrap">
+    <label>
+      {{ form.accept_tos }}
+      I agree to the <a href="/terms/" target="_blank" rel="noopener noreferrer">Terms of Service</a>.
+    </label>
+    {% if form.accept_tos.errors %}<ul class="field-errors">{% for error in form.accept_tos.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label>
+      {{ form.accept_guidelines }}
+      I agree to the <a href="/guidelines/" target="_blank" rel="noopener noreferrer">Community Guidelines</a>.
+    </label>
+    {% if form.accept_guidelines.errors %}<ul class="field-errors">{% for error in form.accept_guidelines.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+
   <button class="button" type="submit">Sign up</button>
 </form>
 {% endblock %}

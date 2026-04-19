@@ -1,14 +1,95 @@
+from datetime import timedelta
+import secrets
+
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Max
+from django.core.mail import send_mail
 from django.http import Http404
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from apps.actors.models import Actor
 from apps.profiles.forms import ProfileForm, ProfileLinkForm
-from apps.profiles.models import Profile, ProfileEditHistory, ProfileLink
+from apps.profiles.models import (
+	GuardianEmailVerificationToken,
+	ParentalControlChangeRequest,
+	Profile,
+	ProfileEditHistory,
+	ProfileLink,
+)
+
+
+TOKEN_TTL_HOURS = 24
+PROTECTED_PARENTAL_FIELDS = {
+	"is_private_account",
+	"auto_reveal_spoilers",
+	"show_follower_count",
+	"show_following_count",
+}
+LOCK_CONFIGURATION_FIELDS = {"is_minor_account", "parental_controls_enabled", "guardian_email"}
+
+
+def _issue_guardian_verification(request: HttpRequest, profile: Profile) -> None:
+	if not profile.guardian_email:
+		return
+	token = secrets.token_urlsafe(32)
+	verification = GuardianEmailVerificationToken.objects.create(
+		profile=profile,
+		guardian_email=profile.guardian_email,
+		token=token,
+		expires_at=timezone.now() + timedelta(hours=TOKEN_TTL_HOURS),
+	)
+	verify_path = reverse("profiles:verify_guardian_email", kwargs={"token": verification.token})
+	verify_url = request.build_absolute_uri(verify_path)
+	child_handle = profile.actor.handle
+	send_mail(
+		subject="Freeparty guardian email verification",
+		message=(
+			f"A Freeparty account (@{child_handle}) added this address as a guardian contact.\n\n"
+			f"Verify this guardian email by visiting: {verify_url}\n\n"
+			"If you did not expect this request, you can ignore this email."
+		),
+		from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+		recipient_list=[profile.guardian_email],
+		fail_silently=True,
+	)
+
+
+def _issue_parental_change_approval(request: HttpRequest, profile: Profile, requested_by, cleaned_data: dict) -> None:
+	token = secrets.token_urlsafe(32)
+	approval = ParentalControlChangeRequest.objects.create(
+		profile=profile,
+		requested_by=requested_by,
+		guardian_email=profile.guardian_email,
+		token=token,
+		expires_at=timezone.now() + timedelta(hours=TOKEN_TTL_HOURS),
+		proposed_is_private_account=bool(cleaned_data.get("is_private_account")),
+		proposed_auto_reveal_spoilers=bool(cleaned_data.get("auto_reveal_spoilers")),
+		proposed_show_follower_count=bool(cleaned_data.get("show_follower_count")),
+		proposed_show_following_count=bool(cleaned_data.get("show_following_count")),
+		proposed_is_minor_account=bool(cleaned_data.get("is_minor_account")),
+		proposed_parental_controls_enabled=bool(cleaned_data.get("parental_controls_enabled")),
+		proposed_guardian_email=(cleaned_data.get("guardian_email") or "").strip(),
+	)
+	approve_path = reverse("profiles:approve_parental_change", kwargs={"token": approval.token})
+	approve_url = request.build_absolute_uri(approve_path)
+	child_handle = profile.actor.handle
+	send_mail(
+		subject="Freeparty parental controls change approval",
+		message=(
+			f"A protected settings change was requested for Freeparty account @{child_handle}.\n\n"
+			f"Review and approve this change: {approve_url}\n\n"
+			"If this request is unexpected, ignore this email and no changes will be applied."
+		),
+		from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+		recipient_list=[profile.guardian_email],
+		fail_silently=True,
+	)
 
 
 @login_required
@@ -22,11 +103,43 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 
 	form = ProfileForm(request.POST or None, request.FILES or None, instance=profile)
 	if request.method == "POST" and form.is_valid():
+		locked_changes_queued = False
+		restricted_fields = PROTECTED_PARENTAL_FIELDS.union(LOCK_CONFIGURATION_FIELDS)
+		current_parental_lock_active = (
+			profile.is_minor_account
+			and profile.parental_controls_enabled
+			and bool(profile.guardian_email)
+			and bool(profile.guardian_email_verified_at)
+		)
 		previous_bio = profile.bio
 		previous_location = profile.location
 		previous_website_url = profile.website_url
 		changed_fields = set(form.changed_data)
-		updated_profile = form.save()
+		updated_profile = form.save(commit=False)
+
+		if "guardian_email" in changed_fields and not current_parental_lock_active:
+			updated_profile.guardian_email_verified_at = None
+
+		if current_parental_lock_active and restricted_fields.intersection(changed_fields):
+			for field_name in restricted_fields:
+				if field_name in changed_fields:
+					setattr(updated_profile, field_name, getattr(profile, field_name))
+			updated_profile.guardian_email_verified_at = profile.guardian_email_verified_at
+			locked_changes_queued = True
+
+		updated_profile.save()
+
+		if "guardian_email" in changed_fields and not locked_changes_queued and updated_profile.guardian_email:
+			_issue_guardian_verification(request, updated_profile)
+			messages.info(request, "Guardian verification email sent. Parental lock activates after verification.")
+
+		if locked_changes_queued:
+			_issue_parental_change_approval(request, updated_profile, request.user, form.cleaned_data)
+			messages.warning(
+				request,
+				"Protected settings were not changed yet. A guardian approval email was sent.",
+			)
+
 		if {"bio", "location", "website_url"}.intersection(changed_fields):
 			ProfileEditHistory.objects.create(
 				profile=updated_profile,
@@ -42,6 +155,76 @@ def edit_profile_view(request: HttpRequest) -> HttpResponse:
 		return redirect("actors:detail", handle=actor.handle)
 
 	return render(request, "profiles/edit.html", {"form": form, "profile": profile})
+
+
+@require_http_methods(["GET"])
+def verify_guardian_email_view(request: HttpRequest, token: str) -> HttpResponse:
+	token_obj = GuardianEmailVerificationToken.objects.select_related("profile", "profile__actor").filter(token=token).first()
+	if token_obj is None or not token_obj.is_usable:
+		messages.error(request, "Guardian verification link is invalid or expired.")
+		return redirect("home")
+
+	profile = token_obj.profile
+	if not profile.guardian_email or profile.guardian_email.lower() != token_obj.guardian_email.lower():
+		messages.error(request, "Guardian verification link is no longer valid for the current guardian email.")
+		return redirect("home")
+
+	now = timezone.now()
+	token_obj.used_at = now
+	token_obj.save(update_fields=["used_at", "updated_at"])
+	profile.guardian_email_verified_at = now
+	profile.save(update_fields=["guardian_email_verified_at", "updated_at"])
+
+	messages.success(request, f"Guardian email verified for @{profile.actor.handle}.")
+	return redirect("home")
+
+
+@require_http_methods(["GET"])
+def approve_parental_change_view(request: HttpRequest, token: str) -> HttpResponse:
+	change_request = ParentalControlChangeRequest.objects.select_related("profile", "profile__actor").filter(token=token).first()
+	if change_request is None or not change_request.is_usable:
+		messages.error(request, "Parental approval link is invalid or expired.")
+		return redirect("home")
+
+	profile = change_request.profile
+	if not profile.guardian_email or profile.guardian_email.lower() != change_request.guardian_email.lower():
+		messages.error(request, "Parental approval link is no longer valid for the current guardian email.")
+		return redirect("home")
+
+	now = timezone.now()
+	profile.is_private_account = change_request.proposed_is_private_account
+	profile.auto_reveal_spoilers = change_request.proposed_auto_reveal_spoilers
+	profile.show_follower_count = change_request.proposed_show_follower_count
+	profile.show_following_count = change_request.proposed_show_following_count
+	profile.is_minor_account = change_request.proposed_is_minor_account
+	profile.parental_controls_enabled = change_request.proposed_parental_controls_enabled
+	guardian_email_changed = profile.guardian_email != change_request.proposed_guardian_email
+	profile.guardian_email = change_request.proposed_guardian_email
+	if guardian_email_changed:
+		profile.guardian_email_verified_at = None
+	profile.save(
+		update_fields=[
+			"is_private_account",
+			"auto_reveal_spoilers",
+			"show_follower_count",
+			"show_following_count",
+			"is_minor_account",
+			"parental_controls_enabled",
+			"guardian_email",
+			"guardian_email_verified_at",
+			"updated_at",
+		],
+	)
+
+	change_request.used_at = now
+	change_request.save(update_fields=["used_at", "updated_at"])
+
+	if guardian_email_changed and profile.guardian_email:
+		_issue_guardian_verification(request, profile)
+		messages.info(request, "Guardian email changed. A new verification email was sent.")
+
+	messages.success(request, f"Parental controls update approved for @{profile.actor.handle}.")
+	return redirect("home")
 
 
 @login_required

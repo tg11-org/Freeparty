@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.services import VerificationService
@@ -155,3 +156,50 @@ class TransactionalEmailTaskTests(TestCase):
 		execution = AsyncTaskExecution.objects.get(task_name=send_password_reset_email.name)
 		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
 		self.assertEqual(execution.attempt_count, 1)
+
+
+class SignupLegalConsentTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.signup_url = reverse("accounts:signup")
+
+	def test_signup_requires_terms_and_guidelines_checkboxes(self):
+		response = self.client.post(
+			self.signup_url,
+			{
+				"email": "consent1@example.com",
+				"username": "consent1",
+				"display_name": "Consent User",
+				"password1": "secret12345",
+				"password2": "secret12345",
+			},
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "You must accept the Terms of Service.")
+		self.assertContains(response, "You must accept the Community Guidelines.")
+		self.assertFalse(User.objects.filter(email="consent1@example.com").exists())
+
+	@override_settings(LEGAL_TOS_VERSION="1.2", LEGAL_GUIDELINES_VERSION="1.3")
+	def test_signup_persists_legal_acceptance_timestamps_and_versions(self):
+		response = self.client.post(
+			self.signup_url,
+			{
+				"email": "consent2@example.com",
+				"username": "consent2",
+				"display_name": "Consent User 2",
+				"password1": "secret12345",
+				"password2": "secret12345",
+				"accept_tos": "on",
+				"accept_guidelines": "on",
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		user = User.objects.get(email="consent2@example.com")
+		self.assertIsNotNone(user.tos_accepted_at)
+		self.assertIsNotNone(user.guidelines_accepted_at)
+		assert user.tos_accepted_at is not None
+		assert user.guidelines_accepted_at is not None
+		self.assertLessEqual(user.tos_accepted_at, timezone.now())
+		self.assertLessEqual(user.guidelines_accepted_at, timezone.now())
+		self.assertEqual(user.tos_version_accepted, "1.2")
+		self.assertEqual(user.guidelines_version_accepted, "1.3")
