@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.core.cache import cache
 from django.db import connections
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -6,6 +8,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from apps.core.forms import SupportRequestForm
 from apps.core.pagination import paginate_queryset
 from apps.notifications.models import Notification
 from apps.private_messages.models import EncryptedMessageEnvelope
@@ -136,6 +139,11 @@ def about_view(request: HttpRequest) -> HttpResponse:
 
 
 @require_http_methods(["GET"])
+def changelog_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "core/changelog.html")
+
+
+@require_http_methods(["GET"])
 def terms_view(request: HttpRequest) -> HttpResponse:
 	return render(request, "core/terms.html")
 
@@ -155,9 +163,39 @@ def faq_view(request: HttpRequest) -> HttpResponse:
 	return render(request, "core/faq.html")
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def support_view(request: HttpRequest) -> HttpResponse:
-	return render(request, "core/support.html")
+	initial = {}
+	if request.user.is_authenticated:
+		initial["email"] = request.user.email or ""
+		if hasattr(request.user, "actor"):
+			initial["username"] = request.user.actor.handle
+
+	form = SupportRequestForm(request.POST or None, initial=initial)
+	mailto_url = ""
+	if request.method == "POST" and form.is_valid():
+		support_type_label = form.support_type_label()
+		subject = f"[{support_type_label}] {form.cleaned_data['subject_summary'].strip()}"
+		body_lines = [
+			f"Support type: {support_type_label}",
+			f"Username: {form.cleaned_data['username'].strip() or '(not provided)'}",
+			f"Reply email: {form.cleaned_data['email'].strip()}",
+			"",
+			"Message:",
+			form.cleaned_data["message"].strip(),
+		]
+		query = urlencode({"subject": subject, "body": "\n".join(body_lines)})
+		mailto_url = f"mailto:support@tg11.org?{query}"
+
+	return render(
+		request,
+		"core/support.html",
+		{
+			"support_form": form,
+			"mailto_url": mailto_url,
+			"support_email": "support@tg11.org",
+		},
+	)
 
 
 @require_http_methods(["GET"])

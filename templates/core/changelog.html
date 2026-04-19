@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Changelog · Freeparty{% endblock %}
+{% block content %}
+<article style="max-width:720px;margin:2rem auto;padding:0 1rem;">
+  <header style="margin-bottom:2rem;">
+    <h1>Changelog</h1>
+    <p style="color:var(--text2);font-size:0.9rem;">
+      A running log of major updates and improvements to Freeparty.
+    </p>
+  </header>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Policy &amp; Support Expansion
+    </h2>
+    <ul>
+      <li>Expanded Terms of Service with age/jurisdiction table (US COPPA, EU GDPR, UK, Canada, Australia).</li>
+      <li>Expanded Privacy Policy with cookies, data retention categories, user rights, and cross-border processing notes.</li>
+      <li>Expanded Community Guidelines with explicit moderation enforcement flow (warnings → restrictions → suspension → ban).</li>
+      <li>Expanded FAQ with practical answers: password reset, account deletion, block vs mute, DM keys.</li>
+      <li>Added About page trust &amp; safety section.</li>
+      <li>Added Support page with intake form that generates a pre-filled <code>mailto:</code> link to <a href="mailto:support@tg11.org">support@tg11.org</a>.</li>
+      <li>Added effective date (2026-04-19) and version metadata to all policy pages.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Footer &amp; Public Pages
+    </h2>
+    <ul>
+      <li>Added global site footer with navigation links: About, Terms, Privacy, Guidelines, FAQ, Support, Status, Changelog.</li>
+      <li>Added Copyleft notice and GitHub repository link to footer.</li>
+      <li>Created six public pages: About, Terms of Service, Privacy Policy, Community Guidelines, FAQ, Support.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Direct Messages: Security &amp; Keys Menu
+    </h2>
+    <ul>
+      <li>Added collapsible Security &amp; Keys panel (&#9776;) to the DM conversation view.</li>
+      <li>Fingerprint display, device/key inventory, and Browser E2E Mode controls are all grouped inside the collapsible menu.</li>
+      <li>Sticky compose area is now clean &mdash; textarea and send only, no key management clutter.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Profile Settings: Toggle Switch UI
+    </h2>
+    <ul>
+      <li>Replaced raw checkbox inputs on profile edit page with accessible CSS toggle switches.</li>
+      <li>Toggles cover: show follower count, show following count, private account, auto-reveal spoilers.</li>
+      <li>Global toggle and checkbox/radio styles applied across all forms.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Profile Links (Linktree-style)
+    </h2>
+    <ul>
+      <li>Added <code>ProfileLink</code> model: title, URL, display order, active toggle, profile association.</li>
+      <li>Users can manage custom links at <a href="/profiles/me/links/">My Links</a>.</li>
+      <li>Public links page available at <code>/profiles/&lt;handle&gt;/links/</code>.</li>
+    </ul>
+  </section>
+
+  <footer style="margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--text2);font-size:0.82rem;">
+    Freeparty Changelog &middot; Last updated 2026-04-19
+  </footer>
+</article>
+{% endblock %}

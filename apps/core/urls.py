@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.core.views import (
     about_view,
+    changelog_view,
     faq_view,
     guidelines_view,
     health_live_view,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("guidelines/", guidelines_view, name="guidelines"),
     path("faq/", faq_view, name="faq"),
     path("support/", support_view, name="support"),
+    path("changelog/", changelog_view, name="changelog"),
     path("inbox/", inbox_view, name="inbox"),
     path("me/", me_redirect_view, name="me"),
 ]

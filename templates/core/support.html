@@ -3,53 +3,63 @@
 {% block content %}
 <section>
   <h1>Support</h1>
+  {% include "partials/policy_meta.html" %}
 
   <p>
-    Need help with Freeparty? This page is the best place to start.
+    Need help with Freeparty? Use this support intake form. It prepares an email draft to
+    <a href="mailto:{{ support_email|default:'support@tg11.org' }}">{{ support_email|default:"support@tg11.org" }}</a>
+    with a pre-filled subject based on support type.
   </p>
 
-  <h2>Account help</h2>
-  <p>
-    If you are having trouble signing in, verifying your email, or accessing your account, include:
-  </p>
+  <h2>Support request form</h2>
+  <form method="post" style="display:grid;gap:0.75rem;">
+    {% csrf_token %}
+    {% if support_form.non_field_errors %}
+      <ul class="field-errors">{% for error in support_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="field-wrap">
+      <label for="{{ support_form.support_type.id_for_label }}">Support type</label>
+      {{ support_form.support_type }}
+    </div>
+
+    <div class="field-wrap">
+      <label for="{{ support_form.subject_summary.id_for_label }}">Short subject summary</label>
+      {{ support_form.subject_summary }}
+      <div class="field-help">Example: "Cannot log in after email verification"</div>
+    </div>
+
+    <div class="field-wrap">
+      <label for="{{ support_form.username.id_for_label }}">Username (optional)</label>
+      {{ support_form.username }}
+    </div>
+
+    <div class="field-wrap">
+      <label for="{{ support_form.email.id_for_label }}">Reply email</label>
+      {{ support_form.email }}
+    </div>
+
+    <div class="field-wrap">
+      <label for="{{ support_form.message.id_for_label }}">What happened?</label>
+      {{ support_form.message }}
+      <div class="field-help">Include steps to reproduce, timestamps, and any error text.</div>
+    </div>
+
+    <button class="button" type="submit">Prepare support email draft</button>
+  </form>
+
+  {% if mailto_url %}
+    <div style="margin-top:1rem;padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
+      <p style="margin:0 0 0.5rem;"><strong>Draft ready.</strong> Open your email client to send this request:</p>
+      <p style="margin:0;"><a class="btn active" href="{{ mailto_url }}">Open pre-filled email to support@tg11.org</a></p>
+    </div>
+  {% endif %}
+
+  <h2>Priority expectations</h2>
   <ul>
-    <li>Your username</li>
-    <li>The email address tied to the account</li>
-    <li>A short description of the problem</li>
-    <li>The approximate date and time the issue happened</li>
+    <li>Urgent safety issues: prioritized as soon as possible.</li>
+    <li>Account access issues: typically high priority.</li>
+    <li>Bug reports and general questions: best-effort order.</li>
   </ul>
-
-  <h2>Safety and abuse issues</h2>
-  <p>
-    For harassment, impersonation, threats, spam, or other harmful behavior, use in-app report and
-    block tools when available. Include links, usernames, timestamps, and any relevant context.
-  </p>
-
-  <h2>Bug reports</h2>
-  <p>
-    When reporting a bug, include:
-  </p>
-  <ul>
-    <li>What you were trying to do</li>
-    <li>What happened instead</li>
-    <li>What device/browser you were using</li>
-    <li>Any error message you saw</li>
-    <li>Steps to reproduce the issue, if known</li>
-  </ul>
-
-  <h2>Response expectations</h2>
-  <p>
-    Support priority may vary depending on the type of issue. Safety, access, and platform-stability
-    issues are usually treated as the highest priority.
-  </p>
-
-  <h2>Contact</h2>
-  <p>
-    Contact method: [add support email, form link, or ticket link]
-  </p>
-
-  <p>
-    If you are reporting an urgent safety issue, make that clear in the subject or opening line.
-  </p>
 </section>
 {% endblock %}

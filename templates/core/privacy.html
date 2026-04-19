@@ -3,7 +3,7 @@
 {% block content %}
 <section>
   <h1>Privacy Policy</h1>
-  <p><strong>Effective date:</strong> [add date]</p>
+  {% include "partials/policy_meta.html" %}
 
   <p>
     Freeparty collects and processes information needed to operate the platform, protect accounts,
@@ -28,49 +28,62 @@
     <li>To monitor performance, troubleshoot failures, and improve the service</li>
   </ul>
 
-  <h2>3. How information is shared</h2>
+  <h2>3. Cookies and session data</h2>
+  <p>
+    Freeparty uses essential cookies/session tokens for sign-in, security, and feature continuity.
+    We may also store local browser preferences (for example, theme or accessibility settings).
+  </p>
+
+  <h2>4. How information is shared</h2>
   <p>
     Public profile information and content you choose to publish may be visible to other users
     and visitors. We may also disclose information when required by law, to protect users, or to
     maintain the security and integrity of the platform.
   </p>
 
-  <h2>4. Data retention</h2>
-  <p>
-    We retain information for as long as needed to operate the service, comply with legal
-    obligations, resolve disputes, investigate abuse, and enforce our policies. Some records,
-    logs, or moderation data may be retained after content is deleted when necessary for safety
-    or security reasons.
-  </p>
-
-  <h2>5. Your choices</h2>
+  <h2>5. Data retention</h2>
   <ul>
-    <li>You can edit certain account and profile information</li>
-    <li>You can delete content you have posted, subject to system and legal retention needs</li>
-    <li>You can use available privacy and safety controls such as block and mute tools</li>
+    <li>Core account and profile data: retained while account remains active.</li>
+    <li>Operational logs and abuse-prevention records: retained for a limited security window, then rotated or deleted.</li>
+    <li>Moderation and enforcement records: may be retained longer where needed for safety, legal obligations, or repeat-abuse prevention.</li>
+    <li>Backup copies: retained on a rolling schedule for disaster recovery.</li>
   </ul>
 
-  <h2>6. Security</h2>
+  <h2>6. Your controls and requests</h2>
+  <ul>
+    <li>You can edit account and profile information in-app.</li>
+    <li>You can delete content you posted, subject to legal/security retention constraints.</li>
+    <li>You can request account deletion and privacy review via Support.</li>
+    <li>You can request a copy of available account data via Support.</li>
+  </ul>
+
+  <h2>7. Security</h2>
   <p>
     We take reasonable steps to protect user information, but no service can guarantee absolute
     security. You are also responsible for keeping your credentials safe.
   </p>
 
-  <h2>7. Children</h2>
+  <h2>8. Children and minors</h2>
   <p>
-    Freeparty is not intended for users below the minimum age required by applicable law or by the
-    platform's own policy.
+    Freeparty is not intended for users below the minimum age required by applicable law in their
+    jurisdiction. Additional controls and restrictions may apply to minors where required.
   </p>
 
-  <h2>8. Changes to this policy</h2>
+  <h2>9. Cross-border processing</h2>
+  <p>
+    Depending on where infrastructure is hosted, data may be processed in jurisdictions different
+    from your own, subject to applicable legal safeguards.
+  </p>
+
+  <h2>10. Changes to this policy</h2>
   <p>
     We may update this Privacy Policy from time to time. Continued use of Freeparty after the
     effective date of an updated policy means the revised policy applies going forward.
   </p>
 
-  <h2>9. Contact</h2>
+  <h2>11. Contact</h2>
   <p>
-    For privacy questions or requests, use the Support page.
+    For privacy questions or requests, contact <a href="mailto:support@tg11.org">support@tg11.org</a>.
   </p>
 </section>
 {% endblock %}

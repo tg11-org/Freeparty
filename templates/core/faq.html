@@ -3,6 +3,7 @@
 {% block content %}
 <section>
   <h1>Frequently Asked Questions</h1>
+  {% include "partials/policy_meta.html" %}
 
   <h2>Do I need to post to use Freeparty?</h2>
   <p>
@@ -12,43 +13,55 @@
 
   <h2>Can I make my account private?</h2>
   <p>
-    If private-account controls are available in your settings, yes. Private or limited visibility
-    features may continue to evolve as Freeparty grows.
+    Yes. If private-account controls are available in your settings, you can limit profile and
+    content visibility.
+  </p>
+
+  <h2>How do I reset my password?</h2>
+  <p>
+    Use the account recovery flow on the login page. If you cannot access your email inbox,
+    contact support and include your username plus the issue details.
+  </p>
+
+  <h2>How do I delete my account?</h2>
+  <p>
+    If a self-service delete option is not currently available, contact support and request account
+    deletion review. Some legal/safety records may be retained as described in the Privacy Policy.
   </p>
 
   <h2>How do I report abuse or harmful content?</h2>
   <p>
-    Use the in-app reporting and safety tools when available. Include as much context as possible
-    so moderators can review the issue quickly.
+    Use the in-app reporting and safety tools where available. Include links, usernames, and
+    timestamps so moderators can review quickly.
   </p>
 
-  <h2>How do blocking and muting work?</h2>
+  <h2>What is the difference between block and mute?</h2>
   <p>
-    Blocking is for stronger separation and safety. Muting is for reducing unwanted visibility
-    without fully cutting off access. Exact behavior may depend on the feature set currently live.
+    Blocking is for stronger separation and safety. Muting reduces unwanted visibility without
+    fully cutting off access.
   </p>
 
-  <h2>Can I delete my posts?</h2>
+  <h2>Why can I not send DMs yet?</h2>
   <p>
-    In general, yes, though some copies, logs, moderation references, or backups may remain for a
-    limited period where needed for safety, legal, or operational reasons.
+    End-to-end DM send may require both participants to have compatible active keys. Check the
+    conversation's Security &amp; Keys menu for key readiness status.
   </p>
 
   <h2>How do link previews work?</h2>
   <p>
-    Link previews may be fetched and stored so posts can display rich previews without refetching
-    the page every time someone views it.
+    Link previews may be fetched once and stored so posts can display rich previews without
+    refetching on every page load.
   </p>
 
   <h2>Will Freeparty support federation?</h2>
   <p>
-    The platform is being built with federation-readiness in mind, but the primary focus right now
-    is a solid centralized experience first.
+    The platform is being built with federation-readiness in mind, with current focus on a solid
+    centralized experience first.
   </p>
 
   <h2>Where do I get help?</h2>
   <p>
-    Start with the Support page. For safety issues, use reporting tools where available.
+    Use the Support page form and choose the support type that matches your issue.
   </p>
 </section>
 {% endblock %}

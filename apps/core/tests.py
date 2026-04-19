@@ -245,6 +245,21 @@ class RootPathAndHealthStatusTests(TestCase):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, msg=f"Expected 200 for {path}")
 
+    def test_support_form_generates_prefilled_mailto_link(self):
+        response = self.client.post(
+            "/support/",
+            {
+                "support_type": "bug",
+                "subject_summary": "Cannot send DMs",
+                "username": "tester123",
+                "email": "tester@example.com",
+                "message": "Steps: open convo, send button disabled unexpectedly.",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "mailto:support%40tg11.org", html=False)
+        self.assertContains(response, "Cannot+send+DMs", html=False)
+
 
 class DeadLetterReplayCommandTests(TestCase):
     @patch("apps.core.management.commands.dead_letter_inspect.current_app")

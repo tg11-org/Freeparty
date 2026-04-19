@@ -3,7 +3,7 @@
 {% block content %}
 <section>
   <h1>Terms of Service</h1>
-  <p><strong>Effective date:</strong> [add date]</p>
+  {% include "partials/policy_meta.html" %}
 
   <p>
     By accessing or using Freeparty, you agree to these Terms of Service. If you do not agree,
@@ -16,7 +16,21 @@
     responsible for your conduct, your content, and your activity on the platform.
   </p>
 
-  <h2>2. Accounts</h2>
+  <h2>2. Age requirements and minors</h2>
+  <p>
+    You must meet the minimum digital-consent age required in your jurisdiction to create and use
+    an account. Where local law sets a higher age, that higher age applies.
+  </p>
+  <ul>
+    <li>United States: generally 13+ (COPPA baseline); some state privacy laws apply additional protections for minors.</li>
+    <li>European Union/EEA: 13-16 depending on member state implementation.</li>
+    <li>United Kingdom: 13+ baseline with additional safeguards for minors.</li>
+    <li>Canada: age of meaningful consent varies by province/territory and context.</li>
+    <li>Australia/New Zealand and other regions: local child and privacy law governs minimum age and consent handling.</li>
+  </ul>
+  <p style="color:var(--text2);font-size:0.92rem;">This list is not exhaustive. You are responsible for compliance with local law, including any parental/guardian consent requirements.</p>
+
+  <h2>3. Accounts</h2>
   <ul>
     <li>You are responsible for keeping your login credentials secure.</li>
     <li>You may not impersonate another person, brand, or organization in a misleading way.</li>
@@ -24,14 +38,14 @@
     <li>We may suspend, limit, or remove accounts that violate these terms or platform policies.</li>
   </ul>
 
-  <h2>3. Your content</h2>
+  <h2>4. Your content</h2>
   <p>
     You retain ownership of the content you post. By posting content to Freeparty, you give us
     permission to host, store, process, display, and distribute that content as needed to operate
     the service and its features.
   </p>
 
-  <h2>4. Prohibited behavior</h2>
+  <h2>5. Prohibited behavior</h2>
   <ul>
     <li>Illegal content or unlawful activity</li>
     <li>Harassment, threats, stalking, or targeted abuse</li>
@@ -41,41 +55,51 @@
     <li>Posting content that violates the rights of others</li>
   </ul>
 
-  <h2>5. Moderation and enforcement</h2>
+  <h2>6. Moderation and enforcement</h2>
   <p>
     We may review content, investigate reports, remove material, restrict reach, limit features,
     suspend accounts, or terminate access when needed to enforce our rules, protect users, or
     comply with legal obligations.
   </p>
-
-  <h2>6. Service availability</h2>
   <p>
-    Freeparty is provided on an “as is” and “as available” basis. We may change, pause, or remove
+    If your account is actioned and an appeal path is available, follow the instructions provided
+    in the notification or through Support.
+  </p>
+
+  <h2>7. Service availability</h2>
+  <p>
+    Freeparty is provided on an "as is" and "as available" basis. We may change, pause, or remove
     features at any time. We do not guarantee uninterrupted availability.
   </p>
 
-  <h2>7. Termination</h2>
+  <h2>8. Termination</h2>
   <p>
     You may stop using Freeparty at any time. We may suspend or terminate access if we believe
     you have violated these terms, created risk for users or the platform, or used the service
     in a way that harms operations.
   </p>
 
-  <h2>8. Limitation of liability</h2>
+  <h2>9. Limitation of liability</h2>
   <p>
     To the fullest extent allowed by law, Freeparty and its operators are not liable for indirect,
     incidental, special, consequential, or punitive damages arising from your use of the service.
   </p>
 
-  <h2>9. Changes to these terms</h2>
+  <h2>10. Governing law</h2>
+  <p>
+    These terms are governed by applicable law in the operator's primary jurisdiction, unless
+    otherwise required by non-waivable local consumer law.
+  </p>
+
+  <h2>11. Changes to these terms</h2>
   <p>
     We may update these terms from time to time. Continued use of Freeparty after changes take
     effect means you accept the updated terms.
   </p>
 
-  <h2>10. Contact</h2>
+  <h2>12. Contact</h2>
   <p>
-    For questions about these terms, use the Support page or the contact method listed there.
+    For questions about these terms, contact <a href="mailto:support@tg11.org">support@tg11.org</a>.
   </p>
 </section>
 {% endblock %}
