@@ -177,18 +177,18 @@
     {% endwith %}
 
     <div class="post-actions">
-      <a class="btn" href="/posts/{{ post.id }}/">💬 {{ post.comment_count }}</a>
+      <a class="btn" href="/posts/{{ post.id }}/" title="Comment">💬 {{ post.comment_count }}</a>
       {% if user.is_authenticated %}
         <form method="post" action="/social/like/{{ post.id }}/" data-async-post-action="1" data-action-type="like" data-post-id="{{ post.id }}">
           {% csrf_token %}
-          <button class="btn {% if post.id in liked_ids %}active{% endif %}" type="submit" data-action-button="like">
+          <button class="btn {% if post.id in liked_ids %}active{% endif %}" type="submit" title="{% if post.id in liked_ids %}Unlike{% else %}Like{% endif %}" data-action-button="like">
             <span data-action-icon="like">{% if post.id in liked_ids %}❤️{% else %}🤍{% endif %}</span>
             <span data-action-count="like">{{ post.like_count }}</span>
           </button>
         </form>
         <form method="post" action="/social/repost/{{ post.id }}/" data-async-post-action="1" data-action-type="repost" data-post-id="{{ post.id }}">
           {% csrf_token %}
-          <button class="btn {% if post.id in reposted_ids %}active{% endif %}" type="submit" data-action-button="repost">
+          <button class="btn {% if post.id in reposted_ids %}active{% endif %}" type="submit" title="{% if post.id in reposted_ids %}Undo repost{% else %}Repost{% endif %}" data-action-button="repost">
             <span data-action-icon="repost">🔁</span>
             <span data-action-count="repost">{{ post.repost_count }}</span>
           </button>
@@ -199,7 +199,7 @@
             <span data-action-icon="bookmark">🔖</span>
           </button>
         </form>
-        <button class="btn" type="button" title="Share" onclick="openShareSheet(this)"
+        <button class="btn" type="button" title="Share post" onclick="openShareSheet(this)"
           data-share-url="{{ request.scheme }}://{{ request.get_host }}/posts/{{ post.id }}/"
           data-share-title="{{ post.author.handle }}: {{ post.content|truncatechars:80 }}"
           data-dm-url="/messages/start/{{ post.author.handle }}/?share_post={{ post.id }}">📤</button>
