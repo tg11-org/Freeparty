@@ -1095,7 +1095,7 @@
           for (let i = 0; i < selectedFiles.length; i += 1) {
             encryptedAttachments.push(await encryptAttachmentFile(selectedFiles[i], localActiveKeyId, remoteActiveKeyId));
           }
-          const payload = {
+          const encryptedPayload = {
             schema: "freeparty.dm.payload.v1",
             text: plaintext,
             attachments: encryptedAttachments.map(function (item) {
@@ -1108,7 +1108,7 @@
               };
             }),
           };
-          const encrypted = await encryptPlaintext(JSON.stringify(payload), localActiveKeyId, remoteActiveKeyId);
+          const encrypted = await encryptPlaintext(JSON.stringify(encryptedPayload), localActiveKeyId, remoteActiveKeyId);
           const ciphertextInput = document.getElementById("id_ciphertext");
           const nonceInput = document.getElementById("id_message_nonce");
           const clientMessageIdInput = document.getElementById("id_client_message_id");
@@ -1144,12 +1144,12 @@
             },
           });
           const parsed = await parseJsonOrText(response);
-          const payload = parsed.json;
-          if (!response.ok || !payload || !payload.ok) {
+          const responsePayload = parsed.json;
+          if (!response.ok || !responsePayload || !responsePayload.ok) {
             const fallback = parsed.raw && parsed.raw.trim()
               ? parsed.raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220)
               : "Message upload failed.";
-            throw new Error((payload && payload.error) || fallback);
+            throw new Error((responsePayload && responsePayload.error) || fallback);
           }
           window.location.reload();
         } catch (error) {
