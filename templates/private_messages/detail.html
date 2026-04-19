@@ -150,7 +150,7 @@
             <p style="margin:0 0 0.35rem;color:var(--text2);font-size:0.92rem;">Dev preview enabled (DEBUG only): raw ciphertext below.</p>
             <pre style="margin:0;padding:0.65rem;border:1px dashed var(--border);border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:color-mix(in srgb, var(--surface) 85%, black 2%);">{{ message.ciphertext }}</pre>
           {% else %}
-            <p style="margin:0;color:var(--text2);font-size:0.82rem;">Ciphertext is not rendered in the HTML view.</p>
+            <p style="margin:0;color:var(--text2);font-size:0.42rem;">Ciphertext is not rendered in the HTML view.</p>
           {% endif %}
         </article>
       {% endfor %}
@@ -433,6 +433,12 @@
       const parsed = parseEnvelopePayload(plaintext);
       const textNode = document.createElement("p");
       textNode.style.margin = "0 0 0.35rem";
+      textNode.style.maxWidth = "100%";
+      textNode.style.maxHeight = "14rem";
+      textNode.style.overflow = "auto";
+      textNode.style.whiteSpace = "pre-wrap";
+      textNode.style.overflowWrap = "anywhere";
+      textNode.style.wordBreak = "break-word";
       textNode.textContent = parsed.text || (parsed.attachments.length ? "Encrypted attachment message" : plaintext);
       container.appendChild(textNode);
 
