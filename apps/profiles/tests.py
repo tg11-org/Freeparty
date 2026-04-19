@@ -218,7 +218,13 @@ class ParentalControlsTests(TestCase):
 		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
 		self.assertEqual(len(mail.outbox), 1)
 
-		approve_response = self.client.get(f"/profiles/guardian/approve/{change_request.token}/")
+		review_response = self.client.get(f"/profiles/guardian/approve/{change_request.token}/")
+		self.assertEqual(review_response.status_code, 200)
+		self.assertContains(review_response, "Review requested profile changes")
+		profile.refresh_from_db()
+		self.assertFalse(profile.auto_reveal_spoilers)
+
+		approve_response = self.client.post(f"/profiles/guardian/approve/{change_request.token}/")
 		self.assertEqual(approve_response.status_code, 302)
 		profile.refresh_from_db()
 		change_request.refresh_from_db()
@@ -288,7 +294,10 @@ class ParentalControlsTests(TestCase):
 		change_request = ParentalControlChangeRequest.objects.filter(profile=profile).latest("created_at")
 		self.assertEqual(change_request.proposed_bio, "Requested new bio")
 
-		approve_response = self.client.get(f"/profiles/guardian/approve/{change_request.token}/")
+		review_response = self.client.get(f"/profiles/guardian/approve/{change_request.token}/")
+		self.assertEqual(review_response.status_code, 200)
+
+		approve_response = self.client.post(f"/profiles/guardian/approve/{change_request.token}/")
 		self.assertEqual(approve_response.status_code, 302)
 		profile.refresh_from_db()
 		self.assertEqual(profile.bio, "Requested new bio")

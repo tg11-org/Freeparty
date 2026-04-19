@@ -254,7 +254,7 @@ def verify_guardian_email_view(request: HttpRequest, token: str) -> HttpResponse
 	return redirect("profiles:guardian_manage", token=manage_token.token)
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def approve_parental_change_view(request: HttpRequest, token: str) -> HttpResponse:
 	change_request = ParentalControlChangeRequest.objects.select_related("profile", "profile__actor").filter(token=token).first()
 	if change_request is None or not change_request.is_usable:
@@ -265,6 +265,42 @@ def approve_parental_change_view(request: HttpRequest, token: str) -> HttpRespon
 	if not profile.guardian_email or profile.guardian_email.lower() != change_request.guardian_email.lower():
 		messages.error(request, "Parental approval link is no longer valid for the current guardian email.")
 		return redirect("home")
+
+	if request.method == "GET":
+		current_values = {
+			"is_private_account": profile.is_private_account,
+			"auto_reveal_spoilers": profile.auto_reveal_spoilers,
+			"show_follower_count": profile.show_follower_count,
+			"show_following_count": profile.show_following_count,
+			"is_minor_account": profile.is_minor_account,
+			"parental_controls_enabled": profile.parental_controls_enabled,
+			"guardian_email": profile.guardian_email,
+			"bio": profile.bio,
+			"location": profile.location,
+			"website_url": profile.website_url,
+		}
+		proposed_values = {
+			"is_private_account": change_request.proposed_is_private_account,
+			"auto_reveal_spoilers": change_request.proposed_auto_reveal_spoilers,
+			"show_follower_count": change_request.proposed_show_follower_count,
+			"show_following_count": change_request.proposed_show_following_count,
+			"is_minor_account": change_request.proposed_is_minor_account,
+			"parental_controls_enabled": change_request.proposed_parental_controls_enabled,
+			"guardian_email": change_request.proposed_guardian_email,
+			"bio": change_request.proposed_bio,
+			"location": change_request.proposed_location,
+			"website_url": change_request.proposed_website_url,
+		}
+		return render(
+			request,
+			"profiles/guardian_approval_review.html",
+			{
+				"profile": profile,
+				"change_request": change_request,
+				"current_values": current_values,
+				"proposed_values": proposed_values,
+			},
+		)
 
 	now = timezone.now()
 	profile.is_private_account = change_request.proposed_is_private_account
