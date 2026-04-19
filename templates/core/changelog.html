@@ -11,6 +11,30 @@
 
   <section style="margin-bottom:2.5rem;">
     <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Direct Messages: Encrypted File Attachments
+    </h2>
+    <ul>
+      <li>Added encrypted DM attachment support for arbitrary file types, including archives like .zip, .7z, and custom binary files.</li>
+      <li>Files are encrypted in the browser before upload and stored server-side only as encrypted blobs.</li>
+      <li>Added participant-only encrypted attachment download endpoint and in-browser decrypt-and-download action in conversation view.</li>
+      <li>DM composer now supports message-plus-files or file-only encrypted sends.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-19 &mdash; Minor Safety: Guardian Age Settings and Under-18 Signup
+    </h2>
+    <ul>
+      <li>Signup now supports under-18 account setup with required guardian email capture.</li>
+      <li>Guardian verification now leads to a dedicated controls page for age precision settings: age range, age, MM/YYYY, or DD/MM/YYYY.</li>
+      <li>Guardians can explicitly allow NSFW and 16+ content for a minor account without ever allowing 18+ content.</li>
+      <li>Minor accounts now enforce guardian-managed visibility rules for NSFW and 16+ posts.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
       2026-04-19 &mdash; Minor Safety: Parental Controls and Guardian Consent
     </h2>
     <ul>

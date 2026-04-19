@@ -1,4 +1,6 @@
 from django import forms
+from django.utils import timezone
+from calendar import monthrange
 
 from apps.profiles.models import Profile, ProfileLink
 
@@ -43,6 +45,97 @@ class ProfileForm(forms.ModelForm):
             "parental_controls_enabled": "Lock sensitive privacy/content settings behind guardian email consent.",
             "guardian_email": "Secondary parent/guardian email used to verify and approve protected settings changes.",
         }
+
+
+class GuardianMinorSettingsForm(forms.Form):
+    minor_birthdate_precision = forms.ChoiceField(
+        choices=Profile.MinorBirthdatePrecision.choices,
+        label="How should the child's age be stored?",
+    )
+    minor_age_range = forms.ChoiceField(
+        choices=[("", "Choose a range")] + list(Profile.MinorAgeRange.choices),
+        required=False,
+        label="Age range",
+    )
+    minor_age_years = forms.IntegerField(required=False, min_value=0, max_value=17, label="Age")
+    minor_birth_month = forms.IntegerField(required=False, min_value=1, max_value=12, label="Birth month")
+    minor_birth_year = forms.IntegerField(required=False, min_value=1900, max_value=2100, label="Birth year")
+    minor_birth_day = forms.IntegerField(required=False, min_value=1, max_value=31, label="Birth day")
+    guardian_allows_nsfw_underage = forms.BooleanField(required=False, label="Allow NSFW for this minor")
+    guardian_allows_16plus_underage = forms.BooleanField(required=False, label="Allow 16+ posts for this minor")
+
+    def __init__(self, *args, profile: Profile | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in ["guardian_allows_nsfw_underage", "guardian_allows_16plus_underage"]:
+            self.fields[field_name].widget.attrs["class"] = "toggle-input"
+        self.profile = profile
+        if profile is not None:
+            self.initial.setdefault("minor_birthdate_precision", profile.minor_birthdate_precision)
+            self.initial.setdefault("minor_age_range", profile.minor_age_range)
+            self.initial.setdefault("minor_age_years", profile.minor_age_years)
+            self.initial.setdefault("minor_birth_month", profile.minor_birth_month)
+            self.initial.setdefault("minor_birth_year", profile.minor_birth_year)
+            self.initial.setdefault("minor_birth_day", profile.minor_birth_day)
+            self.initial.setdefault("guardian_allows_nsfw_underage", profile.guardian_allows_nsfw_underage)
+            self.initial.setdefault("guardian_allows_16plus_underage", profile.guardian_allows_16plus_underage)
+
+    def clean(self):
+        cleaned = super().clean()
+        precision = cleaned.get("minor_birthdate_precision")
+        if precision == Profile.MinorBirthdatePrecision.AGE_RANGE and not cleaned.get("minor_age_range"):
+            self.add_error("minor_age_range", "Choose an age range.")
+        if precision == Profile.MinorBirthdatePrecision.AGE_YEARS and cleaned.get("minor_age_years") is None:
+            self.add_error("minor_age_years", "Enter the child's age.")
+        if precision == Profile.MinorBirthdatePrecision.MONTH_YEAR:
+            if cleaned.get("minor_birth_month") is None:
+                self.add_error("minor_birth_month", "Enter a birth month.")
+            if cleaned.get("minor_birth_year") is None:
+                self.add_error("minor_birth_year", "Enter a birth year.")
+            elif cleaned.get("minor_birth_month") is not None:
+                try:
+                    monthrange(cleaned["minor_birth_year"], cleaned["minor_birth_month"])
+                except ValueError:
+                    self.add_error("minor_birth_month", "Enter a valid month and year.")
+        if precision == Profile.MinorBirthdatePrecision.FULL_DATE:
+            if cleaned.get("minor_birth_day") is None:
+                self.add_error("minor_birth_day", "Enter a birth day.")
+            if cleaned.get("minor_birth_month") is None:
+                self.add_error("minor_birth_month", "Enter a birth month.")
+            if cleaned.get("minor_birth_year") is None:
+                self.add_error("minor_birth_year", "Enter a birth year.")
+            elif cleaned.get("minor_birth_day") is not None and cleaned.get("minor_birth_month") is not None:
+                try:
+                    last_day = monthrange(cleaned["minor_birth_year"], cleaned["minor_birth_month"])[1]
+                except ValueError:
+                    self.add_error("minor_birth_month", "Enter a valid month and year.")
+                else:
+                    if cleaned["minor_birth_day"] > last_day:
+                        self.add_error("minor_birth_day", "That day is not valid for the selected month and year.")
+        return cleaned
+
+    def apply(self, profile: Profile) -> Profile:
+        profile.minor_birthdate_precision = self.cleaned_data["minor_birthdate_precision"]
+        profile.minor_age_range = self.cleaned_data.get("minor_age_range") or ""
+        profile.minor_age_years = self.cleaned_data.get("minor_age_years")
+        profile.minor_birth_month = self.cleaned_data.get("minor_birth_month")
+        profile.minor_birth_year = self.cleaned_data.get("minor_birth_year")
+        profile.minor_birth_day = self.cleaned_data.get("minor_birth_day")
+        profile.guardian_allows_nsfw_underage = bool(self.cleaned_data.get("guardian_allows_nsfw_underage"))
+        profile.guardian_allows_16plus_underage = bool(self.cleaned_data.get("guardian_allows_16plus_underage"))
+        if profile.minor_birthdate_precision == Profile.MinorBirthdatePrecision.AGE_YEARS:
+            profile.minor_age_recorded_at = timezone.now()
+        else:
+            profile.minor_age_recorded_at = None
+        if profile.minor_birthdate_precision != Profile.MinorBirthdatePrecision.AGE_RANGE:
+            profile.minor_age_range = ""
+        if profile.minor_birthdate_precision != Profile.MinorBirthdatePrecision.AGE_YEARS:
+            profile.minor_age_years = None
+        if profile.minor_birthdate_precision not in {Profile.MinorBirthdatePrecision.MONTH_YEAR, Profile.MinorBirthdatePrecision.FULL_DATE}:
+            profile.minor_birth_month = None
+            profile.minor_birth_year = None
+        if profile.minor_birthdate_precision != Profile.MinorBirthdatePrecision.FULL_DATE:
+            profile.minor_birth_day = None
+        return profile
 
 
 class ProfileLinkForm(forms.ModelForm):

@@ -144,7 +144,7 @@
               <span style="color:var(--text2);">· {{ message.created_at }}</span>
             </div>
           {% endwith %}
-          <p data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</p>
+          <div data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</div>
           {% if show_ciphertext_preview %}
             <p style="margin:0 0 0.35rem;color:var(--text2);font-size:0.92rem;">Dev preview enabled (DEBUG only): raw ciphertext below.</p>
             <pre style="margin:0;padding:0.65rem;border:1px dashed var(--border);border-radius:8px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:color-mix(in srgb, var(--surface) 85%, black 2%);">{{ message.ciphertext }}</pre>
@@ -160,17 +160,24 @@
 
   <div style="position:sticky;bottom:0;margin-top:0.9rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);z-index:5;">
     {% if can_send_encrypted %}
-      <form id="e2ee-send-form" method="post" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;">
+      <form id="e2ee-send-form" method="post" enctype="multipart/form-data" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;">
         {% csrf_token %}
         {{ message_form.non_field_errors }}
         <div>
           <label for="plaintext_message"><strong>Message</strong></label>
           <textarea id="plaintext_message" rows="3" style="width:100%;">{% if share_post_id %}{{ request.scheme }}://{{ request.get_host }}/posts/{{ share_post_id }}/{% endif %}</textarea>
         </div>
+        <div>
+          <label for="attachment_files"><strong>Encrypted attachments</strong></label>
+          <input id="attachment_files" type="file" multiple>
+          <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.9rem;">Any file type is allowed. Files are encrypted in your browser before upload, including archives like .zip, .7z, and .vfa.</p>
+          <ul id="attachment-selection-list" style="margin:0.45rem 0 0;padding-left:1.1rem;color:var(--text2);font-size:0.9rem;"></ul>
+        </div>
         <div style="display:none;">
           {{ message_form.ciphertext }}
           {{ message_form.message_nonce }}
           {{ message_form.client_message_id }}
+          {{ message_form.attachment_manifest }}
         </div>
         <button class="btn" type="submit">Encrypt and send</button>
         <p id="e2ee-send-status" style="margin:0;color:var(--text2);font-size:0.92rem;"></p>
@@ -211,6 +218,9 @@
     const showCiphertextPreview = "{{ show_ciphertext_preview|yesno:'1,0' }}" === "1";
     const ciphertextPreviewHint = "{% if show_ciphertext_preview %}Dev preview enabled (DEBUG only): raw ciphertext below.{% endif %}";
     const registerUrl = "{% url 'private_messages:register-key' %}";
+    const conversationId = "{{ conversation.id }}";
+    const attachmentMaxFiles = {{ attachment_max_files }};
+    const attachmentMaxBytes = {{ attachment_max_bytes }};
     const csrfTokenInput = document.querySelector("#e2ee-send-form input[name='csrfmiddlewaretoken']");
     const csrfToken = csrfTokenInput ? csrfTokenInput.value : "";
     const registerBtn = document.getElementById("register-browser-key");
@@ -222,6 +232,8 @@
     const sendForm = document.getElementById("e2ee-send-form");
     const sendButton = sendForm ? sendForm.querySelector("button[type='submit']") : null;
     const plaintextInput = document.getElementById("plaintext_message");
+    const attachmentInput = document.getElementById("attachment_files");
+    const attachmentSelectionList = document.getElementById("attachment-selection-list");
     const validateFingerprintBtn = document.getElementById("validate-fingerprint-btn");
     const validateFingerprintStatus = document.getElementById("validate-fingerprint-status");
     const validateFingerprintOutput = document.getElementById("validate-fingerprint-output");
@@ -299,6 +311,166 @@
       }
     }
 
+    function formatBytes(size) {
+      if (!Number.isFinite(size) || size <= 0) {
+        return "0 B";
+      }
+      const units = ["B", "KB", "MB", "GB"];
+      let value = size;
+      let idx = 0;
+      while (value >= 1024 && idx < units.length - 1) {
+        value /= 1024;
+        idx += 1;
+      }
+      return value.toFixed(value >= 10 || idx === 0 ? 0 : 1) + " " + units[idx];
+    }
+
+    function getSelectedFiles() {
+      return attachmentInput ? Array.from(attachmentInput.files || []) : [];
+    }
+
+    function updateAttachmentSelectionPreview() {
+      if (!attachmentSelectionList) {
+        return;
+      }
+      attachmentSelectionList.innerHTML = "";
+      getSelectedFiles().forEach(function (file) {
+        const item = document.createElement("li");
+        item.textContent = file.name + " (" + formatBytes(file.size) + ")";
+        attachmentSelectionList.appendChild(item);
+      });
+    }
+
+    function parseEnvelopePayload(plaintext) {
+      try {
+        const parsed = JSON.parse(plaintext);
+        if (parsed && parsed.schema === "freeparty.dm.payload.v1") {
+          return {
+            text: parsed.text || "",
+            attachments: Array.isArray(parsed.attachments) ? parsed.attachments : [],
+          };
+        }
+      } catch (_error) {
+        // legacy plaintext message
+      }
+      return { text: plaintext, attachments: [] };
+    }
+
+    function clearNode(node) {
+      while (node.firstChild) {
+        node.removeChild(node.firstChild);
+      }
+    }
+
+    function attachmentDownloadUrl(attachmentId) {
+      return "/messages/" + conversationId + "/attachments/" + attachmentId + "/download/";
+    }
+
+    async function decryptAttachmentToBlob(envelope, attachmentMeta, attachmentRecord) {
+      const sentByViewer = envelope.sender_id === viewerActorId;
+      const localKeyId = sentByViewer ? envelope.sender_key_id : envelope.recipient_key_id;
+      const remoteKeyId = sentByViewer ? envelope.recipient_key_id : envelope.sender_key_id;
+      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const remotePublicBase64 = publicKeysById[remoteKeyId];
+      if (!privateBase64 || !remotePublicBase64) {
+        throw new Error("Attachment keys are unavailable on this device.");
+      }
+      const response = await window.fetch(attachmentRecord.download_url || attachmentDownloadUrl(attachmentRecord.id), {
+        method: "GET",
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to download encrypted attachment.");
+      }
+      const encryptedBuffer = await response.arrayBuffer();
+      const localPrivateKey = await importPrivateKey(privateBase64);
+      const remotePublicKey = await importPublicKey(remotePublicBase64);
+      const aesKey = await deriveSharedAesKey(localPrivateKey, remotePublicKey);
+      const plaintextBuffer = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: new Uint8Array(fromBase64(attachmentMeta.attachment_nonce || "")) },
+        aesKey,
+        encryptedBuffer
+      );
+      return new Blob([plaintextBuffer], { type: attachmentMeta.mime_type || "application/octet-stream" });
+    }
+
+    function renderEnvelopePayloadInto(container, envelope, plaintext) {
+      clearNode(container);
+      const parsed = parseEnvelopePayload(plaintext);
+      const textNode = document.createElement("p");
+      textNode.style.margin = "0 0 0.35rem";
+      textNode.textContent = parsed.text || (parsed.attachments.length ? "Encrypted attachment message" : plaintext);
+      container.appendChild(textNode);
+
+      if (!parsed.attachments.length) {
+        return;
+      }
+
+      const attachmentList = document.createElement("div");
+      attachmentList.style.display = "grid";
+      attachmentList.style.gap = "0.45rem";
+      parsed.attachments.forEach(function (attachmentMeta) {
+        const attachmentRecord = (envelope.attachments || []).find(function (item) {
+          return item.client_attachment_id === attachmentMeta.client_attachment_id;
+        });
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.justifyContent = "space-between";
+        row.style.gap = "0.75rem";
+        row.style.padding = "0.55rem 0.7rem";
+        row.style.border = "1px solid var(--border)";
+        row.style.borderRadius = "8px";
+        row.style.background = "var(--surface2)";
+
+        const meta = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = attachmentMeta.name || "Encrypted attachment";
+        meta.appendChild(title);
+        const detail = document.createElement("div");
+        detail.style.color = "var(--text2)";
+        detail.style.fontSize = "0.85rem";
+        detail.textContent = (attachmentMeta.mime_type || "binary") + " · " + formatBytes(Number(attachmentMeta.original_size || 0));
+        meta.appendChild(detail);
+        row.appendChild(meta);
+
+        const button = document.createElement("button");
+        button.className = "btn";
+        button.type = "button";
+        button.textContent = attachmentRecord ? "Decrypt & download" : "Attachment unavailable";
+        button.disabled = !attachmentRecord;
+        if (attachmentRecord) {
+          button.addEventListener("click", async function () {
+            button.disabled = true;
+            const originalText = button.textContent;
+            button.textContent = "Decrypting...";
+            try {
+              const blob = await decryptAttachmentToBlob(envelope, attachmentMeta, attachmentRecord);
+              const url = window.URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = attachmentMeta.name || "attachment.bin";
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              window.setTimeout(function () { window.URL.revokeObjectURL(url); }, 1000);
+              button.textContent = "Downloaded";
+            } catch (error) {
+              button.textContent = error.message || "Download failed";
+            } finally {
+              window.setTimeout(function () {
+                button.textContent = originalText;
+                button.disabled = !attachmentRecord;
+              }, 1400);
+            }
+          });
+        }
+        row.appendChild(button);
+        attachmentList.appendChild(row);
+      });
+      container.appendChild(attachmentList);
+    }
+
     function setPanelExpanded(button, panel, expanded, labels) {
       if (!button || !panel) {
         return;
@@ -359,10 +531,10 @@
       header.appendChild(timestamp);
       article.appendChild(header);
 
-      const body = document.createElement("p");
+      const body = document.createElement("div");
       body.setAttribute("data-envelope-plaintext", envelope.id);
       body.style.margin = "0 0 0.35rem";
-      body.textContent = plaintextText;
+      renderEnvelopePayloadInto(body, envelope, plaintextText);
       article.appendChild(body);
 
       if (showCiphertextPreview) {
@@ -564,6 +736,36 @@
       };
     }
 
+    async function encryptAttachmentFile(file, localKeyId, remoteKeyId) {
+      const privateBase64 = window.localStorage.getItem(privateKeyStorageKey(localKeyId));
+      const remotePublicBase64 = publicKeysById[remoteKeyId];
+      if (!privateBase64 || !remotePublicBase64) {
+        throw new Error("Attachment encryption keys are unavailable.");
+      }
+      const localPrivateKey = await importPrivateKey(privateBase64);
+      const remotePublicKey = await importPublicKey(remotePublicBase64);
+      const aesKey = await deriveSharedAesKey(localPrivateKey, remotePublicKey);
+      const nonce = window.crypto.getRandomValues(new Uint8Array(12));
+      const plainBuffer = await file.arrayBuffer();
+      const encryptedBuffer = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: nonce },
+        aesKey,
+        plainBuffer
+      );
+      const bytes = new Uint8Array(window.crypto.getRandomValues(new Uint8Array(16)));
+      const clientAttachmentId = Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      const encryptedFile = new File([encryptedBuffer], clientAttachmentId + ".bin", { type: "application/octet-stream" });
+      return {
+        client_attachment_id: clientAttachmentId,
+        name: file.name,
+        mime_type: file.type || "application/octet-stream",
+        original_size: file.size,
+        attachment_nonce: toBase64(nonce.buffer),
+        encrypted_file: encryptedFile,
+        encrypted_size: encryptedFile.size,
+      };
+    }
+
     async function decryptEnvelope(payload) {
       const sentByViewer = payload.sender_id === viewerActorId;
       const localKeyId = sentByViewer ? payload.sender_key_id : payload.recipient_key_id;
@@ -599,7 +801,7 @@
           continue;
         }
         const plaintext = await decryptEnvelope(envelope);
-        target.textContent = plaintext;
+        renderEnvelopePayloadInto(target, envelope, plaintext);
       }
     }
 
@@ -833,16 +1035,46 @@
           return;
         }
         const plaintext = (plaintextInput ? plaintextInput.value : "").trim();
-        if (!plaintext) {
-          sendStatusNode.textContent = "Type a message before sending.";
+        const selectedFiles = getSelectedFiles();
+        if (!plaintext && !selectedFiles.length) {
+          sendStatusNode.textContent = "Type a message or choose files before sending.";
+          return;
+        }
+        if (selectedFiles.length > attachmentMaxFiles) {
+          sendStatusNode.textContent = "You can attach up to " + attachmentMaxFiles + " files at once.";
+          return;
+        }
+        if (selectedFiles.some(function (file) { return file.size > attachmentMaxBytes; })) {
+          sendStatusNode.textContent = "One or more files exceed the " + formatBytes(attachmentMaxBytes) + " limit.";
           return;
         }
         sendStatusNode.textContent = "Encrypting in browser...";
+        if (sendButton) {
+          sendButton.disabled = true;
+        }
         try {
-          const encrypted = await encryptPlaintext(plaintext, localActiveKeyId, remoteActiveKeyId);
+          const encryptedAttachments = [];
+          for (let i = 0; i < selectedFiles.length; i += 1) {
+            encryptedAttachments.push(await encryptAttachmentFile(selectedFiles[i], localActiveKeyId, remoteActiveKeyId));
+          }
+          const payload = {
+            schema: "freeparty.dm.payload.v1",
+            text: plaintext,
+            attachments: encryptedAttachments.map(function (item) {
+              return {
+                client_attachment_id: item.client_attachment_id,
+                name: item.name,
+                mime_type: item.mime_type,
+                original_size: item.original_size,
+                attachment_nonce: item.attachment_nonce,
+              };
+            }),
+          };
+          const encrypted = await encryptPlaintext(JSON.stringify(payload), localActiveKeyId, remoteActiveKeyId);
           const ciphertextInput = document.getElementById("id_ciphertext");
           const nonceInput = document.getElementById("id_message_nonce");
           const clientMessageIdInput = document.getElementById("id_client_message_id");
+          const attachmentManifestInput = document.getElementById("id_attachment_manifest");
           ciphertextInput.value = encrypted.ciphertext;
           nonceInput.value = encrypted.nonce;
           if (!clientMessageIdInput.value) {
@@ -850,11 +1082,45 @@
               ? window.crypto.randomUUID()
               : fallbackClientMessageId();
           }
-          sendForm.submit();
+          attachmentManifestInput.value = JSON.stringify(
+            encryptedAttachments.map(function (item) {
+              return {
+                client_attachment_id: item.client_attachment_id,
+                encrypted_size: item.encrypted_size,
+              };
+            })
+          );
+
+          const formData = new window.FormData(sendForm);
+          encryptedAttachments.forEach(function (item) {
+            formData.append("encrypted_attachments", item.encrypted_file, item.encrypted_file.name);
+          });
+          sendStatusNode.textContent = encryptedAttachments.length ? "Uploading encrypted message and attachments..." : "Uploading encrypted message...";
+          const response = await window.fetch(sendForm.action, {
+            method: "POST",
+            body: formData,
+            credentials: "same-origin",
+            headers: {
+              "X-Requested-With": "XMLHttpRequest",
+            },
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) {
+            throw new Error((payload && payload.error) || "Message upload failed.");
+          }
+          window.location.reload();
         } catch (error) {
           sendStatusNode.textContent = error.message || "Encryption failed.";
+          if (sendButton) {
+            sendButton.disabled = false;
+          }
         }
       });
+    }
+
+    if (attachmentInput) {
+      attachmentInput.addEventListener("change", updateAttachmentSelectionPreview);
+      updateAttachmentSelectionPreview();
     }
 
     if (validateFingerprintBtn) {

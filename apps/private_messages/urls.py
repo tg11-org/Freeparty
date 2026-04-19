@@ -6,6 +6,7 @@ from apps.private_messages.views import (
     conversation_detail_view,
     conversation_list_view,
     conversation_updates_view,
+    download_encrypted_attachment_view,
     register_identity_key_view,
     send_encrypted_message_view,
     share_to_dm_view,
@@ -22,6 +23,7 @@ urlpatterns = [
     path("start/<str:handle>/", start_direct_conversation_view, name="start-direct"),
     path("<uuid:conversation_id>/", conversation_detail_view, name="detail"),
     path("<uuid:conversation_id>/updates/", conversation_updates_view, name="updates"),
+    path("<uuid:conversation_id>/attachments/<uuid:attachment_id>/download/", download_encrypted_attachment_view, name="download-attachment"),
     path("<uuid:conversation_id>/send/", send_encrypted_message_view, name="send"),
     path("<uuid:conversation_id>/acknowledge-key/", acknowledge_remote_key_view, name="acknowledge-key"),
 ]

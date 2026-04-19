@@ -3,7 +3,7 @@
 {% block title %}Post by @{{ post.author.handle }} · Freeparty{% endblock %}
 
 {% block og_meta %}
-{% if not post.is_nsfw and not post.is_18plus %}
+{% if not post.is_nsfw and not post.is_16plus and not post.is_18plus %}
   {# Rich OG embed — safe posts only #}
   {% with display=post.author.user.display_name|default:post.author.handle post_url=request.build_absolute_uri %}
     <meta property="og:site_name" content="Freeparty">
@@ -24,7 +24,7 @@
     <meta property="article:author" content="{{ display }}">
   {% endwith %}
 {% else %}
-  {# NSFW/18+ — minimal safe fallback, no image #}
+  {# NSFW/age-restricted — minimal safe fallback, no image #}
   <meta property="og:site_name" content="Freeparty">
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ request.build_absolute_uri }}">

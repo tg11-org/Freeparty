@@ -45,6 +45,22 @@
 
   <div class="field-wrap">
     <label>
+      {{ form.is_under_18 }}
+      This account is for someone under 18.
+    </label>
+    <p class="field-help" style="margin-top:0.35rem;">If enabled, a parent or guardian email will be required so they can verify and manage minor safety settings.</p>
+    {% if form.is_under_18.errors %}<ul class="field-errors">{% for error in form.is_under_18.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.guardian_email.id_for_label }}">Parent or guardian email:</label>
+    {% if form.guardian_email.errors %}<ul class="field-errors">{% for error in form.guardian_email.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.guardian_email }}
+    <p class="field-help">Required for under-18 accounts. The guardian receives an email link to verify and configure age/permission settings.</p>
+  </div>
+
+  <div class="field-wrap">
+    <label>
       {{ form.accept_tos }}
       I agree to the <a href="/terms/" target="_blank" rel="noopener noreferrer">Terms of Service</a>.
     </label>

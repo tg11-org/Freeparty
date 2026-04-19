@@ -1,7 +1,9 @@
 from datetime import timedelta
+import json
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import IntegrityError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 from unittest.mock import patch
@@ -10,7 +12,7 @@ from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 
 from apps.accounts.models import User
-from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageEnvelope, UserIdentityKey, PMRolloutPolicy
+from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageAttachment, EncryptedMessageEnvelope, UserIdentityKey, PMRolloutPolicy
 from apps.private_messages.consumers import DirectMessageConsumer
 from apps.private_messages.routing import websocket_urlpatterns
 from apps.private_messages.security import (
@@ -566,6 +568,77 @@ class PrivateMessagesHtmlFlowTests(TestCase):
         self.assertEqual(envelope.recipient_actor, self.bob.actor)
         self.assertEqual(envelope.sender_key_id, "alice-key-1")
         self.assertEqual(envelope.recipient_key_id, "bob-key-1")
+
+    def test_send_encrypted_message_stores_encrypted_attachment(self):
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        UserIdentityKey.objects.create(
+            actor=self.alice.actor,
+            key_id="alice-key-1",
+            public_key="alice-public-key",
+            fingerprint_hex="a" * 64,
+        )
+        UserIdentityKey.objects.create(
+            actor=self.bob.actor,
+            key_id="bob-key-1",
+            public_key="bob-public-key",
+            fingerprint_hex="b" * 64,
+        )
+
+        upload = SimpleUploadedFile("attach-1.bin", b"encrypted-blob", content_type="application/octet-stream")
+        self.client.force_login(self.alice)
+        response = self.client.post(
+            f"/messages/{conversation.id}/send/",
+            {
+                "ciphertext": "base64:encrypted-payload",
+                "message_nonce": "nonce-123",
+                "client_message_id": "client-attachment-1",
+                "attachment_manifest": json.dumps([
+                    {
+                        "client_attachment_id": "attach-1",
+                        "encrypted_size": len(b"encrypted-blob"),
+                    }
+                ]),
+                "encrypted_attachments": upload,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        envelope = EncryptedMessageEnvelope.objects.get(conversation=conversation)
+        attachment = EncryptedMessageAttachment.objects.get(envelope=envelope)
+        self.assertEqual(attachment.client_attachment_id, "attach-1")
+        self.assertEqual(attachment.encrypted_size, len(b"encrypted-blob"))
+
+    def test_download_encrypted_attachment_requires_conversation_participant(self):
+        conversation = create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        envelope = store_encrypted_message(
+            conversation=conversation,
+            sender=self.alice.actor,
+            recipient_actor=self.bob.actor,
+            ciphertext="base64:ciphertext",
+            message_nonce="base64:nonce",
+            sender_key_id="alice-key-1",
+            recipient_key_id="bob-key-1",
+            client_message_id="client-msg-attachment-download",
+        )
+        attachment = EncryptedMessageAttachment.objects.create(
+            envelope=envelope,
+            client_attachment_id="attach-download-1",
+            encrypted_file=SimpleUploadedFile("attach-download-1.bin", b"encrypted-blob", content_type="application/octet-stream"),
+            encrypted_size=len(b"encrypted-blob"),
+        )
+
+        eve = User.objects.create_user(email="eve-pm-download@example.com", username="evepmdl", password="secret123")
+        eve.mark_email_verified()
+        self.client.force_login(eve)
+        response = self.client.get(f"/messages/{conversation.id}/attachments/{attachment.id}/download/")
+        self.assertEqual(response.status_code, 404)
 
     def test_conversation_updates_endpoint_returns_new_envelopes_after_marker(self):
         conversation = create_direct_conversation(

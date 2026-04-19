@@ -9,16 +9,17 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.db import models
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.db import models, transaction
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.utils import timezone
 
 from apps.actors.models import Actor
 from apps.private_messages.forms import EncryptedMessageEnvelopeForm
-from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageEnvelope, UserIdentityKey
+from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageAttachment, EncryptedMessageEnvelope, UserIdentityKey
 from apps.private_messages.security import compute_identicon_seed, compute_safety_fingerprint_hex, has_remote_key_changed
 from apps.private_messages.services import (
     ensure_active_identity_key,
@@ -27,9 +28,11 @@ from apps.private_messages.services import (
     is_private_messages_enabled,
     mark_conversation_read,
     populate_conversation_activity,
+    publish_direct_message_event,
     serialize_encrypted_envelope,
     register_browser_identity_key,
     send_direct_encrypted_message,
+    store_encrypted_attachments,
 )
 from apps.social.models import Block
 from apps.core.pagination import paginate_queryset
@@ -64,7 +67,34 @@ def _public_keys_for_conversation(*, actor, other_participants: list[Actor]) -> 
     return {key.key_id: key.public_key for key in known_keys}
 
 
-def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMessageEnvelopeForm | None = None) -> dict:
+def _serialize_envelope_for_request(*, request: HttpRequest, envelope: EncryptedMessageEnvelope) -> dict:
+    payload = serialize_encrypted_envelope(envelope)
+    payload["attachments"] = [
+        {
+            **attachment_payload,
+            "download_url": reverse(
+                "private_messages:download-attachment",
+                kwargs={"conversation_id": envelope.conversation_id, "attachment_id": attachment_payload["id"]},
+            ),
+        }
+        for attachment_payload in payload.get("attachments", [])
+    ]
+    return payload
+
+
+def _validate_uploaded_attachments(uploaded_attachments, attachment_manifest: list[dict]) -> None:
+    max_files = max(1, int(getattr(settings, "PM_ATTACHMENT_MAX_FILES", 5)))
+    max_bytes = max(1, int(getattr(settings, "PM_ATTACHMENT_MAX_BYTES", 100 * 1024 * 1024)))
+    if len(uploaded_attachments) > max_files:
+        raise ValidationError(f"You can attach up to {max_files} encrypted files per message.")
+    for uploaded in uploaded_attachments:
+        if (getattr(uploaded, "size", 0) or 0) > max_bytes:
+            raise ValidationError(f"Encrypted attachment exceeds the {max_bytes // (1024 * 1024)} MB limit.")
+    if len(uploaded_attachments) != len(attachment_manifest):
+        raise ValidationError("Encrypted attachment uploads do not match the attachment manifest.")
+
+
+def _build_conversation_detail_context(*, request: HttpRequest, actor, conversation, form: EncryptedMessageEnvelopeForm | None = None) -> dict:
     participant_records = list(conversation.participants.all())
     self_participant = next((participant for participant in participant_records if participant.actor_id == actor.id), None)
     other_participants = [participant.actor for participant in participant_records if participant.actor_id != actor.id]
@@ -97,6 +127,7 @@ def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMe
     envelopes = list(
         EncryptedMessageEnvelope.objects.filter(conversation=conversation)
         .select_related("sender", "sender__user")
+        .prefetch_related("attachments")
         .order_by("created_at", "id")
     )
     local_identity_keys = list(
@@ -108,7 +139,7 @@ def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMe
             UserIdentityKey.objects.filter(actor=other_participants[0]).order_by("-created_at")[:5]
         )
     public_keys_by_key_id = _public_keys_for_conversation(actor=actor, other_participants=other_participants)
-    envelope_payloads = [serialize_encrypted_envelope(message) for message in envelopes]
+    envelope_payloads = [_serialize_envelope_for_request(request=request, envelope=message) for message in envelopes]
     latest_envelope = envelopes[-1] if envelopes else None
 
     return {
@@ -145,6 +176,8 @@ def _build_conversation_detail_context(*, actor, conversation, form: EncryptedMe
         "latest_updates_cursor": _serialize_envelope_cursor(latest_envelope),
         "websocket_enabled": bool(getattr(settings, "FEATURE_PM_WEBSOCKET_ENABLED", False)),
         "websocket_url": f"/ws/messages/{conversation.id}/",
+        "attachment_max_files": max(1, int(getattr(settings, "PM_ATTACHMENT_MAX_FILES", 5))),
+        "attachment_max_bytes": max(1, int(getattr(settings, "PM_ATTACHMENT_MAX_BYTES", 100 * 1024 * 1024))),
     }
 
 
@@ -246,12 +279,12 @@ def conversation_detail_view(request: HttpRequest, conversation_id: str) -> Http
         return redirect("private_messages:list")
 
     conversation = get_object_or_404(
-        Conversation.objects.prefetch_related("participants__actor", "participants__actor__profile", "messages"),
+        Conversation.objects.prefetch_related("participants__actor", "participants__actor__profile", "messages__attachments"),
         id=conversation_id,
         participants__actor=actor,
     )
     mark_conversation_read(conversation=conversation, actor=actor)
-    context = _build_conversation_detail_context(actor=actor, conversation=conversation)
+    context = _build_conversation_detail_context(request=request, actor=actor, conversation=conversation)
     context["share_post_id"] = request.GET.get("share_post", "")
     return render(request, "private_messages/detail.html", context)
 
@@ -260,12 +293,15 @@ def conversation_detail_view(request: HttpRequest, conversation_id: str) -> Http
 @require_POST
 def send_encrypted_message_view(request: HttpRequest, conversation_id: str) -> HttpResponse:
     actor = request.user.actor
+    expects_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     if not is_private_messages_enabled():
         messages.error(request, "Private messaging is not enabled yet.")
+        if expects_json:
+            return JsonResponse({"ok": False, "error": "Private messaging is not enabled yet."}, status=400)
         return redirect("private_messages:list")
 
     conversation = get_object_or_404(
-        Conversation.objects.prefetch_related("participants__actor", "participants__actor__profile", "messages"),
+        Conversation.objects.prefetch_related("participants__actor", "participants__actor__profile", "messages__attachments"),
         id=conversation_id,
         participants__actor=actor,
     )
@@ -286,25 +322,63 @@ def send_encrypted_message_view(request: HttpRequest, conversation_id: str) -> H
             f"You have sent {recent_message_count} messages in the current safety window. "
             f"Please wait before sending more messages to this conversation."
         )
+        if expects_json:
+            return JsonResponse({"ok": False, "error": "Rate limit reached. Please wait before sending again."}, status=429)
         return redirect("private_messages:detail", conversation_id=conversation.id)
 
-    form = EncryptedMessageEnvelopeForm(request.POST)
+    form = EncryptedMessageEnvelopeForm(request.POST, request.FILES)
     if form.is_valid():
+        uploaded_attachments = request.FILES.getlist("encrypted_attachments")
         try:
-            send_direct_encrypted_message(
-                conversation=conversation,
-                sender=actor,
-                ciphertext=form.cleaned_data["ciphertext"],
-                message_nonce=form.cleaned_data["message_nonce"],
-                client_message_id=form.cleaned_data["client_message_id"],
-            )
+            _validate_uploaded_attachments(uploaded_attachments, form.cleaned_data["attachment_manifest"])
+            with transaction.atomic():
+                envelope = send_direct_encrypted_message(
+                    conversation=conversation,
+                    sender=actor,
+                    ciphertext=form.cleaned_data["ciphertext"],
+                    message_nonce=form.cleaned_data["message_nonce"],
+                    client_message_id=form.cleaned_data["client_message_id"],
+                    publish_event=False,
+                )
+                store_encrypted_attachments(
+                    envelope=envelope,
+                    uploaded_files=uploaded_attachments,
+                    attachment_manifest=form.cleaned_data["attachment_manifest"],
+                )
+                publish_direct_message_event(envelope)
         except ValidationError as exc:
             form.add_error(None, exc.message)
         else:
-            messages.success(request, "Encrypted message envelope stored.")
+            messages.success(request, "Encrypted message stored.")
+            if expects_json:
+                return JsonResponse({"ok": True})
             return redirect("private_messages:detail", conversation_id=conversation.id)
 
-    return render(request, "private_messages/detail.html", _build_conversation_detail_context(actor=actor, conversation=conversation, form=form))
+    if expects_json:
+        error_list = []
+        for errors in form.errors.values():
+            error_list.extend(errors)
+        return JsonResponse({"ok": False, "error": error_list[0] if error_list else "Unable to store encrypted message."}, status=400)
+    return render(request, "private_messages/detail.html", _build_conversation_detail_context(request=request, actor=actor, conversation=conversation, form=form))
+
+
+@login_required
+@require_GET
+def download_encrypted_attachment_view(request: HttpRequest, conversation_id: str, attachment_id: str) -> HttpResponse:
+    actor = request.user.actor
+    if not is_private_messages_enabled():
+        raise Http404()
+
+    attachment = get_object_or_404(
+        EncryptedMessageAttachment.objects.select_related("envelope", "envelope__conversation"),
+        id=attachment_id,
+        envelope__conversation_id=conversation_id,
+        envelope__conversation__participants__actor=actor,
+    )
+    response = FileResponse(attachment.encrypted_file.open("rb"), as_attachment=True, filename=f"{attachment.client_attachment_id}.bin")
+    response["Content-Type"] = "application/octet-stream"
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 @login_required
@@ -441,7 +515,7 @@ def conversation_updates_view(request: HttpRequest, conversation_id: str) -> Htt
     )
     cursor = (request.GET.get("cursor") or "").strip()
     after = (request.GET.get("after") or "").strip()
-    envelopes_qs = EncryptedMessageEnvelope.objects.filter(conversation=conversation).select_related("sender").order_by("created_at", "id")
+    envelopes_qs = EncryptedMessageEnvelope.objects.filter(conversation=conversation).select_related("sender").prefetch_related("attachments").order_by("created_at", "id")
     parsed_cursor = _parse_envelope_cursor(cursor)
     if cursor and parsed_cursor is None:
         log_interaction_metric(
@@ -495,7 +569,7 @@ def conversation_updates_view(request: HttpRequest, conversation_id: str) -> Htt
     latest_incoming = next((message for message in reversed(envelopes) if message.recipient_actor_id == actor.id), None)
     if latest_incoming is not None:
         mark_conversation_read(conversation=conversation, actor=actor, read_through=latest_incoming.created_at)
-    envelope_payloads = [serialize_encrypted_envelope(message) for message in envelopes]
+    envelope_payloads = [_serialize_envelope_for_request(request=request, envelope=message) for message in envelopes]
     other_participants = [participant.actor for participant in conversation.participants.all() if participant.actor_id != actor.id]
     latest_known = envelopes[-1] if envelopes else conversation.messages.order_by("created_at", "id").last()
     log_interaction_metric(

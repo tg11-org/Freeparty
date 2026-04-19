@@ -21,6 +21,7 @@ from apps.accounts.forms import (
 from apps.accounts.models import AccountActionToken
 from apps.accounts.services import AccountLifecycleService, VerificationService
 from apps.accounts.tasks import send_verification_email
+from apps.profiles.views import initialize_minor_profile_for_signup
 from apps.moderation.services import SecurityAuditService
 
 
@@ -147,9 +148,18 @@ def signup_view(request: HttpRequest) -> HttpResponse:
 	form = SignUpForm(request.POST or None)
 	if request.method == "POST" and form.is_valid():
 		user = form.save()
+		if form.cleaned_data.get("is_under_18"):
+			initialize_minor_profile_for_signup(
+				request,
+				user.actor.profile,
+				form.cleaned_data.get("guardian_email", ""),
+			)
 		login(request, user)
 		send_verification_email.delay(str(user.id))
-		messages.success(request, "Account created. Check your email to verify your address.")
+		if form.cleaned_data.get("is_under_18"):
+			messages.success(request, "Account created. Check your email to verify your address, and ask your parent or guardian to check their email to finish minor account setup.")
+		else:
+			messages.success(request, "Account created. Check your email to verify your address.")
 		return redirect("home")
 	return render(request, "accounts/signup.html", {"form": form})
 

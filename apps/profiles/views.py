@@ -14,9 +14,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from apps.actors.models import Actor
-from apps.profiles.forms import ProfileForm, ProfileLinkForm
+from apps.profiles.forms import GuardianMinorSettingsForm, ProfileForm, ProfileLinkForm
 from apps.profiles.models import (
 	GuardianEmailVerificationToken,
+	GuardianManagementAccessToken,
 	ParentalControlChangeRequest,
 	Profile,
 	ProfileEditHistory,
@@ -25,6 +26,7 @@ from apps.profiles.models import (
 
 
 TOKEN_TTL_HOURS = 24
+MANAGEMENT_LINK_TTL_HOURS = 24 * 7
 PROTECTED_PARENTAL_FIELDS = {
 	"is_private_account",
 	"auto_reveal_spoilers",
@@ -32,6 +34,16 @@ PROTECTED_PARENTAL_FIELDS = {
 	"show_following_count",
 }
 LOCK_CONFIGURATION_FIELDS = {"is_minor_account", "parental_controls_enabled", "guardian_email"}
+
+
+def _issue_guardian_management_access(profile: Profile) -> GuardianManagementAccessToken:
+	token = secrets.token_urlsafe(32)
+	return GuardianManagementAccessToken.objects.create(
+		profile=profile,
+		guardian_email=profile.guardian_email,
+		token=token,
+		expires_at=timezone.now() + timedelta(hours=MANAGEMENT_LINK_TTL_HOURS),
+	)
 
 
 def _issue_guardian_verification(request: HttpRequest, profile: Profile) -> None:
@@ -52,12 +64,22 @@ def _issue_guardian_verification(request: HttpRequest, profile: Profile) -> None
 		message=(
 			f"A Freeparty account (@{child_handle}) added this address as a guardian contact.\n\n"
 			f"Verify this guardian email by visiting: {verify_url}\n\n"
+			"After verification, you will be redirected to the guardian controls page where you can set age details and content permissions.\n\n"
 			"If you did not expect this request, you can ignore this email."
 		),
 		from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
 		recipient_list=[profile.guardian_email],
 		fail_silently=True,
 	)
+
+
+def initialize_minor_profile_for_signup(request: HttpRequest, profile: Profile, guardian_email: str) -> None:
+	profile.is_minor_account = True
+	profile.parental_controls_enabled = True
+	profile.guardian_email = guardian_email.strip().lower()
+	profile.guardian_email_verified_at = None
+	profile.save(update_fields=["is_minor_account", "parental_controls_enabled", "guardian_email", "guardian_email_verified_at", "updated_at"])
+	_issue_guardian_verification(request, profile)
 
 
 def _issue_parental_change_approval(request: HttpRequest, profile: Profile, requested_by, cleaned_data: dict) -> None:
@@ -174,9 +196,10 @@ def verify_guardian_email_view(request: HttpRequest, token: str) -> HttpResponse
 	token_obj.save(update_fields=["used_at", "updated_at"])
 	profile.guardian_email_verified_at = now
 	profile.save(update_fields=["guardian_email_verified_at", "updated_at"])
+	manage_token = _issue_guardian_management_access(profile)
 
 	messages.success(request, f"Guardian email verified for @{profile.actor.handle}.")
-	return redirect("home")
+	return redirect("profiles:guardian_manage", token=manage_token.token)
 
 
 @require_http_methods(["GET"])
@@ -225,6 +248,49 @@ def approve_parental_change_view(request: HttpRequest, token: str) -> HttpRespon
 
 	messages.success(request, f"Parental controls update approved for @{profile.actor.handle}.")
 	return redirect("home")
+
+
+@require_http_methods(["GET", "POST"])
+def guardian_manage_minor_view(request: HttpRequest, token: str) -> HttpResponse:
+	access = GuardianManagementAccessToken.objects.select_related("profile", "profile__actor").filter(token=token).first()
+	if access is None or not access.is_usable:
+		messages.error(request, "Guardian management link is invalid or expired.")
+		return redirect("home")
+
+	profile = access.profile
+	if not profile.guardian_email or profile.guardian_email.lower() != access.guardian_email.lower():
+		messages.error(request, "Guardian management link is no longer valid for the current guardian email.")
+		return redirect("home")
+
+	form = GuardianMinorSettingsForm(request.POST or None, profile=profile)
+	if request.method == "POST" and form.is_valid():
+		profile = form.apply(profile)
+		profile.save(
+			update_fields=[
+				"minor_birthdate_precision",
+				"minor_age_range",
+				"minor_age_years",
+				"minor_age_recorded_at",
+				"minor_birth_year",
+				"minor_birth_month",
+				"minor_birth_day",
+				"guardian_allows_nsfw_underage",
+				"guardian_allows_16plus_underage",
+				"updated_at",
+			],
+		)
+		messages.success(request, f"Guardian settings saved for @{profile.actor.handle}.")
+		return redirect("profiles:guardian_manage", token=access.token)
+
+	return render(
+		request,
+		"profiles/guardian_manage.html",
+		{
+			"form": form,
+			"profile": profile,
+			"access": access,
+		},
+	)
 
 
 @login_required

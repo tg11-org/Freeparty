@@ -13,6 +13,7 @@ from apps.accounts.models import AccountActionToken, User
 from apps.accounts.services import AccountLifecycleService, VerificationService
 from apps.accounts.tasks import _deliver_transactional_email, send_password_reset_email
 from apps.core.models import AsyncTaskExecution
+from apps.profiles.models import GuardianEmailVerificationToken
 
 
 class UserModelTests(TestCase):
@@ -205,6 +206,46 @@ class SignupLegalConsentTests(TestCase):
 		self.assertLessEqual(user.guidelines_accepted_at, timezone.now())
 		self.assertEqual(user.tos_version_accepted, "1.2")
 		self.assertEqual(user.guidelines_version_accepted, "1.3")
+
+	def test_under_18_signup_requires_guardian_email(self):
+		response = self.client.post(
+			self.signup_url,
+			{
+				"email": "minor1@example.com",
+				"username": "minor1",
+				"display_name": "Minor One",
+				"password1": "secret12345",
+				"password2": "secret12345",
+				"accept_tos": "on",
+				"accept_guidelines": "on",
+				"is_under_18": "on",
+			},
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Enter a parent or guardian email for under-18 accounts.")
+
+	def test_under_18_signup_seeds_minor_profile_and_sends_guardian_email(self):
+		response = self.client.post(
+			self.signup_url,
+			{
+				"email": "minor2@example.com",
+				"username": "minor2",
+				"display_name": "Minor Two",
+				"password1": "secret12345",
+				"password2": "secret12345",
+				"accept_tos": "on",
+				"accept_guidelines": "on",
+				"is_under_18": "on",
+				"guardian_email": "parent@example.com",
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		user = User.objects.get(email="minor2@example.com")
+		profile = user.actor.profile
+		self.assertTrue(profile.is_minor_account)
+		self.assertTrue(profile.parental_controls_enabled)
+		self.assertEqual(profile.guardian_email, "parent@example.com")
+		self.assertTrue(GuardianEmailVerificationToken.objects.filter(profile=profile).exists())
 
 
 class AccountLifecycleFlowTests(TestCase):

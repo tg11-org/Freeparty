@@ -12,7 +12,7 @@ import hashlib
 import secrets
 import uuid
 
-from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageEnvelope, UserIdentityKey
+from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageAttachment, EncryptedMessageEnvelope, UserIdentityKey
 
 
 def is_private_messages_enabled() -> bool:
@@ -61,6 +61,14 @@ def serialize_encrypted_envelope(envelope: EncryptedMessageEnvelope) -> dict:
         "message_nonce": envelope.message_nonce,
         "sender_key_id": envelope.sender_key_id,
         "recipient_key_id": envelope.recipient_key_id,
+        "attachments": [
+            {
+                "id": str(attachment.id),
+                "client_attachment_id": attachment.client_attachment_id,
+                "encrypted_size": attachment.encrypted_size,
+            }
+            for attachment in envelope.attachments.all().order_by("created_at", "id")
+        ],
         "created_at": envelope.created_at.isoformat(),
     }
 
@@ -259,6 +267,7 @@ def store_encrypted_message(
     aad_hash: str = "",
     encryption_scheme: str = EncryptedMessageEnvelope.EncryptionScheme.XCHACHA20POLY1305,
     client_message_id: str = "",
+    publish_event: bool = True,
 ) -> EncryptedMessageEnvelope:
     require_private_messages_enabled()
 
@@ -285,11 +294,12 @@ def store_encrypted_message(
         encryption_scheme=encryption_scheme,
         client_message_id=client_message_id,
     )
-    publish_direct_message_event(envelope)
+    if publish_event:
+        publish_direct_message_event(envelope)
     return envelope
 
 
-def send_direct_encrypted_message(*, conversation, sender, ciphertext: str, message_nonce: str, client_message_id: str = "") -> EncryptedMessageEnvelope:
+def send_direct_encrypted_message(*, conversation, sender, ciphertext: str, message_nonce: str, client_message_id: str = "", publish_event: bool = True) -> EncryptedMessageEnvelope:
     require_private_messages_enabled()
 
     # Phase 7.1: Check if conversation is compromised
@@ -344,7 +354,33 @@ def send_direct_encrypted_message(*, conversation, sender, ciphertext: str, mess
         sender_key_id=sender_key.key_id,
         recipient_key_id=recipient_key.key_id,
         client_message_id=client_message_id,
+        publish_event=publish_event,
     )
+
+
+def store_encrypted_attachments(*, envelope: EncryptedMessageEnvelope, uploaded_files, attachment_manifest: list[dict]) -> list[EncryptedMessageAttachment]:
+    if not uploaded_files:
+        return []
+
+    manifest_by_id = {
+        item["client_attachment_id"]: item
+        for item in attachment_manifest
+    }
+    attachments = []
+    for uploaded in uploaded_files:
+        client_attachment_id = (getattr(uploaded, "name", "") or "").rsplit(".", 1)[0].strip()
+        if client_attachment_id not in manifest_by_id:
+            raise ValidationError("Encrypted attachment upload does not match attachment manifest.")
+        attachment = EncryptedMessageAttachment.objects.create(
+            envelope=envelope,
+            client_attachment_id=client_attachment_id,
+            encrypted_file=uploaded,
+            encrypted_size=int(getattr(uploaded, "size", 0) or 0),
+        )
+        attachments.append(attachment)
+    if len(attachments) != len(attachment_manifest):
+        raise ValidationError("Attachment upload count does not match attachment manifest.")
+    return attachments
 
 
 def ensure_active_identity_key(*, actor, rotate: bool = False) -> tuple[UserIdentityKey, bool]:

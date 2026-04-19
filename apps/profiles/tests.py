@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.profiles.models import (
 	GuardianEmailVerificationToken,
+	GuardianManagementAccessToken,
 	ParentalControlChangeRequest,
 	ProfileEditHistory,
 	ProfileLink,
@@ -138,6 +139,48 @@ class ParentalControlsTests(TestCase):
 		token.refresh_from_db()
 		self.assertIsNotNone(profile.guardian_email_verified_at)
 		self.assertIsNotNone(token.used_at)
+		self.assertTrue(GuardianManagementAccessToken.objects.filter(profile=profile).exists())
+		self.assertIn("/profiles/guardian/manage/", response.url)
+
+	def test_guardian_management_page_saves_age_and_permissions(self):
+		profile = self.user.actor.profile
+		profile.is_minor_account = True
+		profile.parental_controls_enabled = True
+		profile.guardian_email = "parent@example.com"
+		profile.guardian_email_verified_at = timezone.now()
+		profile.save(
+			update_fields=[
+				"is_minor_account",
+				"parental_controls_enabled",
+				"guardian_email",
+				"guardian_email_verified_at",
+				"updated_at",
+			],
+		)
+		access = GuardianManagementAccessToken.objects.create(
+			profile=profile,
+			guardian_email="parent@example.com",
+			token="guardian-manage-1",
+			expires_at=timezone.now() + timedelta(hours=24),
+		)
+
+		response = self.client.post(
+			f"/profiles/guardian/manage/{access.token}/",
+			{
+				"minor_birthdate_precision": "month_year",
+				"minor_birth_month": 5,
+				"minor_birth_year": 2012,
+				"guardian_allows_nsfw_underage": "on",
+				"guardian_allows_16plus_underage": "on",
+			},
+		)
+		self.assertEqual(response.status_code, 302)
+		profile.refresh_from_db()
+		self.assertEqual(profile.minor_birthdate_precision, "month_year")
+		self.assertEqual(profile.minor_birth_month, 5)
+		self.assertEqual(profile.minor_birth_year, 2012)
+		self.assertTrue(profile.guardian_allows_nsfw_underage)
+		self.assertTrue(profile.guardian_allows_16plus_underage)
 
 	def test_minor_locked_change_requires_guardian_approval(self):
 		self.client.force_login(self.user)

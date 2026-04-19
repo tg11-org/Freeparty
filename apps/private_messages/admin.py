@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageEnvelope, UserIdentityKey, PMRolloutPolicy, KeyLifecycleAuditLog
+from apps.private_messages.models import Conversation, ConversationParticipant, EncryptedMessageAttachment, EncryptedMessageEnvelope, UserIdentityKey, PMRolloutPolicy, KeyLifecycleAuditLog
 
 
 class ImmutableAdminMixin:
@@ -137,3 +137,10 @@ class EncryptedMessageEnvelopeAdmin(ImmutableAdminMixin, admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+
+
+@admin.register(EncryptedMessageAttachment)
+class EncryptedMessageAttachmentAdmin(ImmutableAdminMixin, admin.ModelAdmin):
+    list_display = ("envelope", "client_attachment_id", "encrypted_size", "created_at")
+    search_fields = ("envelope__id", "client_attachment_id")
+    readonly_fields = ("id", "envelope", "client_attachment_id", "encrypted_file", "encrypted_size", "created_at", "updated_at")

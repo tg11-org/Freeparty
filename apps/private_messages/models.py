@@ -6,6 +6,10 @@ from django.utils import timezone
 from apps.core.models import TimeStampedModel
 
 
+def encrypted_dm_attachment_upload_to(instance: "EncryptedMessageAttachment", filename: str) -> str:
+    return f"dm_attachments/{instance.envelope.conversation_id}/{instance.envelope_id}/{filename}"
+
+
 class Conversation(TimeStampedModel):
     class ConversationType(models.TextChoices):
         DIRECT = "direct", "Direct"
@@ -248,3 +252,23 @@ class EncryptedMessageEnvelope(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"EncryptedMessageEnvelope<{self.id}>"
+
+
+class EncryptedMessageAttachment(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    envelope = models.ForeignKey("private_messages.EncryptedMessageEnvelope", on_delete=models.CASCADE, related_name="attachments")
+    client_attachment_id = models.CharField(max_length=128)
+    encrypted_file = models.FileField(upload_to=encrypted_dm_attachment_upload_to)
+    encrypted_size = models.PositiveBigIntegerField(default=0)
+
+    class Meta(TimeStampedModel.Meta):
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["envelope", "client_attachment_id"], name="uniq_dm_attachment_client_id_per_envelope"),
+        ]
+        indexes = [
+            models.Index(fields=["envelope", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"EncryptedMessageAttachment<{self.id}>"

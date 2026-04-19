@@ -34,6 +34,7 @@ class Post(TimeStampedModel):
 	moderation_state = models.CharField(max_length=24, choices=ModerationState.choices, default=ModerationState.NORMAL)
 	deleted_at = models.DateTimeField(null=True, blank=True)
 	is_nsfw = models.BooleanField(default=False, help_text="Mark as Not Safe For Work (sexual/graphic content).")
+	is_16plus = models.BooleanField(default=False, help_text="Mark as 16+ content (teen/adult themes under EEA-style age gating).")
 	is_18plus = models.BooleanField(default=False, help_text="Mark as 18+ content (adult themes).")
 	hashtags = models.ManyToManyField("posts.Hashtag", through="posts.PostHashtag", related_name="posts", blank=True)
 

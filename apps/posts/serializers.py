@@ -57,6 +57,7 @@ class PostSerializer(serializers.ModelSerializer):
             "quote_of",
             "attachments",
             "is_nsfw",
+            "is_16plus",
             "is_18plus",
             "created_at",
             "updated_at",

@@ -11,7 +11,14 @@ class PostForm(forms.ModelForm):
 
     class Meta:
         model = Post
-        fields = ["content", "spoiler_text", "visibility", "local_only", "is_nsfw", "is_18plus"]
+        fields = ["content", "spoiler_text", "visibility", "local_only", "is_nsfw", "is_16plus", "is_18plus"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["local_only"].label = "Local only"
+        self.fields["is_nsfw"].label = "NSFW"
+        self.fields["is_16plus"].label = "16+"
+        self.fields["is_18plus"].label = "18+"
 
     def clean_attachment(self):
         upload = self.cleaned_data.get("attachment")
@@ -41,6 +48,8 @@ class PostForm(forms.ModelForm):
         cleaned = super().clean()
         content = (cleaned.get("content") or "").strip()
         attachment = cleaned.get("attachment")
+        if cleaned.get("is_16plus") and cleaned.get("is_18plus"):
+            raise forms.ValidationError("Choose either 16+ or 18+ for a post, not both.")
         if not content and not attachment:
             raise forms.ValidationError("Add text or attach media before publishing.")
         cleaned["content"] = content

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Guardian Controls · Freeparty{% endblock %}
+{% block content %}
+<h2>Guardian controls for @{{ profile.actor.handle }}</h2>
+<p style="color:var(--text2);margin-top:0;">Use this page to set the child's stored age details and decide whether underage access can include NSFW or 16+ posts. This does not grant access to 18+ content.</p>
+
+{% if form.non_field_errors %}
+  <ul class="field-errors">
+    {% for error in form.non_field_errors %}
+      <li>{{ error }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+<div class="card" style="padding:1rem;margin-bottom:1rem;display:grid;gap:0.5rem;">
+  <strong>Age storage options</strong>
+  <p style="margin:0;color:var(--text2);">Age range: easiest, but it will not update automatically unless you change it later.</p>
+  <p style="margin:0;color:var(--text2);">Age: changes exactly one year after today’s saved value, even if the child’s birthday is tomorrow.</p>
+  <p style="margin:0;color:var(--text2);">MM/YYYY: treated as the last day of that month for age checks.</p>
+  <p style="margin:0;color:var(--text2);">DD/MM/YYYY: most precise and updates on the exact birthday.</p>
+</div>
+
+<form method="post" style="display:grid;gap:1rem;max-width:48rem;">
+  {% csrf_token %}
+
+  <div class="field-wrap">
+    <label for="{{ form.minor_birthdate_precision.id_for_label }}">{{ form.minor_birthdate_precision.label }}:</label>
+    {% if form.minor_birthdate_precision.errors %}<ul class="field-errors">{% for error in form.minor_birthdate_precision.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.minor_birthdate_precision }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.minor_age_range.id_for_label }}">{{ form.minor_age_range.label }}:</label>
+    {% if form.minor_age_range.errors %}<ul class="field-errors">{% for error in form.minor_age_range.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.minor_age_range }}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.minor_age_years.id_for_label }}">{{ form.minor_age_years.label }}:</label>
+    {% if form.minor_age_years.errors %}<ul class="field-errors">{% for error in form.minor_age_years.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.minor_age_years }}
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem;">
+    <div class="field-wrap">
+      <label for="{{ form.minor_birth_day.id_for_label }}">{{ form.minor_birth_day.label }}:</label>
+      {% if form.minor_birth_day.errors %}<ul class="field-errors">{% for error in form.minor_birth_day.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      {{ form.minor_birth_day }}
+    </div>
+    <div class="field-wrap">
+      <label for="{{ form.minor_birth_month.id_for_label }}">{{ form.minor_birth_month.label }}:</label>
+      {% if form.minor_birth_month.errors %}<ul class="field-errors">{% for error in form.minor_birth_month.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      {{ form.minor_birth_month }}
+    </div>
+    <div class="field-wrap">
+      <label for="{{ form.minor_birth_year.id_for_label }}">{{ form.minor_birth_year.label }}:</label>
+      {% if form.minor_birth_year.errors %}<ul class="field-errors">{% for error in form.minor_birth_year.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      {{ form.minor_birth_year }}
+    </div>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.guardian_allows_nsfw_underage }}
+    <label class="toggle-label" for="{{ form.guardian_allows_nsfw_underage.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Allow NSFW for this minor</span>
+        <span class="toggle-help">Allows NSFW-gated posts for this minor account. This does not enable 18+ content.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.guardian_allows_16plus_underage }}
+    <label class="toggle-label" for="{{ form.guardian_allows_16plus_underage.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Allow 16+ posts for this minor</span>
+        <span class="toggle-help">Useful if the child is younger than 16 but you still want 16+ posts visible. This still does not enable 18+ content.</span>
+      </span>
+    </label>
+  </div>
+
+  <button class="button" type="submit">Save guardian settings</button>
+</form>
+{% endblock %}

@@ -105,6 +105,22 @@ class PostTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Add text or attach media before publishing.")
 
+	def test_create_post_rejects_conflicting_age_gates(self):
+		client = Client()
+		client.force_login(self.user)
+		response = client.post(
+			"/posts/new/",
+			{
+				"content": "Age gated post",
+				"visibility": Post.Visibility.PUBLIC,
+				"is_16plus": "on",
+				"is_18plus": "on",
+			},
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Choose either 16+ or 18+ for a post, not both.")
+		self.assertFalse(Post.objects.filter(content="Age gated post").exists())
+
 	@override_settings(FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED=True)
 	def test_create_post_blocked_for_throttled_actor(self):
 		TrustSignal.objects.create(

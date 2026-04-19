@@ -15,6 +15,8 @@ class SignUpForm(forms.ModelForm):
     password2 = forms.CharField(widget=forms.PasswordInput)
     accept_tos = forms.BooleanField(required=True, error_messages={"required": "You must accept the Terms of Service."})
     accept_guidelines = forms.BooleanField(required=True, error_messages={"required": "You must accept the Community Guidelines."})
+    is_under_18 = forms.BooleanField(required=False, label="This account is for someone under 18")
+    guardian_email = forms.EmailField(required=False, label="Parent or guardian email")
 
     class Meta:
         model = User
@@ -24,6 +26,8 @@ class SignUpForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data.get("password1") != cleaned_data.get("password2"):
             raise forms.ValidationError("Passwords do not match.")
+        if cleaned_data.get("is_under_18") and not (cleaned_data.get("guardian_email") or "").strip():
+            self.add_error("guardian_email", "Enter a parent or guardian email for under-18 accounts.")
         return cleaned_data
 
     def save(self, commit=True):

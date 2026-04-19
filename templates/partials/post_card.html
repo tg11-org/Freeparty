@@ -26,12 +26,35 @@
       {% endwith %}
       <span>·</span>
       <time datetime="{{ post.created_at|date:"c" }}" title="{{ post.created_at }}">{{ post.created_at|timesince }} ago</time>
+      {% if post.is_16plus %}<span style="display:inline-block;padding:0.1rem 0.4rem;border-radius:4px;background:#2563eb;color:#fff;font-size:0.7rem;font-weight:700;line-height:1.4;">16+</span>{% endif %}
       {% if post.is_18plus %}<span style="display:inline-block;padding:0.1rem 0.4rem;border-radius:4px;background:#7c3aed;color:#fff;font-size:0.7rem;font-weight:700;line-height:1.4;">18+</span>{% endif %}
       {% if post.is_nsfw %}<span style="display:inline-block;padding:0.1rem 0.4rem;border-radius:4px;background:var(--danger);color:#fff;font-size:0.7rem;font-weight:700;line-height:1.4;">NSFW</span>{% endif %}
     </div>
 
+    {% if user.is_authenticated and user.actor.profile.is_minor_account and post.is_18plus and not user.actor.profile.allows_18plus_content %}
+      <div class="content-gate" data-revealed="false" data-gate-type="age-blocked">
+        <button class="btn content-gate-btn" type="button" disabled>18+ content blocked</button>
+        <div class="content-gate-body">
+          <p class="post-content multiline-scroll multiline-scroll-lg" style="color:var(--text2);">This post is marked 18+ and is not available to this minor account.</p>
+        </div>
+      </div>
+    {% elif user.is_authenticated and user.actor.profile.is_minor_account and post.is_16plus and not post.is_18plus and not user.actor.profile.allows_16plus_content %}
+      <div class="content-gate" data-revealed="false" data-gate-type="age-blocked">
+        <button class="btn content-gate-btn" type="button" disabled>16+ content blocked</button>
+        <div class="content-gate-body">
+          <p class="post-content multiline-scroll multiline-scroll-lg" style="color:var(--text2);">This post is marked 16+. A guardian must allow 16+ content before this minor account can view it.</p>
+        </div>
+      </div>
+    {% elif user.is_authenticated and user.actor.profile.is_minor_account and post.is_nsfw and not user.actor.profile.allows_nsfw_content %}
+      <div class="content-gate" data-revealed="false" data-gate-type="age-blocked">
+        <button class="btn content-gate-btn" type="button" disabled>NSFW blocked</button>
+        <div class="content-gate-body">
+          <p class="post-content multiline-scroll multiline-scroll-lg" style="color:var(--text2);">This post is marked NSFW. A guardian must allow NSFW content before this minor account can view it.</p>
+        </div>
+      </div>
+
     {# ── Spoiler wrapper ─────────────────────────────────────────── #}
-    {% if post.spoiler_text %}
+    {% elif post.spoiler_text %}
       <div class="content-gate" data-revealed="{% if user.is_authenticated and user.actor.profile.auto_reveal_spoilers %}true{% else %}false{% endif %}" data-gate-type="spoiler">
         {% if not user.is_authenticated or not user.actor.profile.auto_reveal_spoilers %}
           <button class="btn content-gate-btn" type="button"
