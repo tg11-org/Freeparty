@@ -219,6 +219,7 @@ What it does:
 - static collection uses `collectstatic --clear` to replace stale or partial files from failed prior runs
 - optional `--reset-db` does `down --volumes --remove-orphans` before startup (destructive for DB data)
 - `scripts/fix_permissions.sh` can repair host ownership/permissions for bind-mounted runtime dirs (`staticfiles`, `media`)
+- `scripts/verify_deploy.sh` runs `manage.py check`, checks for model drift, and probes `/health/live/`, `/health/ready/`, `/api/v1/health/live/`, and `/api/v1/health/ready/`
 
 Run Freeparty as a systemd service (recommended on servers):
 
@@ -255,6 +256,13 @@ docker compose exec web python manage.py createsuperuser
 
 - Web: `http://localhost:8000`
 - Admin: `http://localhost:8000/admin/`
+
+## CI and Smoke Coverage
+
+- `.github/workflows/ci.yml` runs Django checks, migration drift detection, the existing server-side test suite, and an opt-in Playwright browser smoke job.
+- Browser smoke coverage lives in `apps/core/test_browser_smoke.py` and currently exercises signup-page minor controls plus guardian rejection from the review page.
+- Optional production error aggregation can be enabled with `SENTRY_DSN` plus `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE`, and `SENTRY_PROFILES_SAMPLE_RATE`.
+- CSP can stay report-only or move to enforced mode with `CSP_REPORT_ONLY_*` and `CSP_ENFORCE_*`.
 
 ## Local Setup without Docker
 

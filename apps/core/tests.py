@@ -164,6 +164,20 @@ class RequestObservabilityMiddlewareTests(SimpleTestCase):
 
 class SecurityHeadersMiddlewareTests(TestCase):
     @override_settings(
+        CSP_ENFORCE_ENABLED=True,
+        CSP_ENFORCE_POLICY="default-src 'self'; object-src 'none'",
+        CSP_REPORT_ONLY_ENABLED=True,
+        CSP_REPORT_ONLY_POLICY="default-src 'self'",
+        SECURE_REFERRER_POLICY="strict-origin-when-cross-origin",
+    )
+    def test_sets_enforced_csp_and_skips_report_only_when_enforced(self):
+        response = self.client.get("/health/live/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Referrer-Policy"], "strict-origin-when-cross-origin")
+        self.assertEqual(response["Content-Security-Policy"], "default-src 'self'; object-src 'none'")
+        self.assertNotIn("Content-Security-Policy-Report-Only", response)
+
+    @override_settings(
         CSP_REPORT_ONLY_ENABLED=True,
         CSP_REPORT_ONLY_POLICY="default-src 'self'",
         SECURE_REFERRER_POLICY="strict-origin-when-cross-origin",

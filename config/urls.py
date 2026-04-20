@@ -12,6 +12,9 @@ def custom_404(request, exception=None):
 
 handler404 = "config.urls.custom_404"
 
+def trigger_error(request):
+    division_by_zero = 1 / 0
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.core.urls")),
@@ -24,6 +27,7 @@ urlpatterns = [
     path("messages/", include("apps.private_messages.urls")),
     path("moderation/", include("apps.moderation.urls")),
     path("api/v1/", include("config.api_urls")),
+    path("sentry-debug/", trigger_error),  # Endpoint to test Sentry error tracking
 ]
 
 if settings.DEBUG:

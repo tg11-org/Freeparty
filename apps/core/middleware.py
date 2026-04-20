@@ -77,9 +77,19 @@ class SecurityHeadersMiddleware:
         if referrer_policy and "Referrer-Policy" not in response:
             response["Referrer-Policy"] = referrer_policy
 
+        csp_enforce_policy = (getattr(settings, "CSP_ENFORCE_POLICY", "") or "").strip()
+        csp_enforce_enabled = bool(getattr(settings, "CSP_ENFORCE_ENABLED", False))
+        if csp_enforce_enabled and csp_enforce_policy and "Content-Security-Policy" not in response:
+            response["Content-Security-Policy"] = csp_enforce_policy
+
         csp_policy = (getattr(settings, "CSP_REPORT_ONLY_POLICY", "") or "").strip()
         csp_report_only_enabled = bool(getattr(settings, "CSP_REPORT_ONLY_ENABLED", False))
-        if csp_report_only_enabled and csp_policy and "Content-Security-Policy-Report-Only" not in response:
+        if (
+            not csp_enforce_enabled
+            and csp_report_only_enabled
+            and csp_policy
+            and "Content-Security-Policy-Report-Only" not in response
+        ):
             response["Content-Security-Policy-Report-Only"] = csp_policy
 
         return response

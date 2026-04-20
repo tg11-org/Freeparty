@@ -7,6 +7,34 @@ from pathlib import Path
 from celery.schedules import crontab
 import environ
 
+import sentry_sdk
+sentry_sdk.init(
+    dsn="https://90a1db8a3565366a451e29da1498fb35@o4511250973196288.ingest.us.sentry.io/4511250976604160",
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+    # Enable sending logs to Sentry
+    enable_logs=True,
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for tracing.
+    traces_sample_rate=1.0,
+    # Set profile_session_sample_rate to 1.0 to profile 100%
+    # of profile sessions.
+    profile_session_sample_rate=1.0,
+    # Set profile_lifecycle to "trace" to automatically
+    # run the profiler on when there is an active transaction
+    profile_lifecycle="trace",
+)
+
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.django import DjangoIntegration
+except ImportError:  # pragma: no cover - optional at runtime until dependencies are installed
+    sentry_sdk = None
+    CeleryIntegration = None
+    DjangoIntegration = None
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 env = environ.Env(
@@ -236,6 +264,15 @@ CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 SECURE_REFERRER_POLICY = env("SECURE_REFERRER_POLICY", default="strict-origin-when-cross-origin")
+CSP_ENFORCE_ENABLED = env.bool("CSP_ENFORCE_ENABLED", default=False)
+CSP_ENFORCE_POLICY = env(
+    "CSP_ENFORCE_POLICY",
+    default=(
+        "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+        "img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'"
+    ),
+)
 CSP_REPORT_ONLY_ENABLED = env.bool("CSP_REPORT_ONLY_ENABLED", default=False)
 CSP_REPORT_ONLY_POLICY = env(
     "CSP_REPORT_ONLY_POLICY",
@@ -307,6 +344,25 @@ DEAD_LETTER_REPLAY_MAX_COUNT = env.int("DEAD_LETTER_REPLAY_MAX_COUNT", default=5
 DEAD_LETTER_REPLAY_COOLDOWN_SECONDS = env.int("DEAD_LETTER_REPLAY_COOLDOWN_SECONDS", default=300)
 FEDERATION_SHARED_SECRET = env.str("FEDERATION_SHARED_SECRET", default="")
 FEDERATION_SIGNATURE_MAX_AGE_SECONDS = env.int("FEDERATION_SIGNATURE_MAX_AGE_SECONDS", default=300)
+SENTRY_DSN = env("SENTRY_DSN", default="")
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="development" if DEBUG else "production")
+SENTRY_RELEASE = env("SENTRY_RELEASE", default="")
+SENTRY_TRACES_SAMPLE_RATE = env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0)
+SENTRY_PROFILES_SAMPLE_RATE = env.float("SENTRY_PROFILES_SAMPLE_RATE", default=0.0)
+
+if SENTRY_DSN and sentry_sdk is not None:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE or None,
+        send_default_pii=False,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        profiles_sample_rate=SENTRY_PROFILES_SAMPLE_RATE,
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(),
+        ],
+    )
 
 if ACCOUNT_PURGE_ENABLED:
     CELERY_BEAT_SCHEDULE = {
