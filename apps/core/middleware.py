@@ -4,6 +4,7 @@ import logging
 from time import perf_counter
 from uuid import uuid4
 
+import sentry_sdk
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 
@@ -20,6 +21,11 @@ class RequestObservabilityMiddleware:
         request_id = request.headers.get("X-Request-ID", "").strip() or uuid4().hex
         request.request_id = request_id
         user_id = request.user.id if getattr(request, "user", None) and request.user.is_authenticated else None
+
+        if user_id is not None:
+            sentry_sdk.set_user({"id": str(user_id)})
+        else:
+            sentry_sdk.set_user(None)
 
         start = perf_counter()
         try:

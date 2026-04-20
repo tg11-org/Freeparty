@@ -4,6 +4,8 @@ import logging
 from contextlib import contextmanager
 from time import perf_counter
 
+import sentry_sdk
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +23,12 @@ def observe_celery_task(task, *, correlation_id: str | None = None):
         task_name,
         task_id,
         correlation_id,
+    )
+    sentry_sdk.add_breadcrumb(
+        message=f"task_start {task_name}",
+        category="celery",
+        level="info",
+        data={"task_id": task_id, "correlation_id": correlation_id},
     )
     start = perf_counter()
     try:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import sentry_sdk
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,4 +28,10 @@ def log_interaction_metric(
         actor_id,
         target_id,
         detail,
+    )
+    sentry_sdk.add_breadcrumb(
+        message=f"interaction {name}",
+        category="interaction",
+        level="info" if success else "warning",
+        data={"success": success, "duration_ms": duration_ms, "status_code": status_code, "detail": detail},
     )

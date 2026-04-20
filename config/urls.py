@@ -27,9 +27,9 @@ urlpatterns = [
     path("messages/", include("apps.private_messages.urls")),
     path("moderation/", include("apps.moderation.urls")),
     path("api/v1/", include("config.api_urls")),
-    path("sentry-debug/", trigger_error),  # Endpoint to test Sentry error tracking
 ]
 
 if settings.DEBUG:
+    urlpatterns += [path("sentry-debug/", trigger_error)]
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += staticfiles_urlpatterns()

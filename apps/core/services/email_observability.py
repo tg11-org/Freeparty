@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import sentry_sdk
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,4 +30,10 @@ def log_smtp_delivery_event(
         max_retries,
         will_retry,
         error,
+    )
+    sentry_sdk.add_breadcrumb(
+        message=f"smtp_delivery {event} task={task_name}",
+        category="email",
+        level="error" if error else "info",
+        data={"recipient_count": recipient_count, "attempt": attempt, "will_retry": will_retry, "error": error},
     )
