@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.core.validators import RegexValidator
 from django.db import models
@@ -217,3 +218,57 @@ class TOTPDevice(TimeStampedModel):
 
 	def __str__(self) -> str:
 		return f"TOTPDevice({self.user_id}, verified={self.verified})"
+
+
+class RecoveryCode(TimeStampedModel):
+	"""One-time recovery codes for users enrolled in TOTP MFA."""
+
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	user = models.ForeignKey(
+		"accounts.User",
+		on_delete=models.CASCADE,
+		related_name="recovery_codes",
+	)
+	code_hash = models.CharField(max_length=255)
+	used_at = models.DateTimeField(null=True, blank=True)
+
+	class Meta:
+		indexes = [models.Index(fields=["user", "used_at"])]
+
+	@staticmethod
+	def normalize_code(code: str) -> str:
+		return "".join(ch for ch in (code or "").upper() if ch.isalnum())
+
+	@classmethod
+	def generate_plaintext_codes(cls, *, count: int = 8) -> list[str]:
+		import secrets
+
+		alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+		codes: list[str] = []
+		for _ in range(count):
+			chunk_a = "".join(secrets.choice(alphabet) for _ in range(4))
+			chunk_b = "".join(secrets.choice(alphabet) for _ in range(4))
+			codes.append(f"{chunk_a}-{chunk_b}")
+		return codes
+
+	@classmethod
+	def replace_codes_for_user(cls, *, user, count: int = 8) -> list[str]:
+		plaintext_codes = cls.generate_plaintext_codes(count=count)
+		cls.objects.filter(user=user).delete()
+		cls.objects.bulk_create(
+			[
+				cls(user=user, code_hash=make_password(cls.normalize_code(code)))
+				for code in plaintext_codes
+			]
+		)
+		return plaintext_codes
+
+	def matches(self, submitted_code: str) -> bool:
+		return check_password(self.normalize_code(submitted_code), self.code_hash)
+
+	def mark_used(self) -> None:
+		self.used_at = timezone.now()
+		self.save(update_fields=["used_at", "updated_at"])
+
+	def __str__(self) -> str:
+		return f"RecoveryCode({self.user_id}, used={self.used_at is not None})"

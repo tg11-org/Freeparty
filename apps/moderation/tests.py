@@ -134,6 +134,7 @@ class ModerationWorkflowTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "DMCA / IP Complaint")
 		self.assertContains(response, "Posting of a Minor")
+		self.assertContains(response, "report-severity-map")
 
 	def test_report_submission_derives_severity_from_reason(self):
 		self.client.force_login(self.reporter)

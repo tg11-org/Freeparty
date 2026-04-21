@@ -9,7 +9,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.accounts.models import AccountActionToken, User
+from apps.accounts.models import AccountActionToken, RecoveryCode, TOTPDevice, User
 from apps.accounts.services import AccountLifecycleService, VerificationService
 from apps.accounts.tasks import _deliver_transactional_email, send_password_reset_email
 from apps.core.models import AsyncTaskExecution
@@ -45,13 +45,18 @@ class LogoutViewTests(TestCase):
 			password="secret123"
 		)
 		self.logout_url = reverse("accounts:logout")
-		self.home_url = reverse("home")
+		self.logged_out_url = reverse("accounts:logged-out")
 
-	def test_logout_redirects_to_home(self):
-		"""Test that logout view redirects to home page"""
+	def test_logout_redirects_to_logged_out_page(self):
+		"""Test that logout redirects to the logged-out confirmation page."""
 		self.client.login(username="logoutuser", password="secret123")
 		response = self.client.post(self.logout_url)
-		self.assertRedirects(response, self.home_url)
+		self.assertRedirects(response, self.logged_out_url)
+
+	def test_logged_out_page_renders_confirmation_message(self):
+		response = self.client.get(self.logged_out_url)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "You have been successfully logged out")
 
 
 class LoginViewTests(TestCase):
@@ -59,6 +64,53 @@ class LoginViewTests(TestCase):
 		response = self.client.get(reverse("accounts:login"))
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, reverse("accounts:password-reset"))
+
+
+class RecoveryCodeFlowTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(
+			email="mfa@example.com",
+			username="mfauser",
+			password="secret123",
+		)
+		self.user.mark_email_verified()
+
+	@patch("pyotp.TOTP.verify", return_value=True)
+	def test_totp_enrollment_generates_recovery_codes(self, _mock_verify):
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse("accounts:totp-enroll"),
+			{"secret": "JBSWY3DPEHPK3PXP", "code": "123456"},
+		)
+		self.assertRedirects(response, reverse("accounts:recovery-codes"))
+		self.assertTrue(TOTPDevice.objects.filter(user=self.user, verified=True).exists())
+		self.assertEqual(RecoveryCode.objects.filter(user=self.user, used_at__isnull=True).count(), 8)
+		codes_page = self.client.get(reverse("accounts:recovery-codes"))
+		self.assertEqual(codes_page.status_code, 200)
+		self.assertContains(codes_page, "unused recovery codes stored for this account")
+
+	def test_totp_confirm_accepts_recovery_code(self):
+		TOTPDevice.objects.create(user=self.user, secret="JBSWY3DPEHPK3PXP", verified=True)
+		codes = RecoveryCode.replace_codes_for_user(user=self.user)
+		session = self.client.session
+		session["totp_pending_user_id"] = str(self.user.id)
+		session.save()
+
+		response = self.client.post(reverse("accounts:totp-confirm"), {"code": codes[0]})
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.id))
+		self.assertEqual(RecoveryCode.objects.filter(user=self.user, used_at__isnull=True).count(), 7)
+
+	def test_regenerate_recovery_codes_replaces_existing_set(self):
+		self.client.force_login(self.user)
+		TOTPDevice.objects.create(user=self.user, secret="JBSWY3DPEHPK3PXP", verified=True)
+		old_codes = RecoveryCode.replace_codes_for_user(user=self.user)
+
+		response = self.client.post(reverse("accounts:recovery-codes-regenerate"))
+		self.assertRedirects(response, reverse("accounts:recovery-codes"))
+		self.assertEqual(RecoveryCode.objects.filter(user=self.user, used_at__isnull=True).count(), 8)
+		self.assertNotEqual(self.client.session.get("totp_recovery_codes"), old_codes)
 
 
 class PasswordResetAsyncDeliveryTests(TestCase):

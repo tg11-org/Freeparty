@@ -22,7 +22,8 @@
     {% endfor %}
   </select>
 
-  <p style="margin:0;color:var(--text2);font-size:0.92rem;">Severity preview: <strong>{{ severity_preview|title }}</strong></p>
+  {{ severity_by_reason|json_script:"report-severity-map" }}
+  <p style="margin:0;color:var(--text2);font-size:0.92rem;">Severity preview: <strong id="severity-preview-value">{{ severity_preview|title }}</strong></p>
 
   <label for="description"><strong>Details</strong></label>
   <textarea id="description" name="description" rows="6" placeholder="Add context, evidence summary, timestamps, or URLs when relevant.">{{ description }}</textarea>
@@ -32,5 +33,24 @@
     <a class="btn" href="javascript:history.back()">Cancel</a>
   </div>
 </form>
+
+<script>
+  (() => {
+    const reasonSelect = document.getElementById("reason");
+    const severityPreview = document.getElementById("severity-preview-value");
+    const severityMapNode = document.getElementById("report-severity-map");
+    if (!reasonSelect || !severityPreview || !severityMapNode) {
+      return;
+    }
+    const severityMap = JSON.parse(severityMapNode.textContent || "{}");
+    const toTitleCase = (value) => value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : "Medium";
+    const updateSeverityPreview = () => {
+      const nextSeverity = severityMap[reasonSelect.value] || "medium";
+      severityPreview.textContent = toTitleCase(nextSeverity);
+    };
+    reasonSelect.addEventListener("change", updateSeverityPreview);
+    updateSeverityPreview();
+  })();
+</script>
 </section>
 {% endblock %}

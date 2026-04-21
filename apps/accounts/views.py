@@ -27,6 +27,7 @@ from apps.moderation.services import SecurityAuditService
 
 
 _TOTP_PENDING_SESSION_KEY = "totp_pending_user_id"
+_TOTP_RECOVERY_CODES_SESSION_KEY = "totp_recovery_codes"
 
 
 @method_decorator(ratelimit(key="ip", rate="10/m", block=True), name="dispatch")
@@ -101,7 +102,12 @@ class RateLimitedLoginView(LoginView):
 
 
 class RateLimitedLogoutView(LogoutView):
-	next_page = "home"
+	next_page = reverse_lazy("accounts:logged-out")
+
+
+@require_http_methods(["GET"])
+def logged_out_view(request: HttpRequest) -> HttpResponse:
+	return render(request, "accounts/logged_out.html")
 
 
 @method_decorator(ratelimit(key="ip", rate="5/m", block=True), name="dispatch")
@@ -305,6 +311,7 @@ def account_lifecycle_view(request: HttpRequest) -> HttpResponse:
 			"deactivation_retention_days": int(getattr(settings, "ACCOUNT_DEACTIVATION_RETENTION_DAYS", 365)),
 			"deletion_retention_days": int(getattr(settings, "ACCOUNT_DELETION_RETENTION_DAYS", 30)),
 			"totp_device": totp_device,
+			"recovery_code_count": request.user.recovery_codes.filter(used_at__isnull=True).count() if totp_device and totp_device.verified else 0,
 		},
 	)
 
@@ -344,7 +351,7 @@ def enroll_totp_view(request: HttpRequest) -> HttpResponse:
 	import base64
 	import pyotp
 	import qrcode
-	from apps.accounts.models import TOTPDevice
+	from apps.accounts.models import RecoveryCode, TOTPDevice
 
 	# If already enrolled and verified, redirect to settings.
 	try:
@@ -367,8 +374,10 @@ def enroll_totp_view(request: HttpRequest) -> HttpResponse:
 				user=request.user,
 				defaults={"secret": secret, "verified": True},
 			)
-			messages.success(request, "Two-factor authentication enabled successfully.")
-			return redirect("accounts:manage")
+			recovery_codes = RecoveryCode.replace_codes_for_user(user=request.user)
+			request.session[_TOTP_RECOVERY_CODES_SESSION_KEY] = recovery_codes
+			messages.success(request, "Two-factor authentication enabled successfully. Save your recovery codes now.")
+			return redirect("accounts:recovery-codes")
 		else:
 			messages.error(request, "Invalid code. Please try again.")
 			# Fall through to re-render with same secret.
@@ -395,7 +404,7 @@ def enroll_totp_view(request: HttpRequest) -> HttpResponse:
 def totp_confirm_login_view(request: HttpRequest) -> HttpResponse:
 	"""Second step of login: verify TOTP code for users with an enrolled device."""
 	import pyotp
-	from apps.accounts.models import TOTPDevice, User
+	from apps.accounts.models import RecoveryCode, TOTPDevice
 
 	pending_id = request.session.get(_TOTP_PENDING_SESSION_KEY)
 	if not pending_id:
@@ -414,17 +423,76 @@ def totp_confirm_login_view(request: HttpRequest) -> HttpResponse:
 			del request.session[_TOTP_PENDING_SESSION_KEY]
 			login(request, device.user, backend="django.contrib.auth.backends.ModelBackend")
 			return redirect(settings.LOGIN_REDIRECT_URL)
-		else:
-			messages.error(request, "Invalid code. Please try again.")
 
-	return render(request, "accounts/totp_confirm.html", {})
+		for recovery_code in RecoveryCode.objects.filter(user_id=pending_id, used_at__isnull=True).order_by("created_at"):
+			if recovery_code.matches(code):
+				recovery_code.mark_used()
+				del request.session[_TOTP_PENDING_SESSION_KEY]
+				login(request, device.user, backend="django.contrib.auth.backends.ModelBackend")
+				messages.warning(request, "Signed in with a recovery code. That code has now been consumed.")
+				return redirect(settings.LOGIN_REDIRECT_URL)
+
+		messages.error(request, "Invalid authenticator or recovery code. Please try again.")
+
+	return render(
+		request,
+		"accounts/totp_confirm.html",
+		{"recovery_code_count": RecoveryCode.objects.filter(user_id=pending_id, used_at__isnull=True).count()},
+	)
+
+
+@login_required
+@require_http_methods(["GET"])
+def recovery_codes_view(request: HttpRequest) -> HttpResponse:
+	from apps.accounts.models import TOTPDevice
+
+	try:
+		device = request.user.totp_device
+	except TOTPDevice.DoesNotExist:
+		messages.error(request, "Enable two-factor authentication before managing recovery codes.")
+		return redirect("accounts:manage")
+
+	if not device.verified:
+		messages.error(request, "Finish enabling two-factor authentication first.")
+		return redirect("accounts:totp-enroll")
+
+	recovery_codes = request.session.pop(_TOTP_RECOVERY_CODES_SESSION_KEY, None)
+	return render(
+		request,
+		"accounts/recovery_codes.html",
+		{
+			"recovery_codes": recovery_codes,
+			"remaining_recovery_code_count": request.user.recovery_codes.filter(used_at__isnull=True).count(),
+		},
+	)
+
+
+@login_required
+@require_http_methods(["POST"])
+def regenerate_recovery_codes_view(request: HttpRequest) -> HttpResponse:
+	from apps.accounts.models import RecoveryCode, TOTPDevice
+
+	try:
+		device = request.user.totp_device
+	except TOTPDevice.DoesNotExist:
+		messages.error(request, "Enable two-factor authentication before generating recovery codes.")
+		return redirect("accounts:manage")
+
+	if not device.verified:
+		messages.error(request, "Finish enabling two-factor authentication first.")
+		return redirect("accounts:totp-enroll")
+
+	recovery_codes = RecoveryCode.replace_codes_for_user(user=request.user)
+	request.session[_TOTP_RECOVERY_CODES_SESSION_KEY] = recovery_codes
+	messages.success(request, "Recovery codes regenerated. Save the new set now; the old codes no longer work.")
+	return redirect("accounts:recovery-codes")
 
 
 @login_required
 @require_http_methods(["POST"])
 def disable_totp_view(request: HttpRequest) -> HttpResponse:
 	"""Remove the user's TOTP device."""
-	from apps.accounts.models import TOTPDevice
+	from apps.accounts.models import RecoveryCode, TOTPDevice
 
 	try:
 		device = request.user.totp_device
@@ -432,6 +500,8 @@ def disable_totp_view(request: HttpRequest) -> HttpResponse:
 		messages.error(request, "No two-factor device found.")
 		return redirect("accounts:manage")
 
+	RecoveryCode.objects.filter(user=request.user).delete()
 	device.delete()
+	request.session.pop(_TOTP_RECOVERY_CODES_SESSION_KEY, None)
 	messages.success(request, "Two-factor authentication disabled.")
 	return redirect("accounts:manage")

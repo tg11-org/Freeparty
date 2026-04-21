@@ -16,6 +16,10 @@ from apps.posts.models import Attachment, Post
 
 
 def _build_report_context(*, target_actor=None, target_post=None, selected_reason: str = "", description: str = "") -> dict:
+	severity_by_reason = {
+		value: Report.severity_for_reason(value)
+		for value, _label in Report.Reason.choices
+	}
 	return {
 		"target_actor": target_actor,
 		"target_post": target_post,
@@ -23,6 +27,7 @@ def _build_report_context(*, target_actor=None, target_post=None, selected_reaso
 		"selected_reason": Report.normalize_reason(selected_reason),
 		"description": description,
 		"severity_preview": Report.severity_for_reason(selected_reason),
+		"severity_by_reason": severity_by_reason,
 	}
 
 

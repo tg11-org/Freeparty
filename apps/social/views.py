@@ -18,7 +18,7 @@ from apps.moderation.services import ActionVelocityTracker, AdaptiveAbuseControl
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Follow, Like, Repost
+from apps.social.models import Block, Bookmark, Follow, Like, Mute, Repost
 from apps.social.services import approve_follow_request, follow_actor, reject_follow_request, unfollow_actor
 
 
@@ -393,7 +393,7 @@ def repost_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 @login_required
 @require_http_methods(["GET"])
 def social_index_view(request: HttpRequest) -> HttpResponse:
-	return redirect("social:follow-requests")
+	return redirect("social:my-index")
 
 
 @ratelimit(key="user_or_ip", rate="20/h", block=True)
@@ -541,6 +541,24 @@ def reject_follow_request_view(request: HttpRequest, follow_id: str) -> HttpResp
 # ---------------------------------------------------------------------------
 # My-relationships views
 # ---------------------------------------------------------------------------
+
+
+@login_required
+def my_social_hub_view(request: HttpRequest) -> HttpResponse:
+	"""Dashboard for the logged-in user's social relationships and moderation shortcuts."""
+	actor = request.user.actor
+	context = {
+		"following_count": Follow.objects.filter(follower=actor, state=Follow.FollowState.ACCEPTED).count(),
+		"followers_count": Follow.objects.filter(followee=actor, state=Follow.FollowState.ACCEPTED).count(),
+		"blocked_count": Block.objects.filter(blocker=actor).count(),
+		"muted_count": Mute.objects.filter(muter=actor).count(),
+		"reports_count": Report.objects.filter(reporter=actor).count(),
+		"pending_follow_requests_count": Follow.objects.filter(
+			followee=actor,
+			state=Follow.FollowState.PENDING,
+		).count(),
+	}
+	return render(request, "social/my_index.html", context)
 
 
 @login_required

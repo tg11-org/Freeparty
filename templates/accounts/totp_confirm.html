@@ -3,7 +3,7 @@
 {% block content %}
 <div style="max-width:400px;margin:0 auto;">
   <h2>Two-Factor Authentication</h2>
-  <p>Enter the six-digit code from your authenticator app to continue signing in.</p>
+  <p>Enter the six-digit code from your authenticator app or one of your recovery codes to continue signing in.</p>
 
   <form method="post" action="{% url 'accounts:totp-confirm' %}">
     {% csrf_token %}
@@ -17,10 +17,9 @@
       id="code"
       type="text"
       name="code"
-      inputmode="numeric"
+      inputmode="text"
       autocomplete="one-time-code"
-      maxlength="6"
-      pattern="[0-9]{6}"
+      maxlength="16"
       required
       autofocus
       style="width:100%;max-width:200px;font-size:1.2rem;letter-spacing:0.2em;padding:0.4rem 0.6rem;border:1px solid var(--border);border-radius:4px;">
@@ -28,6 +27,8 @@
       <button type="submit">Verify</button>
     </div>
   </form>
+
+  <p style="margin-top:1rem;font-size:0.85rem;color:var(--text2);">Unused recovery codes remaining: {{ recovery_code_count }}</p>
 
   <p style="margin-top:1.5rem;font-size:0.85rem;color:var(--text2);">
     <a href="{% url 'accounts:login' %}">Use a different account</a>

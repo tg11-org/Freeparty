@@ -6,7 +6,7 @@ from apps.core.services.uris import post_uri
 from apps.moderation.models import Report, TrustSignal
 from apps.notifications.models import Notification
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark
+from apps.social.models import Block, Bookmark, Mute
 from apps.social.models import Follow
 from apps.social.models import Repost
 
@@ -66,6 +66,51 @@ class SocialPermissionTests(TestCase):
 		response = self.client.post(f"/social/like/{post.id}/")
 		self.assertEqual(response.status_code, 302)
 		self.assertFalse(post.likes.filter(actor=self.user_a.actor).exists())
+
+	def test_blocked_profile_renders_blocked_page_for_blocker(self):
+		Block.objects.create(blocker=self.user_a.actor, blocked=self.user_b.actor)
+		self.client.force_login(self.user_a)
+		response = self.client.get(f"/actors/{self.user_b.actor.handle}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "You have blocked this account")
+
+	def test_blocked_profile_renders_restricted_page_for_blocked_user(self):
+		Block.objects.create(blocker=self.user_b.actor, blocked=self.user_a.actor)
+		self.client.force_login(self.user_a)
+		response = self.client.get(f"/actors/{self.user_b.actor.handle}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "private or unavailable")
+
+
+class SocialHubTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="socialhub@example.com", username="socialhub", password="secret123")
+		self.other = User.objects.create_user(email="socialhub-other@example.com", username="socialhubother", password="secret123")
+		self.user.mark_email_verified()
+		self.other.mark_email_verified()
+
+	def test_social_index_redirects_to_my_hub(self):
+		self.client.force_login(self.user)
+		response = self.client.get("/social/")
+		self.assertRedirects(response, "/social/my/")
+
+	def test_my_social_hub_renders_relationship_links(self):
+		Block.objects.create(blocker=self.user.actor, blocked=self.other.actor)
+		Mute.objects.create(muter=self.user.actor, muted=self.other.actor)
+		self.client.force_login(self.user)
+		response = self.client.get("/social/my/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Follow Requests")
+		self.assertContains(response, "Blocked")
+		self.assertContains(response, "Muted")
+
+	def test_my_muted_view_renders_without_name_error(self):
+		Mute.objects.create(muter=self.user.actor, muted=self.other.actor)
+		self.client.force_login(self.user)
+		response = self.client.get("/social/my/muted/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, self.other.actor.handle)
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})

@@ -3,6 +3,7 @@
 {% block content %}
 <h2>Follow Requests</h2>
 <p style="color:var(--text2);margin-top:0;">Approve or reject pending requests for your private account.</p>
+<p style="margin-top:-0.15rem;"><a href="{% url 'social:my-index' %}">Back to My Social</a></p>
 
 <div id="follow-request-list">
 {% for relation in pending_requests %}

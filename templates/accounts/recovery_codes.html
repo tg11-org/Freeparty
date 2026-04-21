@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Recovery Codes · Freeparty{% endblock %}
+{% block content %}
+<section style="max-width:620px;margin:0 auto;">
+  <h2>Recovery Codes</h2>
+  <p style="color:var(--text2);margin-top:0;">These one-time codes let you sign in if you lose access to your authenticator app. Each code works once.</p>
+
+  {% if recovery_codes %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;margin:1rem 0;">
+      {% for code in recovery_codes %}
+        <div style="padding:0.75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface2);font-family:monospace;font-size:1.05rem;text-align:center;">{{ code }}</div>
+      {% endfor %}
+    </div>
+    <p style="color:#a16207;font-weight:600;">Save these now. They will not be shown again.</p>
+  {% else %}
+    <p style="margin:1rem 0;color:var(--text2);">No freshly generated recovery codes are available to display. You still have <strong>{{ remaining_recovery_code_count }}</strong> unused recovery codes stored for this account.</p>
+  {% endif %}
+
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;margin-top:1rem;">
+    <a class="button" href="{% url 'accounts:manage' %}">Back to account settings</a>
+    <form method="post" action="{% url 'accounts:recovery-codes-regenerate' %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit">Regenerate recovery codes</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Logged Out · Freeparty{% endblock %}
+{% block content %}
+<section style="max-width:520px;margin:0 auto;text-align:center;">
+  <h2>You have been successfully logged out</h2>
+  <p style="color:var(--text2);">Your session has ended.</p>
+  <div style="display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap;">
+    <a class="btn" href="{% url 'accounts:login' %}">Log back in</a>
+    <a class="btn" href="/">Return home</a>
+  </div>
+</section>
+{% endblock %}

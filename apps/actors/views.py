@@ -22,6 +22,15 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	except Actor.DoesNotExist as exc:
 		raise Http404("Actor not found") from exc
 	viewer = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
+	blocked_context = {
+		"is_blocked_by_me": False,
+		"is_blocked_by_them": False,
+	}
+	if viewer is not None and viewer.id != actor.id:
+		blocked_context["is_blocked_by_me"] = Block.objects.filter(blocker=viewer, blocked=actor).exists()
+		blocked_context["is_blocked_by_them"] = Block.objects.filter(blocker=actor, blocked=viewer).exists()
+		if blocked_context["is_blocked_by_me"] or blocked_context["is_blocked_by_them"]:
+			return render(request, "actors/blocked.html", {"actor": actor, **blocked_context})
 	if not can_view_actor(viewer, actor):
 		raise Http404("Actor not found")
 
@@ -78,8 +87,8 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 			).first()
 			is_following = bool(relation and relation.state == Follow.FollowState.ACCEPTED)
 			is_follow_pending = bool(relation and relation.state == Follow.FollowState.PENDING)
-			is_blocked_by_me = Block.objects.filter(blocker=my_actor, blocked=actor).exists()
-			is_blocked_by_them = Block.objects.filter(blocker=actor, blocked=my_actor).exists()
+			is_blocked_by_me = blocked_context["is_blocked_by_me"]
+			is_blocked_by_them = blocked_context["is_blocked_by_them"]
 		liked_ids = set(Like.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))

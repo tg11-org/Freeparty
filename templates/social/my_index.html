@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}My Social · Freeparty{% endblock %}
+{% block content %}
+<section style="max-width:860px;margin:0 auto;display:grid;gap:1rem;">
+  <div>
+    <h2 style="margin-bottom:0.35rem;">My Social</h2>
+    <p style="margin-top:0;color:var(--text2);">Quick access to your follow graph, moderation history, and relationship controls.</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem;">
+    <a href="{% url 'social:my-following' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ following_count }}</strong>
+      <span>Following</span>
+    </a>
+    <a href="{% url 'social:my-followers' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ followers_count }}</strong>
+      <span>Followers</span>
+    </a>
+    <a href="{% url 'social:my-blocked' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ blocked_count }}</strong>
+      <span>Blocked</span>
+    </a>
+    <a href="{% url 'social:my-muted' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ muted_count }}</strong>
+      <span>Muted</span>
+    </a>
+    <a href="{% url 'social:my-reports' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ reports_count }}</strong>
+      <span>Reports Filed</span>
+    </a>
+    <a href="{% url 'social:follow-requests' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ pending_follow_requests_count }}</strong>
+      <span>Follow Requests</span>
+    </a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}@{{ actor.handle }} · Freeparty{% endblock %}
+{% block content %}
+<section style="max-width:620px;margin:0 auto;">
+  <div style="border:1px solid var(--border);border-radius:14px;padding:1.2rem;background:var(--surface2);">
+    <h2 style="margin-top:0;">@{{ actor.handle }}</h2>
+    {% if is_blocked_by_me %}
+      <p style="margin-top:0;color:var(--text2);">You have blocked this account. Their profile and posts are hidden until you unblock them.</p>
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+        <form method="post" action="{% url 'social:unblock' actor.handle %}">{% csrf_token %}
+          <button class="btn btn-danger" type="submit">Unblock</button>
+        </form>
+        <a class="btn btn-danger" href="/moderation/report/?target_actor_id={{ actor.id }}">Report</a>
+      </div>
+    {% else %}
+      <p style="margin-top:0;color:var(--text2);">This account is private or unavailable. You may not have permission to view the full profile.</p>
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+        <a class="btn btn-danger" href="/moderation/report/?target_actor_id={{ actor.id }}">Report</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

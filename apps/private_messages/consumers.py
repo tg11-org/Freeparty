@@ -1,3 +1,4 @@
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from apps.private_messages.services import is_private_message_websocket_enabled
@@ -14,7 +15,7 @@ class DirectMessageConsumer(AsyncJsonWebsocketConsumer):
             return
 
         self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
-        actor = getattr(user, "actor", None)
+        actor = await self._get_actor(user)
         if actor is None:
             await self.close(code=4403)
             return
@@ -40,3 +41,7 @@ class DirectMessageConsumer(AsyncJsonWebsocketConsumer):
 
     async def dm_envelope(self, event):
         await self.send_json(event.get("payload", {}))
+
+    @database_sync_to_async
+    def _get_actor(self, user):
+        return getattr(user, "actor", None)
