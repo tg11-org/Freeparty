@@ -295,7 +295,7 @@ celery -A config worker -l info
 7. Optional Celery beat:
 
 ```bash
-celery -A config beat -l info
+celery -A config beat -l info -s /tmp/celerybeat-schedule
 ```
 
 ## How Redis and Postgres Are Used

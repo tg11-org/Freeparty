@@ -206,7 +206,7 @@ class TrustSignalService:
 			score += TrustSignalService.has_posts_trust_bonus()
 		if Like.objects.filter(actor=actor).exists():
 			score += TrustSignalService.has_liked_trust_bonus()
-		if Follow.objects.filter(target=actor).exists():
+		if Follow.objects.filter(followee=actor).exists():
 			score += TrustSignalService.has_followers_trust_bonus()
 		if Follow.objects.filter(follower=actor).exists():
 			score += TrustSignalService.has_following_trust_bonus()

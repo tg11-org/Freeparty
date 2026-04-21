@@ -54,6 +54,13 @@ class LogoutViewTests(TestCase):
 		self.assertRedirects(response, self.home_url)
 
 
+class LoginViewTests(TestCase):
+	def test_login_page_contains_forgot_password_link(self):
+		response = self.client.get(reverse("accounts:login"))
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, reverse("accounts:password-reset"))
+
+
 class PasswordResetAsyncDeliveryTests(TestCase):
 	def setUp(self):
 		self.client = Client()
