@@ -71,7 +71,8 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 
-	status = request.GET.get("status")
+	status_param = request.GET.get("status")
+	status = Report.Status.OPEN if status_param is None else status_param.strip()
 	severity = request.GET.get("severity", "").strip()
 	reason_category = request.GET.get("reason_category", "").strip()
 	reason = request.GET.get("reason", "").strip()
@@ -145,14 +146,20 @@ def moderation_report_detail_view(request: HttpRequest, report_id: str) -> HttpR
 		return redirect("home")
 
 	report = get_object_or_404(
-		Report.objects.select_related("reporter", "target_actor", "target_post", "reviewed_by").prefetch_related("actions", "notes"),
+		Report.objects.select_related("reporter", "target_actor", "target_post", "target_post__author", "reviewed_by").prefetch_related("actions", "notes"),
 		id=report_id,
 	)
+	reportee = report.target_actor or (report.target_post.author if report.target_post else None)
 	attachments = report.target_post.attachments.all().order_by("created_at") if report.target_post else []
 	return render(
 		request,
 		"moderation/report_detail.html",
-		{"report": report, "attachments": attachments, "action_choices": ModerationAction.ActionType.choices},
+		{
+			"report": report,
+			"reportee": reportee,
+			"attachments": attachments,
+			"action_choices": ModerationAction.ActionType.choices,
+		},
 	)
 
 

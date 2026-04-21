@@ -7,9 +7,10 @@
 <p><strong>Severity:</strong> {{ report.get_severity_display }} ({{ report.severity }})</p>
 <p><strong>Status:</strong> {{ report.status }}</p>
 <p><strong>Description:</strong> {{ report.description|default:"(none)" }}</p>
-<p><strong>Reporter:</strong> @{{ report.reporter.handle }}</p>
-{% if report.target_actor %}<p><strong>Target actor:</strong> @{{ report.target_actor.handle }}</p>{% endif %}
-{% if report.target_post %}<p><strong>Target post:</strong> {{ report.target_post.id }}</p>{% endif %}
+<p><strong>Reporter:</strong> <a href="{% url 'actors:detail' report.reporter.handle %}" target="_blank" rel="noopener noreferrer">@{{ report.reporter.handle }}</a></p>
+{% if reportee %}<p><strong>Reportee:</strong> <a href="{% url 'actors:detail' reportee.handle %}" target="_blank" rel="noopener noreferrer">@{{ reportee.handle }}</a></p>{% endif %}
+{% if report.target_actor %}<p><strong>Target actor:</strong> <a href="{% url 'actors:detail' report.target_actor.handle %}" target="_blank" rel="noopener noreferrer">@{{ report.target_actor.handle }}</a></p>{% endif %}
+{% if report.target_post %}<p><strong>Target post:</strong> <a href="{% url 'posts:detail' report.target_post.id %}" target="_blank" rel="noopener noreferrer">{{ report.target_post.id }}</a></p>{% endif %}
 
 {% if report.target_post %}
 <h3>Post Attachments</h3>

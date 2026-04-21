@@ -72,6 +72,24 @@ class ModerationWorkflowTests(TestCase):
 		self.assertEqual(len(reports), 1)
 		self.assertEqual(reports[0].id, self.post_report.id)
 
+	def test_dashboard_defaults_to_open_status(self):
+		self.client.force_login(self.staff)
+		closed_report = Report.objects.create(
+			reporter=self.reporter.actor,
+			target_post=self.post,
+			reason=Report.Reason.OTHER,
+			description="closed report",
+			status=Report.Status.UNDER_REVIEW,
+		)
+		response = self.client.get("/moderation/")
+		self.assertEqual(response.status_code, 200)
+		reports = list(response.context["reports"])
+		report_ids = {item.id for item in reports}
+		self.assertIn(self.report.id, report_ids)
+		self.assertIn(self.post_report.id, report_ids)
+		self.assertNotIn(closed_report.id, report_ids)
+		self.assertEqual(response.context["selected_status"], Report.Status.OPEN)
+
 	def test_dashboard_filters_by_date_range(self):
 		self.client.force_login(self.staff)
 		old_timestamp = timezone.now() - timedelta(days=5)
@@ -109,6 +127,9 @@ class ModerationWorkflowTests(TestCase):
 		response = self.client.get(f"/moderation/reports/{self.post_report.id}/")
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Post Attachments")
+		self.assertContains(response, f'href="/actors/{self.reporter.actor.handle}/" target="_blank"')
+		self.assertContains(response, f'href="/actors/{self.post.author.handle}/" target="_blank"')
+		self.assertContains(response, f'href="/posts/{self.post.id}/" target="_blank"')
 
 	def test_staff_can_update_attachment_state_from_report_detail(self):
 		upload = SimpleUploadedFile("detail-flag.png", b"fakepng", content_type="image/png")
