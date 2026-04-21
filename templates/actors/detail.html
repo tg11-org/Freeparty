@@ -35,13 +35,21 @@
     {% if actor.profile.bio %}<p class="multiline-scroll multiline-scroll-sm" style="margin:0.5rem 0 0;">{{ actor.profile.bio|linkify_mentions|linebreaksbr }}</p>{% endif %}
     <p style="font-size:0.85rem;color:var(--text2);margin:0.5rem 0 0;">
       {% if show_follower_count %}
-        <strong style="color:var(--text);">{{ follower_count }}</strong> followers
+        {% if actor.profile.show_follower_list %}
+          <a href="{% url 'actors:followers' actor.handle %}" style="color:inherit;text-decoration:none;"><strong style="color:var(--text);">{{ follower_count }}</strong> followers</a>
+        {% else %}
+          <strong style="color:var(--text);">{{ follower_count }}</strong> followers
+        {% endif %}
       {% else %}
         <span>Followers hidden</span>
       {% endif %}
       &ensp;
       {% if show_following_count %}
-        <strong style="color:var(--text);">{{ following_count }}</strong> following
+        {% if actor.profile.show_following_list %}
+          <a href="{% url 'actors:following' actor.handle %}" style="color:inherit;text-decoration:none;"><strong style="color:var(--text);">{{ following_count }}</strong> following</a>
+        {% else %}
+          <strong style="color:var(--text);">{{ following_count }}</strong> following
+        {% endif %}
       {% else %}
         <span>Following hidden</span>
       {% endif %}

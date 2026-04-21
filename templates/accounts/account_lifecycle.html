@@ -1,13 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Account Lifecycle · Freeparty{% endblock %}
+{% block title %}Account Settings · Freeparty{% endblock %}
 
 {% block content %}
 <section data-section-anchors="1" style="max-width:760px;margin:1.2rem auto;">
-  <h2>Account Lifecycle</h2>
+  <h2>Account Settings</h2>
   <p style="color:var(--text2);margin-top:0;">
-    Manage deactivation and deletion with retention-based recovery windows.
+    Manage security settings, deactivation and deletion.
   </p>
+
+  {# ---- Two-Factor Authentication ---- #}
+  <article class="field-wrap" style="border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem;">
+    <h3 style="margin-top:0;">Two-Factor Authentication (TOTP)</h3>
+    {% if totp_device and totp_device.verified %}
+      <p style="color:var(--success);">&#10003; Two-factor authentication is <strong>enabled</strong>.</p>
+      <form method="post" action="{% url 'accounts:totp-disable' %}">
+        {% csrf_token %}
+        <button type="submit" style="background:#7a1c1c;">Disable 2FA</button>
+      </form>
+    {% else %}
+      <p>Add an extra layer of security by requiring a code from your authenticator app at login.</p>
+      <a href="{% url 'accounts:totp-enroll' %}" class="button">Enable 2FA</a>
+    {% endif %}
+  </article>
 
   <article class="field-wrap" style="border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem;">
     <h3 style="margin-top:0;">Deactivate Account</h3>

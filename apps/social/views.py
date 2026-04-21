@@ -536,3 +536,73 @@ def reject_follow_request_view(request: HttpRequest, follow_id: str) -> HttpResp
 			target_id=str(follow.id),
 		)
 	return redirect("social:follow-requests")
+
+
+# ---------------------------------------------------------------------------
+# My-relationships views
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def my_following_view(request: HttpRequest) -> HttpResponse:
+	"""Accounts that the logged-in user follows."""
+	actor = request.user.actor
+	qs = (
+		Follow.objects.filter(follower=actor, state=Follow.FollowState.ACCEPTED)
+		.select_related("followee", "followee__profile")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30)
+	return render(request, "social/my_following.html", {"page_obj": page_obj, "relations": page_obj.object_list})
+
+
+@login_required
+def my_followers_view(request: HttpRequest) -> HttpResponse:
+	"""Accounts that follow the logged-in user."""
+	actor = request.user.actor
+	qs = (
+		Follow.objects.filter(followee=actor, state=Follow.FollowState.ACCEPTED)
+		.select_related("follower", "follower__profile")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30)
+	return render(request, "social/my_followers.html", {"page_obj": page_obj, "relations": page_obj.object_list})
+
+
+@login_required
+def my_blocked_view(request: HttpRequest) -> HttpResponse:
+	"""Accounts that the logged-in user has blocked."""
+	actor = request.user.actor
+	qs = (
+		Block.objects.filter(blocker=actor)
+		.select_related("blocked", "blocked__profile")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30)
+	return render(request, "social/my_blocked.html", {"page_obj": page_obj, "relations": page_obj.object_list})
+
+
+@login_required
+def my_muted_view(request: HttpRequest) -> HttpResponse:
+	"""Accounts that the logged-in user has muted."""
+	actor = request.user.actor
+	qs = (
+		Mute.objects.filter(muter=actor)
+		.select_related("muted", "muted__profile")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30)
+	return render(request, "social/my_muted.html", {"page_obj": page_obj, "relations": page_obj.object_list})
+
+
+@login_required
+def my_reports_view(request: HttpRequest) -> HttpResponse:
+	"""Reports the logged-in user has filed."""
+	actor = request.user.actor
+	qs = (
+		Report.objects.filter(reporter=actor)
+		.select_related("target_actor", "target_actor__profile", "target_post")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30)
+	return render(request, "social/my_reports.html", {"page_obj": page_obj, "reports": page_obj.object_list})

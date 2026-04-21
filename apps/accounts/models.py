@@ -195,3 +195,25 @@ class AccountActionToken(TimeStampedModel):
 	def is_usable(self) -> bool:
 		return self.used_at is None and not self.is_expired
 
+
+class TOTPDevice(TimeStampedModel):
+	"""TOTP authenticator device linked to a user account."""
+
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	user = models.OneToOneField(
+		"accounts.User",
+		on_delete=models.CASCADE,
+		related_name="totp_device",
+	)
+	# Base-32 encoded secret; never expose raw value to unauthenticated parties.
+	secret = models.CharField(max_length=64)
+	# True once the user has confirmed the device with a valid code.
+	verified = models.BooleanField(default=False)
+	# Optional label set by the user.
+	name = models.CharField(max_length=64, default="Authenticator app")
+
+	class Meta:
+		indexes = [models.Index(fields=["user"])]
+
+	def __str__(self) -> str:
+		return f"TOTPDevice({self.user_id}, verified={self.verified})"

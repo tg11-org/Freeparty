@@ -37,6 +37,8 @@ class Profile(TimeStampedModel):
 	location = models.CharField(max_length=255, blank=True)
 	show_follower_count = models.BooleanField(default=True)
 	show_following_count = models.BooleanField(default=True)
+	show_follower_list = models.BooleanField(default=True)
+	show_following_list = models.BooleanField(default=True)
 	is_private_account = models.BooleanField(default=False)
 	auto_reveal_spoilers = models.BooleanField(default=False)
 	is_minor_account = models.BooleanField(default=False)

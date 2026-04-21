@@ -30,6 +30,8 @@ class ProfileForm(forms.ModelForm):
             "location",
             "show_follower_count",
             "show_following_count",
+            "show_follower_list",
+            "show_following_list",
             "is_private_account",
             "auto_reveal_spoilers",
             "is_minor_account",
@@ -39,6 +41,8 @@ class ProfileForm(forms.ModelForm):
         help_texts = {
             "show_follower_count": "Disable to hide your follower count from other people.",
             "show_following_count": "Disable to hide how many accounts you follow.",
+            "show_follower_list": "Disable to prevent others from seeing the list of who follows you.",
+            "show_following_list": "Disable to prevent others from seeing the list of who you follow.",
             "is_private_account": "If enabled, only approved followers can view your profile and posts.",
             "auto_reveal_spoilers": "If enabled, spoiler and NSFW content gates open by default.",
             "is_minor_account": "Enable if this account is used by a minor and requires extra privacy protections.",

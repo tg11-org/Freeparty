@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth import login
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView, PasswordResetView, PasswordResetConfirmView
 from django.core.mail import send_mail
 from django.http import HttpRequest, HttpResponse
@@ -25,15 +26,39 @@ from apps.profiles.views import initialize_minor_profile_for_signup
 from apps.moderation.services import SecurityAuditService
 
 
+_TOTP_PENDING_SESSION_KEY = "totp_pending_user_id"
+
+
 @method_decorator(ratelimit(key="ip", rate="10/m", block=True), name="dispatch")
 class RateLimitedLoginView(LoginView):
 	template_name = "accounts/login.html"
 
 	def form_valid(self, form):
-		"""Log successful login and record audit event."""
-		response = super().form_valid(form)
+		"""Log successful login; redirect to TOTP step if the user has MFA enabled."""
+		from apps.accounts.models import TOTPDevice
+
 		user = form.get_user()
-		
+
+		# Check for a verified TOTP device before completing login.
+		try:
+			device = user.totp_device
+			if device.verified:
+				# Don't call super() — that would log the user in immediately.
+				# Instead stash the user id and redirect to the TOTP confirm step.
+				self.request.session[_TOTP_PENDING_SESSION_KEY] = str(user.id)
+				ip_address = self._get_client_ip(self.request)
+				user_agent = self.request.headers.get("User-Agent", "")
+				SecurityAuditService.log_login_success(
+					user,
+					ip_address=ip_address,
+					user_agent=user_agent,
+				)
+				return redirect("accounts:totp-confirm")
+		except TOTPDevice.DoesNotExist:
+			pass
+
+		response = super().form_valid(form)
+
 		# Log security audit event
 		ip_address = self._get_client_ip(self.request)
 		user_agent = self.request.headers.get("User-Agent", "")
@@ -42,7 +67,7 @@ class RateLimitedLoginView(LoginView):
 			ip_address=ip_address,
 			user_agent=user_agent,
 		)
-		
+
 		return response
 
 	def form_invalid(self, form):
@@ -264,6 +289,13 @@ def account_lifecycle_view(request: HttpRequest) -> HttpResponse:
 				messages.success(request, "Deletion requested. A cancellation link was sent to your email.")
 				return redirect("home")
 
+	from apps.accounts.models import TOTPDevice
+
+	try:
+		totp_device = request.user.totp_device
+	except TOTPDevice.DoesNotExist:
+		totp_device = None
+
 	return render(
 		request,
 		"accounts/account_lifecycle.html",
@@ -272,6 +304,7 @@ def account_lifecycle_view(request: HttpRequest) -> HttpResponse:
 			"delete_form": delete_form,
 			"deactivation_retention_days": int(getattr(settings, "ACCOUNT_DEACTIVATION_RETENTION_DAYS", 365)),
 			"deletion_retention_days": int(getattr(settings, "ACCOUNT_DELETION_RETENTION_DAYS", 30)),
+			"totp_device": totp_device,
 		},
 	)
 
@@ -296,3 +329,109 @@ def cancel_account_deletion_view(request: HttpRequest, token: str) -> HttpRespon
 	user.cancel_deletion_request()
 	messages.success(request, "Deletion request cancelled. You can log in again.")
 	return redirect("accounts:login")
+
+
+# ---------------------------------------------------------------------------
+# TOTP / MFA views
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def enroll_totp_view(request: HttpRequest) -> HttpResponse:
+	"""Allow an authenticated user to enrol a TOTP device."""
+	import io
+	import base64
+	import pyotp
+	import qrcode
+	from apps.accounts.models import TOTPDevice
+
+	# If already enrolled and verified, redirect to settings.
+	try:
+		device = request.user.totp_device
+		if device.verified:
+			messages.info(request, "Two-factor authentication is already enabled.")
+			return redirect("accounts:manage")
+	except TOTPDevice.DoesNotExist:
+		device = None
+
+	if request.method == "POST":
+		code = (request.POST.get("code") or "").strip()
+		secret = request.POST.get("secret", "")
+		if not secret:
+			messages.error(request, "Session expired. Please try again.")
+			return redirect("accounts:totp-enroll")
+		totp = pyotp.TOTP(secret)
+		if totp.verify(code, valid_window=1):
+			TOTPDevice.objects.update_or_create(
+				user=request.user,
+				defaults={"secret": secret, "verified": True},
+			)
+			messages.success(request, "Two-factor authentication enabled successfully.")
+			return redirect("accounts:manage")
+		else:
+			messages.error(request, "Invalid code. Please try again.")
+			# Fall through to re-render with same secret.
+
+	# GET: generate a new secret each time we render.
+	secret = pyotp.random_base32()
+	issuer = "Freeparty"
+	totp_uri = pyotp.TOTP(secret).provisioning_uri(name=request.user.email, issuer_name=issuer)
+
+	# Build QR code as base-64 data URI.
+	img = qrcode.make(totp_uri)
+	buffer = io.BytesIO()
+	img.save(buffer, format="PNG")
+	qr_b64 = base64.b64encode(buffer.getvalue()).decode()
+
+	return render(
+		request,
+		"accounts/totp_enroll.html",
+		{"secret": secret, "qr_b64": qr_b64},
+	)
+
+
+@require_http_methods(["GET", "POST"])
+def totp_confirm_login_view(request: HttpRequest) -> HttpResponse:
+	"""Second step of login: verify TOTP code for users with an enrolled device."""
+	import pyotp
+	from apps.accounts.models import TOTPDevice, User
+
+	pending_id = request.session.get(_TOTP_PENDING_SESSION_KEY)
+	if not pending_id:
+		return redirect("accounts:login")
+
+	if request.method == "POST":
+		code = (request.POST.get("code") or "").strip()
+		try:
+			device = TOTPDevice.objects.select_related("user").get(user_id=pending_id, verified=True)
+		except TOTPDevice.DoesNotExist:
+			messages.error(request, "Authentication device not found.")
+			return redirect("accounts:login")
+
+		totp = pyotp.TOTP(device.secret)
+		if totp.verify(code, valid_window=1):
+			del request.session[_TOTP_PENDING_SESSION_KEY]
+			login(request, device.user, backend="django.contrib.auth.backends.ModelBackend")
+			return redirect(settings.LOGIN_REDIRECT_URL)
+		else:
+			messages.error(request, "Invalid code. Please try again.")
+
+	return render(request, "accounts/totp_confirm.html", {})
+
+
+@login_required
+@require_http_methods(["POST"])
+def disable_totp_view(request: HttpRequest) -> HttpResponse:
+	"""Remove the user's TOTP device."""
+	from apps.accounts.models import TOTPDevice
+
+	try:
+		device = request.user.totp_device
+	except TOTPDevice.DoesNotExist:
+		messages.error(request, "No two-factor device found.")
+		return redirect("accounts:manage")
+
+	device.delete()
+	messages.success(request, "Two-factor authentication disabled.")
+	return redirect("accounts:manage")

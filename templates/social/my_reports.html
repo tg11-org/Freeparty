@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Reports I've Filed{% endblock %}
+{% block content %}
+<div style="max-width:700px;margin:0 auto;">
+  <h2>Reports I've Filed</h2>
+  <p style="color:var(--text2);">
+    <a href="{% url 'social:my-following' %}">I'm Following</a> &middot;
+    <a href="{% url 'social:my-followers' %}">My Followers</a> &middot;
+    <a href="{% url 'social:my-blocked' %}">Blocked</a> &middot;
+    <a href="{% url 'social:my-muted' %}">Muted</a>
+  </p>
+  {% if not reports %}
+    <p style="color:var(--text2);margin-top:1.5rem;">You have not filed any reports.</p>
+  {% else %}
+    <div style="display:flex;flex-direction:column;gap:0.75rem;margin-top:1.25rem;">
+      {% for report in reports %}
+        <div style="border:1px solid var(--border);border-radius:8px;padding:0.85rem;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+            <div>
+              <strong>{{ report.get_reason_display }}</strong>
+              {% if report.target_actor %}
+                &mdash; <a href="{% url 'actors:detail' report.target_actor.handle %}">@{{ report.target_actor.handle }}</a>
+              {% elif report.target_post %}
+                &mdash; post
+              {% endif %}
+            </div>
+            <span style="font-size:0.8rem;color:var(--text2);white-space:nowrap;">{{ report.created_at|date:"d M Y" }}</span>
+          </div>
+          <div style="margin-top:0.35rem;font-size:0.85rem;color:var(--text2);">
+            Status: <strong>{{ report.get_status_display }}</strong>
+            &middot; Severity: {{ report.get_severity_display }}
+          </div>
+          {% if report.description %}
+            <p style="margin:0.5rem 0 0;font-size:0.875rem;">{{ report.description|truncatechars:200 }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% include "partials/pagination.html" with page_obj=page_obj page_param="page" %}
+  {% endif %}
+</div>
+{% endblock %}

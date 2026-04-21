@@ -193,3 +193,57 @@ def search_view(request: HttpRequest) -> HttpResponse:
 		"bookmarked_ids": bookmarked_ids,
 		"query_string": f"q={query}",
 	})
+
+
+@require_http_methods(["GET"])
+def actor_followers_view(request: HttpRequest, handle: str) -> HttpResponse:
+	try:
+		actor = Actor.objects.select_related("profile").get(handle=handle, state=Actor.ActorState.ACTIVE)
+	except Actor.DoesNotExist as exc:
+		raise Http404("Actor not found") from exc
+	viewer = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
+	if not can_view_actor(viewer, actor):
+		raise Http404("Actor not found")
+	is_own = viewer is not None and viewer.id == actor.id
+	show_list = getattr(actor.profile, "show_follower_list", True) or is_own
+	if not show_list:
+		raise Http404("Follower list is private")
+	qs = (
+		Follow.objects.filter(followee=actor, state=Follow.FollowState.ACCEPTED)
+		.select_related("follower", "follower__profile")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30, page_param="page")
+	return render(request, "actors/follower_list.html", {
+		"actor": actor,
+		"page_obj": page_obj,
+		"relations": page_obj.object_list,
+		"list_type": "followers",
+	})
+
+
+@require_http_methods(["GET"])
+def actor_following_view(request: HttpRequest, handle: str) -> HttpResponse:
+	try:
+		actor = Actor.objects.select_related("profile").get(handle=handle, state=Actor.ActorState.ACTIVE)
+	except Actor.DoesNotExist as exc:
+		raise Http404("Actor not found") from exc
+	viewer = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
+	if not can_view_actor(viewer, actor):
+		raise Http404("Actor not found")
+	is_own = viewer is not None and viewer.id == actor.id
+	show_list = getattr(actor.profile, "show_following_list", True) or is_own
+	if not show_list:
+		raise Http404("Following list is private")
+	qs = (
+		Follow.objects.filter(follower=actor, state=Follow.FollowState.ACCEPTED)
+		.select_related("followee", "followee__profile")
+		.order_by("-created_at")
+	)
+	page_obj = paginate_queryset(request, qs, per_page=30, page_param="page")
+	return render(request, "actors/follower_list.html", {
+		"actor": actor,
+		"page_obj": page_obj,
+		"relations": page_obj.object_list,
+		"list_type": "following",
+	})

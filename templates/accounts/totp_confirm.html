@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Two-Factor Authentication{% endblock %}
+{% block content %}
+<div style="max-width:400px;margin:0 auto;">
+  <h2>Two-Factor Authentication</h2>
+  <p>Enter the six-digit code from your authenticator app to continue signing in.</p>
+
+  <form method="post" action="{% url 'accounts:totp-confirm' %}">
+    {% csrf_token %}
+    {% if messages %}
+      {% for message in messages %}
+        <p style="color:var(--error);">{{ message }}</p>
+      {% endfor %}
+    {% endif %}
+    <label for="code" style="display:block;margin-bottom:0.35rem;font-weight:500;">Code</label>
+    <input
+      id="code"
+      type="text"
+      name="code"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="6"
+      pattern="[0-9]{6}"
+      required
+      autofocus
+      style="width:100%;max-width:200px;font-size:1.2rem;letter-spacing:0.2em;padding:0.4rem 0.6rem;border:1px solid var(--border);border-radius:4px;">
+    <div style="margin-top:1rem;">
+      <button type="submit">Verify</button>
+    </div>
+  </form>
+
+  <p style="margin-top:1.5rem;font-size:0.85rem;color:var(--text2);">
+    <a href="{% url 'accounts:login' %}">Use a different account</a>
+  </p>
+</div>
+{% endblock %}

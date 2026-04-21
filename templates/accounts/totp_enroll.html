@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Enable Two-Factor Authentication{% endblock %}
+{% block content %}
+<div style="max-width:480px;margin:0 auto;">
+  <h2>Enable Two-Factor Authentication</h2>
+  <p>Scan the QR code below with your authenticator app (e.g. Google Authenticator, Authy, Bitwarden), then enter the six-digit code it shows to confirm.</p>
+
+  <div style="margin:1.5rem 0;text-align:center;">
+    <img src="data:image/png;base64,{{ qr_b64 }}" alt="TOTP QR code" style="width:200px;height:200px;border:1px solid var(--border);border-radius:4px;">
+  </div>
+
+  <details style="margin-bottom:1rem;">
+    <summary style="cursor:pointer;color:var(--text2);font-size:0.875rem;">Can't scan? Enter the key manually</summary>
+    <pre style="margin-top:0.5rem;padding:0.5rem;background:var(--surface2);border-radius:4px;word-break:break-all;font-size:0.9rem;user-select:all;">{{ secret }}</pre>
+  </details>
+
+  <form method="post" action="{% url 'accounts:totp-enroll' %}">
+    {% csrf_token %}
+    <input type="hidden" name="secret" value="{{ secret }}">
+    {% if messages %}
+      {% for message in messages %}
+        <p style="color:var(--error);">{{ message }}</p>
+      {% endfor %}
+    {% endif %}
+    <label for="code" style="display:block;margin-bottom:0.35rem;font-weight:500;">Verification code</label>
+    <input
+      id="code"
+      type="text"
+      name="code"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="6"
+      pattern="[0-9]{6}"
+      required
+      autofocus
+      style="width:100%;max-width:200px;font-size:1.2rem;letter-spacing:0.2em;padding:0.4rem 0.6rem;border:1px solid var(--border);border-radius:4px;">
+    <div style="margin-top:1rem;display:flex;gap:0.75rem;align-items:center;">
+      <button type="submit">Enable 2FA</button>
+      <a href="{% url 'accounts:manage' %}" style="color:var(--text2);font-size:0.875rem;">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

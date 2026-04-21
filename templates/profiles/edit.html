@@ -115,6 +115,28 @@
   </div>
 
   <div class="toggle-field">
+    {{ form.show_follower_list.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.show_follower_list.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Show follower list</span>
+        <span class="toggle-help">Disable to prevent others from seeing the list of who follows you.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
+    {{ form.show_following_list.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.show_following_list.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Show following list</span>
+        <span class="toggle-help">Disable to prevent others from seeing the list of who you follow.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="toggle-field">
     {{ form.is_private_account.as_widget|safe }}
     <label class="toggle-label" for="{{ form.is_private_account.id_for_label }}">
       <span class="toggle-switch" aria-hidden="true"></span>

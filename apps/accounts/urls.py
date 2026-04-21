@@ -4,6 +4,8 @@ from django.urls import path
 from apps.accounts.views import (
     account_lifecycle_view,
     cancel_account_deletion_view,
+    disable_totp_view,
+    enroll_totp_view,
     RateLimitedLoginView,
     RateLimitedLogoutView,
     RateLimitedPasswordResetView,
@@ -11,6 +13,7 @@ from apps.accounts.views import (
     reactivate_account_view,
     resend_verification_view,
     signup_view,
+    totp_confirm_login_view,
     verify_email_view,
 )
 
@@ -38,4 +41,7 @@ urlpatterns = [
     ),
     path("verify/<str:token>/", verify_email_view, name="verify-email"),
     path("verify/resend/", resend_verification_view, name="resend-verification"),
+    path("security/totp/enroll/", enroll_totp_view, name="totp-enroll"),
+    path("security/totp/confirm/", totp_confirm_login_view, name="totp-confirm"),
+    path("security/totp/disable/", disable_totp_view, name="totp-disable"),
 ]
