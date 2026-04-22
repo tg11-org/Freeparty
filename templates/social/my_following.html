@@ -27,7 +27,7 @@
             </div>
             <form method="post" action="{% url 'social:unfollow' person.handle %}">
               {% csrf_token %}
-              <button type="submit" style="font-size:0.8rem;">Unfollow</button>
+              <button class="btn" type="submit">Unfollow</button>
             </form>
           </div>
         {% endwith %}

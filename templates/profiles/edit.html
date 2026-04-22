@@ -172,6 +172,11 @@
     </label>
   </div>
 
+  <p class="field-help" style="margin-bottom:0.6rem;">
+    <strong>Tip:</strong> Enter hex colors without a trailing semicolon — for example <code>#1f2937</code>, not <code>#1f2937;</code>.
+    The <code>#</code> symbol is optional and will be added automatically.
+  </p>
+
   <div class="field-wrap">
     <label for="{{ form.theme_custom_bg.id_for_label }}">{{ form.theme_custom_bg.label }}:</label>
     {% if form.theme_custom_bg.errors %}<ul class="field-errors">{% for error in form.theme_custom_bg.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}

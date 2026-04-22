@@ -26,6 +26,7 @@
         var m = localStorage.getItem("fp-motion") || "normal";
         var l = localStorage.getItem("fp-links") || "normal";
         var md = localStorage.getItem("fp-message-density") || "normal";
+        var is = localStorage.getItem("fp-icon-style") || "auto";
         var customThemeAvailable = {% if custom_theme_available %}true{% else %}false{% endif %};
         var customTheme = {% if custom_theme_available %}{
           bg: "{{ custom_theme.bg|default:''|escapejs }}",
@@ -51,20 +52,45 @@
           return pref;
         }
 
+        function sanitizeCustomThemeToken(value){
+          // Strip any character outside a safe CSS value allowlist.
+          // Permitted: alphanumeric, space, comma, period, parens, hyphen, #, %, /
+          return String(value || "").replace(/[^a-zA-Z0-9 ,.()\.\-#%\/]/g, "");
+        }
+        function normalizeCustomThemeToken(value){
+          var token = sanitizeCustomThemeToken(value).trim().replace(/;+$/, "");
+          if(!token) return "";
+          if (/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?$/.test(token)) {
+            return "#" + token;
+          }
+          return token;
+        }
+
         function applyCustomTheme(rootNode){
           if(!customThemeAvailable) return;
-          if(customTheme.bg) rootNode.style.setProperty("--bg", customTheme.bg);
-          if(customTheme.bg_gradient) rootNode.style.setProperty("--bg-gradient", customTheme.bg_gradient);
-          else if(customTheme.bg) rootNode.style.setProperty("--bg-gradient", customTheme.bg);
-          if(customTheme.surface) rootNode.style.setProperty("--surface", customTheme.surface);
-          if(customTheme.surface2) rootNode.style.setProperty("--surface2", customTheme.surface2);
-          if(customTheme.text) rootNode.style.setProperty("--text", customTheme.text);
-          if(customTheme.text2) rootNode.style.setProperty("--text2", customTheme.text2);
-          if(customTheme.accent) rootNode.style.setProperty("--accent", customTheme.accent);
-          if(customTheme.accent_alt) rootNode.style.setProperty("--accent-alt", customTheme.accent_alt);
-          if(customTheme.danger) rootNode.style.setProperty("--danger", customTheme.danger);
-          if(customTheme.border) rootNode.style.setProperty("--border", customTheme.border);
-          if(customTheme.focus) rootNode.style.setProperty("--focus", customTheme.focus);
+          var bg = normalizeCustomThemeToken(customTheme.bg);
+          var bgGradient = normalizeCustomThemeToken(customTheme.bg_gradient);
+          var surface = normalizeCustomThemeToken(customTheme.surface);
+          var surface2 = normalizeCustomThemeToken(customTheme.surface2);
+          var text = normalizeCustomThemeToken(customTheme.text);
+          var text2 = normalizeCustomThemeToken(customTheme.text2);
+          var accent = normalizeCustomThemeToken(customTheme.accent);
+          var accentAlt = normalizeCustomThemeToken(customTheme.accent_alt);
+          var danger = normalizeCustomThemeToken(customTheme.danger);
+          var border = normalizeCustomThemeToken(customTheme.border);
+          var focus = normalizeCustomThemeToken(customTheme.focus);
+          if(bg) rootNode.style.setProperty("--bg", bg);
+          if(bgGradient) rootNode.style.setProperty("--bg-gradient", bgGradient);
+          else if(bg) rootNode.style.setProperty("--bg-gradient", bg);
+          if(surface) rootNode.style.setProperty("--surface", surface);
+          if(surface2) rootNode.style.setProperty("--surface2", surface2);
+          if(text) rootNode.style.setProperty("--text", text);
+          if(text2) rootNode.style.setProperty("--text2", text2);
+          if(accent) rootNode.style.setProperty("--accent", accent);
+          if(accentAlt) rootNode.style.setProperty("--accent-alt", accentAlt);
+          if(danger) rootNode.style.setProperty("--danger", danger);
+          if(border) rootNode.style.setProperty("--border", border);
+          if(focus) rootNode.style.setProperty("--focus", focus);
         }
 
         var resolved = resolveTheme(t);
@@ -77,6 +103,7 @@
         document.documentElement.setAttribute("data-motion", m);
         document.documentElement.setAttribute("data-links", l);
         document.documentElement.setAttribute("data-message-density", md);
+        document.documentElement.setAttribute("data-icon-style", is);
         if(resolved === "custom") applyCustomTheme(document.documentElement);
       })();
     </script>
@@ -325,12 +352,13 @@
       .post-content.multiline-scroll { padding-right: 0.15rem; }
       .comment-content { margin: 0; padding-right: 0.15rem; }
       .post-content a { color: var(--accent); }
-      .post-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
-      .post-actions form { margin: 0; }
+      .post-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; align-items: center; }
+      .post-actions form { margin: 0; display: flex; align-items: center; }
       .oembed-wrap { display: flex; flex: 1; }
       .oembed-wrap iframe { width: 100% !important; height: 100% !important; border: 0; flex: 1; }
       .btn {
-        display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.2rem 0.6rem;
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem;
+        padding: 0.2rem 0.6rem; min-height: 2rem; box-sizing: border-box;
         border-radius: 999px; border: 1px solid var(--border); background: var(--surface2);
         color: var(--text2); cursor: pointer; font-size: 0.8rem; text-decoration: none;
         transition: background 0.15s;
@@ -347,6 +375,30 @@
         height: 1rem;
         display: inline-block;
         vertical-align: middle;
+        filter: none;
+      }
+      /* icon-style=auto: invert on known dark themes */
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="dark"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="cyberpunk"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="forest"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="sunset"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="ocean"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="rose"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="amoled"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="pride-pan"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="pride-rainbow"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="pride-trans"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-theme="pride-bi"] .action-icon,
+      html:not([data-icon-style="light"]):not([data-icon-style="dark"])[data-contrast="high"] .action-icon {
+        filter: invert(1) brightness(1.12);
+      }
+      /* icon-style=light: always invert (SVG strokes appear light/white) */
+      html[data-icon-style="light"] .action-icon {
+        filter: invert(1) brightness(1.12);
+      }
+      /* icon-style=dark: never invert (SVG strokes stay dark) */
+      html[data-icon-style="dark"] .action-icon {
+        filter: none !important;
       }
       .post-media-attachment {
         display: block;
@@ -391,6 +443,32 @@
       textarea, input[type=text], input[type=email], input[type=password], input[type=url], input[type=search], select {
         padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border);
         background: var(--surface); color: var(--text); font-size: 0.9rem; width: 100%;
+      }
+      input[type=file] {
+        width: 100%;
+        color: var(--text2);
+        font-size: 0.86rem;
+      }
+      input[type=file]::file-selector-button,
+      input[type=file]::-webkit-file-upload-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-right: 0.55rem;
+        padding: 0.22rem 0.65rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--text2);
+        cursor: pointer;
+        font-size: 0.8rem;
+        transition: background 0.15s;
+      }
+      input[type=file]::file-selector-button:hover,
+      input[type=file]::-webkit-file-upload-button:hover {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
       }
       input[type=checkbox]:not(.toggle-input), input[type=radio] {
         accent-color: var(--accent);
@@ -487,6 +565,13 @@
       html[data-font="plex"] button,
       html[data-font="plex"] select {
         font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      }
+      html[data-font="mono"] body,
+      html[data-font="mono"] input,
+      html[data-font="mono"] textarea,
+      html[data-font="mono"] button,
+      html[data-font="mono"] select {
+        font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
       }
       html[data-text-size="xsmall"] { font-size: 87.5%; }
       html[data-text-size="small"] { font-size: 93.75%; }
@@ -645,6 +730,7 @@
         <button class="a11y-btn" id="motion-btn" type="button">Motion</button>
         <button class="a11y-btn" id="links-btn" type="button">Links</button>
         <button class="a11y-btn" id="message-density-btn" type="button">Messages</button>
+        <button class="a11y-btn" id="icon-style-btn" type="button">Icons</button>
       </div>
       <span id="a11y-live" class="sr-only" aria-live="polite"></span>
     </header>
@@ -686,6 +772,7 @@
       var motionBtn = document.getElementById("motion-btn");
       var linksBtn = document.getElementById("links-btn");
       var messageDensityBtn = document.getElementById("message-density-btn");
+      var iconStyleBtn = document.getElementById("icon-style-btn");
       var themeSelectWrap = document.querySelector(".theme-select-wrap");
       var live = document.getElementById("a11y-live");
       var searchInput = document.querySelector('.search-bar input[name="q"]');
@@ -715,23 +802,45 @@
         ["--bg","--bg-gradient","--surface","--surface2","--text","--text2","--accent","--accent-alt","--danger","--border","--focus"]
           .forEach(function(name){ root.style.removeProperty(name); });
       }
+      function sanitizeCustomThemeToken(value){
+        return String(value || "").replace(/[^a-zA-Z0-9 ,.()\-#%\/]/g, "");
+      }
+      function normalizeCustomThemeToken(value){
+        var token = sanitizeCustomThemeToken(value).trim().replace(/;+$/, "");
+        if(!token) return "";
+        if (/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?$/.test(token)) {
+          return "#" + token;
+        }
+        return token;
+      }
       function applyCustomTheme(){
         if(!customThemeAvailable) {
           clearCustomTheme();
           return;
         }
-        if(customTheme.bg) root.style.setProperty("--bg", customTheme.bg);
-        if(customTheme.bg_gradient) root.style.setProperty("--bg-gradient", customTheme.bg_gradient);
-        else if(customTheme.bg) root.style.setProperty("--bg-gradient", customTheme.bg);
-        if(customTheme.surface) root.style.setProperty("--surface", customTheme.surface);
-        if(customTheme.surface2) root.style.setProperty("--surface2", customTheme.surface2);
-        if(customTheme.text) root.style.setProperty("--text", customTheme.text);
-        if(customTheme.text2) root.style.setProperty("--text2", customTheme.text2);
-        if(customTheme.accent) root.style.setProperty("--accent", customTheme.accent);
-        if(customTheme.accent_alt) root.style.setProperty("--accent-alt", customTheme.accent_alt);
-        if(customTheme.danger) root.style.setProperty("--danger", customTheme.danger);
-        if(customTheme.border) root.style.setProperty("--border", customTheme.border);
-        if(customTheme.focus) root.style.setProperty("--focus", customTheme.focus);
+        var bg = normalizeCustomThemeToken(customTheme.bg);
+        var bgGradient = normalizeCustomThemeToken(customTheme.bg_gradient);
+        var surface = normalizeCustomThemeToken(customTheme.surface);
+        var surface2 = normalizeCustomThemeToken(customTheme.surface2);
+        var text = normalizeCustomThemeToken(customTheme.text);
+        var text2 = normalizeCustomThemeToken(customTheme.text2);
+        var accent = normalizeCustomThemeToken(customTheme.accent);
+        var accentAlt = normalizeCustomThemeToken(customTheme.accent_alt);
+        var danger = normalizeCustomThemeToken(customTheme.danger);
+        var border = normalizeCustomThemeToken(customTheme.border);
+        var focus = normalizeCustomThemeToken(customTheme.focus);
+        if(bg) root.style.setProperty("--bg", bg);
+        if(bgGradient) root.style.setProperty("--bg-gradient", bgGradient);
+        else if(bg) root.style.setProperty("--bg-gradient", bg);
+        if(surface) root.style.setProperty("--surface", surface);
+        if(surface2) root.style.setProperty("--surface2", surface2);
+        if(text) root.style.setProperty("--text", text);
+        if(text2) root.style.setProperty("--text2", text2);
+        if(accent) root.style.setProperty("--accent", accent);
+        if(accentAlt) root.style.setProperty("--accent-alt", accentAlt);
+        if(danger) root.style.setProperty("--danger", danger);
+        if(border) root.style.setProperty("--border", border);
+        if(focus) root.style.setProperty("--focus", focus);
       }
       function loadOpenDyslexic(){
         if(!document.getElementById("od-css")){
@@ -757,6 +866,14 @@
           document.head.appendChild(l);
         }
       }
+      function loadJetBrainsMono(){
+        if(!document.getElementById("jetbrains-mono-css")){
+          var l = document.createElement("link");
+          l.id = "jetbrains-mono-css"; l.rel = "stylesheet";
+          l.href = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap";
+          document.head.appendChild(l);
+        }
+      }
       function announce(m){ live.textContent = ""; setTimeout(function(){ live.textContent = m; }, 50); }
       function apply(){
         var pref = root.getAttribute("data-theme-pref") || "auto";
@@ -776,6 +893,7 @@
           if (font === "dyslexic") fBtn.textContent = "Font Dyslexic";
           else if (font === "atkinson") fBtn.textContent = "Font Atkinson";
           else if (font === "plex") fBtn.textContent = "Font Plex";
+          else if (font === "mono") fBtn.textContent = "Font Mono";
           else fBtn.textContent = "Font";
         }
         if (textSizeBtn) {
@@ -793,9 +911,16 @@
         if (motionBtn) motionBtn.textContent = motion === "reduced" ? "Motion Reduced" : "Motion";
         if (linksBtn) linksBtn.textContent = links === "underlined" ? "Links Underlined" : "Links";
         if (messageDensityBtn) messageDensityBtn.textContent = messageDensity === "compact" ? "Messages Compact" : "Messages";
+        var iconStyle = root.getAttribute("data-icon-style") || "auto";
+        if (iconStyleBtn) {
+          if (iconStyle === "light") iconStyleBtn.textContent = "Icons Light";
+          else if (iconStyle === "dark") iconStyleBtn.textContent = "Icons Dark";
+          else iconStyleBtn.textContent = "Icons";
+        }
         if (font === "dyslexic") loadOpenDyslexic();
         if (font === "atkinson") loadAtkinson();
         if (font === "plex") loadIbmPlex();
+        if (font === "mono") loadJetBrainsMono();
       }
       if (themeSelectWrap && sel) {
         themeSelectWrap.addEventListener("click", function (evt) {
@@ -834,7 +959,7 @@
       if (fBtn) {
         fBtn.addEventListener("click", function(){
           var cur = root.getAttribute("data-font") || "default";
-          var fonts = ["default", "dyslexic", "atkinson", "plex"];
+          var fonts = ["default", "dyslexic", "atkinson", "plex", "mono"];
           var idx = fonts.indexOf(cur);
           var next = fonts[(idx + 1 + fonts.length) % fonts.length];
           root.setAttribute("data-font", next);
@@ -895,6 +1020,17 @@
           localStorage.setItem("fp-message-density", next);
           apply();
           announce("Message density: " + next);
+        });
+      }
+      if (iconStyleBtn) {
+        iconStyleBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-icon-style") || "auto";
+          var modes = ["auto", "light", "dark"];
+          var next = modes[(modes.indexOf(cur) + 1) % modes.length];
+          root.setAttribute("data-icon-style", next);
+          localStorage.setItem("fp-icon-style", next);
+          apply();
+          announce("Icon style: " + next);
         });
       }
 

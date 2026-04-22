@@ -11,6 +11,23 @@
 
   <section style="margin-bottom:2.5rem;">
     <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-22 &mdash; Security Hardening, Icon Controls &amp; Further UI Polish
+    </h2>
+    <ul>
+      <li>Added server-side CSS injection sanitization for custom theme color inputs — hex fields are validated against a strict pattern and the gradient field now uses a character allowlist, blocking any attempt to inject <code>&lt;/style&gt;</code>, <code>&lt;script&gt;</code>, or other hostile markup.</li>
+      <li>Added client-side sanitization pass on custom theme tokens before they are written to CSS custom properties, as an additional defense-in-depth layer.</li>
+      <li>Added <strong>Icons</strong> toggle in the accessibility bar to cycle between Auto (follows theme), Light (always inverted, ideal for AMOLED/dark themes), and Dark (always original) SVG icon styles.</li>
+      <li>Added <strong>JetBrains Mono</strong> as a fourth font option in the font cycle, joining Dyslexic, Atkinson, and IBM Plex.</li>
+      <li>Fixed <em>Show follower list</em> and <em>Show following list</em> privacy toggles not rendering as styled switch controls on the profile edit page — they now match all other toggle inputs.</li>
+      <li>Fixed custom theme colors entered without a leading <code>#</code> or with a trailing <code>;</code> not applying correctly — both are now auto-corrected on save and at page paint time.</li>
+      <li>Improved post action button row: all buttons now share a consistent height regardless of whether they contain an icon, a count, or both, and clicking no longer causes a layout shift.</li>
+      <li>Added inline tip on the profile edit page reminding users to omit the trailing semicolon from hex color values.</li>
+      <li>Styled file picker buttons, unfollow button on the Following page, and account management buttons (Regenerate recovery codes, Disable 2FA) to match the rest of the UI.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
       2026-04-22 &mdash; Accessibility and UI Polish Pass
     </h2>
     <ul>

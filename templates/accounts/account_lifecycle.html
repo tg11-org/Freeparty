@@ -19,11 +19,11 @@
         <a href="{% url 'accounts:recovery-codes' %}" class="button">View recovery code status</a>
         <form method="post" action="{% url 'accounts:recovery-codes-regenerate' %}" style="display:inline;">
           {% csrf_token %}
-          <button type="submit">Regenerate recovery codes</button>
+          <button class="button" type="submit">Regenerate recovery codes</button>
         </form>
         <form method="post" action="{% url 'accounts:totp-disable' %}" style="display:inline;">
           {% csrf_token %}
-          <button type="submit" style="background:#7a1c1c;">Disable 2FA</button>
+          <button class="button button-danger" type="submit">Disable 2FA</button>
         </form>
       </div>
     {% else %}

@@ -1,6 +1,8 @@
+import re
+from calendar import monthrange
+
 from django import forms
 from django.utils import timezone
-from calendar import monthrange
 
 from apps.profiles.models import Profile, ProfileLink
 
@@ -11,6 +13,8 @@ class ProfileForm(forms.ModelForm):
         for field_name in [
             "show_follower_count",
             "show_following_count",
+            "show_follower_list",
+            "show_following_list",
             "is_private_account",
             "auto_reveal_spoilers",
             "is_minor_account",
@@ -74,6 +78,67 @@ class ProfileForm(forms.ModelForm):
             "theme_custom_border": "Hex color for borders and separators.",
             "theme_custom_focus": "Hex color for keyboard focus outlines.",
         }
+
+
+    _HEX_FIELDS = (
+        "theme_custom_bg",
+        "theme_custom_surface",
+        "theme_custom_surface2",
+        "theme_custom_text",
+        "theme_custom_text2",
+        "theme_custom_accent",
+        "theme_custom_accent_alt",
+        "theme_custom_danger",
+        "theme_custom_border",
+        "theme_custom_focus",
+    )
+
+    _HEX_PATTERN = re.compile(r"^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?$")
+
+    # Allowlist: only printable ASCII printable chars permitted in gradient values,
+    # excluding characters that are dangerous in HTML/CSS/JS contexts.
+    _GRADIENT_SAFE = re.compile(r"^[a-zA-Z0-9 ,.()\-#%/]+$")
+
+    def clean(self):
+        cleaned = super().clean()
+
+        # Normalize hex-like color entries (allow missing # and trailing semicolon).
+        for field_name in self._HEX_FIELDS:
+            raw_value = (cleaned.get(field_name) or "").strip().rstrip(";")
+            if not raw_value:
+                cleaned[field_name] = ""
+                continue
+            if not self._HEX_PATTERN.fullmatch(raw_value):
+                self.add_error(field_name, "Enter a valid hex color, for example #1f2937.")
+                continue
+            cleaned[field_name] = raw_value if raw_value.startswith("#") else f"#{raw_value}"
+
+        gradient_value = (cleaned.get("theme_custom_bg_gradient") or "").strip().rstrip(";")
+        if gradient_value:
+            # Reject any char outside a safe CSS gradient allowlist (blocks <, >, ", ', \, ;, etc.)
+            if not self._GRADIENT_SAFE.fullmatch(gradient_value):
+                self.add_error(
+                    "theme_custom_bg_gradient",
+                    "Gradient contains invalid characters. Only letters, digits, spaces, commas,"
+                    " parentheses, hyphens, # and % are allowed.",
+                )
+            else:
+                lowered = gradient_value.lower()
+                if not (
+                    lowered.startswith("linear-gradient(")
+                    or lowered.startswith("radial-gradient(")
+                    or lowered.startswith("conic-gradient(")
+                ):
+                    if self._HEX_PATTERN.fullmatch(gradient_value):
+                        cleaned["theme_custom_bg_gradient"] = gradient_value if gradient_value.startswith("#") else f"#{gradient_value}"
+                    else:
+                        self.add_error("theme_custom_bg_gradient", "Use a CSS gradient like linear-gradient(...).")
+                else:
+                    cleaned["theme_custom_bg_gradient"] = gradient_value
+        else:
+            cleaned["theme_custom_bg_gradient"] = ""
+
+        return cleaned
 
 
 class GuardianMinorSettingsForm(forms.Form):
