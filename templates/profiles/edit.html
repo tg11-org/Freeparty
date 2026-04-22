@@ -4,6 +4,33 @@
 <section data-section-anchors="1">
 <h2>Edit profile</h2>
 <p style="color:var(--text2);margin-top:0;">Control your profile details and privacy visibility.</p>
+<style>
+  .theme-color-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .theme-color-input-row input[data-theme-hex="1"] {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .theme-color-picker {
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface2);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .theme-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+  .theme-color-picker::-webkit-color-swatch {
+    border: 0;
+    border-radius: 5px;
+  }
+</style>
 <p><a class="btn" href="{% url 'profiles:links_edit' %}">Manage links page</a></p>
 {% if can_manage_linked_minors %}
   <p><a class="btn" href="{% url 'profiles:guardian_minors' %}">Manage linked minor accounts</a></p>
@@ -256,5 +283,60 @@
 
   <button class="button" type="submit">Save</button>
 </form>
+
+<script>
+  (function () {
+    var HEX_PATTERN = /^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?$/;
+
+    function normalizeHexToken(value) {
+      var token = String(value || "").trim().replace(/;+$/, "");
+      if (!token || !HEX_PATTERN.test(token)) return "";
+      return token.charAt(0) === "#" ? token : ("#" + token);
+    }
+
+    function toPickerHex(value) {
+      var normalized = normalizeHexToken(value);
+      if (!normalized) return "";
+      var bare = normalized.slice(1);
+      if (bare.length === 3) {
+        return "#" + bare.split("").map(function (c) { return c + c; }).join("");
+      }
+      if (bare.length === 8) {
+        return "#" + bare.slice(0, 6);
+      }
+      return normalized;
+    }
+
+    document.querySelectorAll("input[data-theme-hex='1']").forEach(function (textInput) {
+      var row = document.createElement("div");
+      row.className = "theme-color-input-row";
+      textInput.parentNode.insertBefore(row, textInput);
+      row.appendChild(textInput);
+
+      var picker = document.createElement("input");
+      picker.type = "color";
+      picker.className = "theme-color-picker";
+      picker.setAttribute("aria-label", "Pick color for " + (textInput.id || "theme color"));
+      picker.title = "Pick a color";
+      picker.value = toPickerHex(textInput.value) || "#000000";
+      row.appendChild(picker);
+
+      textInput.addEventListener("input", function () {
+        var normalized = normalizeHexToken(textInput.value);
+        var pickerHex = toPickerHex(normalized);
+        if (pickerHex) picker.value = pickerHex;
+      });
+
+      textInput.addEventListener("blur", function () {
+        var normalized = normalizeHexToken(textInput.value);
+        if (normalized) textInput.value = normalized;
+      });
+
+      picker.addEventListener("input", function () {
+        textInput.value = picker.value;
+      });
+    });
+  })();
+</script>
 </section>
 {% endblock %}

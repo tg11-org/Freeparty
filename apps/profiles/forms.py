@@ -25,6 +25,12 @@ class ProfileForm(forms.ModelForm):
             if field is not None:
                 field.widget.attrs["class"] = "toggle-input"
 
+        # Mark custom-theme hex fields so the template can attach compact color pickers.
+        for field_name in self._HEX_FIELDS:
+            field = self.fields.get(field_name)
+            if field is not None:
+                field.widget.attrs["data-theme-hex"] = "1"
+
     class Meta:
         model = Profile
         fields = [
