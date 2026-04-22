@@ -13,13 +13,14 @@
     </form>
   </div>
 {% elif conversations %}
+  <section class="dm-view">
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
     <a class="btn {% if filter_type == 'all' %}active{% endif %}" href="/messages/">All threads</a>
     <a class="btn {% if filter_type == 'unread' %}active{% endif %}" href="/messages/?filter=unread">Unread threads</a>
   </div>
   <div style="display:grid;gap:0.75rem;">
     {% for conversation in conversations %}
-      <article class="card" style="padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
+      <article class="card dm-thread-item" style="padding:0.9rem;border:1px solid var(--border);border-radius:10px;">
         <div style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:space-between;align-items:flex-start;">
           <div style="display:flex;flex-wrap:wrap;gap:0.75rem;">
           {% for participant in conversation.participants.all %}
@@ -37,16 +38,19 @@
             <span class="nav-badge">{{ conversation.unread_message_count }} new</span>
           {% endif %}
         </div>
-        <p style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;">{{ conversation.total_message_count }} encrypted envelope{{ conversation.total_message_count|pluralize }} stored</p>
+        <p class="dm-meta" style="margin:0.35rem 0 0;color:var(--text2);font-size:0.92rem;">{{ conversation.total_message_count }} encrypted envelope{{ conversation.total_message_count|pluralize }} stored</p>
       </article>
     {% endfor %}
   </div>
+  </section>
   {% include "partials/pagination.html" with page_obj=page_obj page_param="page" query_string=conversations_query_string %}
 {% else %}
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
-    <a class="btn {% if filter_type == 'all' %}active{% endif %}" href="/messages/">All threads</a>
-    <a class="btn {% if filter_type == 'unread' %}active{% endif %}" href="/messages/?filter=unread">Unread threads</a>
-  </div>
-  <p style="color:var(--text2);">No conversations yet. Visit a profile and use the DM button to start one.</p>
+  <section class="dm-view">
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+      <a class="btn {% if filter_type == 'all' %}active{% endif %}" href="/messages/">All threads</a>
+      <a class="btn {% if filter_type == 'unread' %}active{% endif %}" href="/messages/?filter=unread">Unread threads</a>
+    </div>
+    <p class="dm-meta" style="color:var(--text2);">No conversations yet. Visit a profile and use the DM button to start one.</p>
+  </section>
 {% endif %}
 {% endblock %}

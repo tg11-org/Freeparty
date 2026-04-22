@@ -15,6 +15,7 @@ class ProfileForm(forms.ModelForm):
             "auto_reveal_spoilers",
             "is_minor_account",
             "parental_controls_enabled",
+            "theme_custom_enabled",
         ]:
             field = self.fields.get(field_name)
             if field is not None:
@@ -37,6 +38,18 @@ class ProfileForm(forms.ModelForm):
             "is_minor_account",
             "parental_controls_enabled",
             "guardian_email",
+            "theme_custom_enabled",
+            "theme_custom_bg",
+            "theme_custom_bg_gradient",
+            "theme_custom_surface",
+            "theme_custom_surface2",
+            "theme_custom_text",
+            "theme_custom_text2",
+            "theme_custom_accent",
+            "theme_custom_accent_alt",
+            "theme_custom_danger",
+            "theme_custom_border",
+            "theme_custom_focus",
         ]
         help_texts = {
             "show_follower_count": "Disable to hide your follower count from other people.",
@@ -48,6 +61,18 @@ class ProfileForm(forms.ModelForm):
             "is_minor_account": "Enable if this account is used by a minor and requires extra privacy protections.",
             "parental_controls_enabled": "Lock sensitive privacy/content settings behind guardian email consent.",
             "guardian_email": "Secondary parent/guardian email used to verify and approve protected settings changes.",
+            "theme_custom_enabled": "Enable your own custom color palette and pick 'Custom' in the Theme selector.",
+            "theme_custom_bg": "Hex color for the page background (example: #101820).",
+            "theme_custom_bg_gradient": "Optional CSS gradient for page background (example: linear-gradient(135deg,#101820,#1f2937)).",
+            "theme_custom_surface": "Hex color for cards and panels.",
+            "theme_custom_surface2": "Hex color for secondary panels and buttons.",
+            "theme_custom_text": "Hex color for main text.",
+            "theme_custom_text2": "Hex color for muted/secondary text.",
+            "theme_custom_accent": "Hex color for primary links/buttons.",
+            "theme_custom_accent_alt": "Hex color for hover/alternate accents.",
+            "theme_custom_danger": "Hex color for destructive actions and warnings.",
+            "theme_custom_border": "Hex color for borders and separators.",
+            "theme_custom_focus": "Hex color for keyboard focus outlines.",
         }
 
 

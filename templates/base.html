@@ -25,7 +25,49 @@
         var p = localStorage.getItem("fp-spacing") || "normal";
         var m = localStorage.getItem("fp-motion") || "normal";
         var l = localStorage.getItem("fp-links") || "normal";
-        var resolved = t === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+        var md = localStorage.getItem("fp-message-density") || "normal";
+        var customThemeAvailable = {% if custom_theme_available %}true{% else %}false{% endif %};
+        var customTheme = {% if custom_theme_available %}{
+          bg: "{{ custom_theme.bg|default:''|escapejs }}",
+          bg_gradient: "{{ custom_theme.bg_gradient|default:''|escapejs }}",
+          surface: "{{ custom_theme.surface|default:''|escapejs }}",
+          surface2: "{{ custom_theme.surface2|default:''|escapejs }}",
+          text: "{{ custom_theme.text|default:''|escapejs }}",
+          text2: "{{ custom_theme.text2|default:''|escapejs }}",
+          accent: "{{ custom_theme.accent|default:''|escapejs }}",
+          accent_alt: "{{ custom_theme.accent_alt|default:''|escapejs }}",
+          danger: "{{ custom_theme.danger|default:''|escapejs }}",
+          border: "{{ custom_theme.border|default:''|escapejs }}",
+          focus: "{{ custom_theme.focus|default:''|escapejs }}"
+        }{% else %}{}{% endif %};
+
+        function resolveTheme(pref){
+          if(pref === "custom"){
+            return customThemeAvailable ? "custom" : "light";
+          }
+          if(pref === "auto"){
+            return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          return pref;
+        }
+
+        function applyCustomTheme(rootNode){
+          if(!customThemeAvailable) return;
+          if(customTheme.bg) rootNode.style.setProperty("--bg", customTheme.bg);
+          if(customTheme.bg_gradient) rootNode.style.setProperty("--bg-gradient", customTheme.bg_gradient);
+          else if(customTheme.bg) rootNode.style.setProperty("--bg-gradient", customTheme.bg);
+          if(customTheme.surface) rootNode.style.setProperty("--surface", customTheme.surface);
+          if(customTheme.surface2) rootNode.style.setProperty("--surface2", customTheme.surface2);
+          if(customTheme.text) rootNode.style.setProperty("--text", customTheme.text);
+          if(customTheme.text2) rootNode.style.setProperty("--text2", customTheme.text2);
+          if(customTheme.accent) rootNode.style.setProperty("--accent", customTheme.accent);
+          if(customTheme.accent_alt) rootNode.style.setProperty("--accent-alt", customTheme.accent_alt);
+          if(customTheme.danger) rootNode.style.setProperty("--danger", customTheme.danger);
+          if(customTheme.border) rootNode.style.setProperty("--border", customTheme.border);
+          if(customTheme.focus) rootNode.style.setProperty("--focus", customTheme.focus);
+        }
+
+        var resolved = resolveTheme(t);
         document.documentElement.setAttribute("data-theme", resolved);
         document.documentElement.setAttribute("data-theme-pref", t);
         document.documentElement.setAttribute("data-contrast", c);
@@ -34,6 +76,8 @@
         document.documentElement.setAttribute("data-spacing", p);
         document.documentElement.setAttribute("data-motion", m);
         document.documentElement.setAttribute("data-links", l);
+        document.documentElement.setAttribute("data-message-density", md);
+        if(resolved === "custom") applyCustomTheme(document.documentElement);
       })();
     </script>
     <style>
@@ -41,7 +85,7 @@
         --bg: #f2f6fc; --surface: #ffffff; --surface2: #e8eef8;
         --text: #0e1f38; --text2: #3a5470; --accent: #0f7a6e;
         --accent-alt: #1d4ed8; --danger: #b91c1c; --border: #ccd7ea;
-        --focus: #f59e0b; --radius: 10px; color-scheme: light;
+        --focus: #f59e0b; --radius: 10px; --bg-gradient: var(--bg); color-scheme: light;
       }
       html[data-theme="dark"] {
         --bg: #07111e; --surface: #0d1c30; --surface2: #152539;
@@ -79,6 +123,37 @@
         --accent-alt: #f472b6; --danger: #dc2626; --border: #7c0038;
         --focus: #fde68a; color-scheme: dark;
       }
+      html[data-theme="amoled"] {
+        --bg: #000000; --surface: #050505; --surface2: #0d0d0d;
+        --text: #f7f7f7; --text2: #bdbdbd; --accent: #00d2ff;
+        --accent-alt: #8b5cf6; --danger: #ef4444; --border: #262626;
+        --focus: #f59e0b; --bg-gradient: #000000; color-scheme: dark;
+      }
+      html[data-theme="pride-pan"] {
+        --bg: #081b2e; --surface: #0f2740; --surface2: #153756;
+        --text: #e8f4ff; --text2: #a7c4df; --accent: #ff2e93;
+        --accent-alt: #39b8ff; --danger: #ff5d73; --border: #2a4b68;
+        --focus: #ffd44d; --bg-gradient: linear-gradient(135deg, #ff2e93 0%, #ffd44d 50%, #39b8ff 100%); color-scheme: dark;
+      }
+      html[data-theme="pride-rainbow"] {
+        --bg: #1f1f2b; --surface: #2a2a3a; --surface2: #35354a;
+        --text: #f9f9ff; --text2: #cfd0eb; --accent: #ff4f5e;
+        --accent-alt: #40c4ff; --danger: #ff6b81; --border: #4c4e6e;
+        --focus: #ffe08a; --bg-gradient: linear-gradient(135deg, #e53935 0%, #fb8c00 18%, #fdd835 36%, #43a047 54%, #1e88e5 72%, #8e24aa 90%); color-scheme: dark;
+      }
+      html[data-theme="pride-trans"] {
+        --bg: #173249; --surface: #20415d; --surface2: #2a5477;
+        --text: #f2fbff; --text2: #c4e0ee; --accent: #5bcffb;
+        --accent-alt: #f5abb9; --danger: #ef476f; --border: #4a7492;
+        --focus: #ffd166; --bg-gradient: linear-gradient(135deg, #5bcffb 0%, #f5abb9 25%, #ffffff 50%, #f5abb9 75%, #5bcffb 100%); color-scheme: dark;
+      }
+      html[data-theme="pride-bi"] {
+        --bg: #1d1738; --surface: #281f4a; --surface2: #34295f;
+        --text: #f4edff; --text2: #c8bee3; --accent: #d60270;
+        --accent-alt: #2d5bce; --danger: #ef476f; --border: #4c4180;
+        --focus: #ffd166; --bg-gradient: linear-gradient(135deg, #d60270 0%, #9b4f96 50%, #2d5bce 100%); color-scheme: dark;
+      }
+      html[data-theme="custom"] { color-scheme: light dark; }
       html[data-contrast="high"] {
         --bg: #000; --surface: #000; --surface2: #111;
         --text: #fff; --text2: #fff; --accent: #0ff; --accent-alt: #0ff;
@@ -88,7 +163,7 @@
       body {
         margin: 0;
         font-family: "Segoe UI", system-ui, sans-serif;
-        background: var(--bg);
+        background: var(--bg-gradient, var(--bg));
         color: var(--text);
         line-height: 1.55;
       }
@@ -266,6 +341,39 @@
       .button { background: var(--accent); color: #fff; border: 0; padding: 0.45rem 0.9rem; border-radius: var(--radius); cursor: pointer; font-size: 0.9rem; }
       .button:hover { opacity: 0.88; }
       .button-danger { background: var(--danger); }
+      .post-media-attachment {
+        display: block;
+        width: auto;
+        max-width: min(100%, calc(100vw - 2rem));
+        max-height: min(70vh, 720px);
+        height: auto;
+        object-fit: contain;
+        margin: 0;
+      }
+      .dm-view .dm-thread-item,
+      .dm-view .dm-envelope,
+      .dm-view .dm-compose {
+        transition: padding 0.15s ease;
+      }
+      html[data-message-density="compact"] .dm-view {
+        font-size: 0.92rem;
+      }
+      html[data-message-density="compact"] .dm-view .dm-thread-item {
+        padding: 0.55rem !important;
+      }
+      html[data-message-density="compact"] .dm-view .dm-envelope {
+        padding: 0.52rem !important;
+      }
+      html[data-message-density="compact"] .dm-view .dm-compose {
+        padding: 0.55rem !important;
+      }
+      html[data-message-density="compact"] .dm-view .identity-name {
+        font-size: 0.92rem;
+      }
+      html[data-message-density="compact"] .dm-view .identity-handle,
+      html[data-message-density="compact"] .dm-view .dm-meta {
+        font-size: 0.75rem !important;
+      }
       .messages { list-style: none; padding: 0; margin: 0 0 1rem; }
       .messages li { padding: 0.55rem 0.75rem; border-radius: 6px; margin-bottom: 0.4rem; background: var(--surface2); border-left: 3px solid var(--accent); }
       form p { display: flex; flex-direction: column; gap: 0.2rem; }
@@ -495,6 +603,12 @@
             <option value="sunset">Sunset</option>
             <option value="ocean">Ocean</option>
             <option value="rose">Rose</option>
+            <option value="amoled">AMOLED</option>
+            <option value="pride-pan">Pride · Pan</option>
+            <option value="pride-rainbow">Pride · Rainbow</option>
+            <option value="pride-trans">Pride · Trans</option>
+            <option value="pride-bi">Pride · Bi</option>
+            <option value="custom">Custom / User Defined</option>
           </select>
         </label>
         <button class="a11y-btn" id="contrast-btn" type="button">Contrast</button>
@@ -503,6 +617,7 @@
         <button class="a11y-btn" id="spacing-btn" type="button">Spacing</button>
         <button class="a11y-btn" id="motion-btn" type="button">Motion</button>
         <button class="a11y-btn" id="links-btn" type="button">Links</button>
+        <button class="a11y-btn" id="message-density-btn" type="button">Messages</button>
       </div>
       <span id="a11y-live" class="sr-only" aria-live="polite"></span>
     </header>
@@ -543,12 +658,52 @@
       var spacingBtn = document.getElementById("spacing-btn");
       var motionBtn = document.getElementById("motion-btn");
       var linksBtn = document.getElementById("links-btn");
+      var messageDensityBtn = document.getElementById("message-density-btn");
       var live = document.getElementById("a11y-live");
       var searchInput = document.querySelector('.search-bar input[name="q"]');
+      var customThemeAvailable = {% if custom_theme_available %}true{% else %}false{% endif %};
+      var customTheme = {% if custom_theme_available %}{
+        bg: "{{ custom_theme.bg|default:''|escapejs }}",
+        bg_gradient: "{{ custom_theme.bg_gradient|default:''|escapejs }}",
+        surface: "{{ custom_theme.surface|default:''|escapejs }}",
+        surface2: "{{ custom_theme.surface2|default:''|escapejs }}",
+        text: "{{ custom_theme.text|default:''|escapejs }}",
+        text2: "{{ custom_theme.text2|default:''|escapejs }}",
+        accent: "{{ custom_theme.accent|default:''|escapejs }}",
+        accent_alt: "{{ custom_theme.accent_alt|default:''|escapejs }}",
+        danger: "{{ custom_theme.danger|default:''|escapejs }}",
+        border: "{{ custom_theme.border|default:''|escapejs }}",
+        focus: "{{ custom_theme.focus|default:''|escapejs }}"
+      }{% else %}{}{% endif %};
 
       function resolveTheme(pref){
+        if(pref === "custom"){
+          return customThemeAvailable ? "custom" : "light";
+        }
         if(pref === "auto") return window.matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light";
         return pref;
+      }
+      function clearCustomTheme(){
+        ["--bg","--bg-gradient","--surface","--surface2","--text","--text2","--accent","--accent-alt","--danger","--border","--focus"]
+          .forEach(function(name){ root.style.removeProperty(name); });
+      }
+      function applyCustomTheme(){
+        if(!customThemeAvailable) {
+          clearCustomTheme();
+          return;
+        }
+        if(customTheme.bg) root.style.setProperty("--bg", customTheme.bg);
+        if(customTheme.bg_gradient) root.style.setProperty("--bg-gradient", customTheme.bg_gradient);
+        else if(customTheme.bg) root.style.setProperty("--bg-gradient", customTheme.bg);
+        if(customTheme.surface) root.style.setProperty("--surface", customTheme.surface);
+        if(customTheme.surface2) root.style.setProperty("--surface2", customTheme.surface2);
+        if(customTheme.text) root.style.setProperty("--text", customTheme.text);
+        if(customTheme.text2) root.style.setProperty("--text2", customTheme.text2);
+        if(customTheme.accent) root.style.setProperty("--accent", customTheme.accent);
+        if(customTheme.accent_alt) root.style.setProperty("--accent-alt", customTheme.accent_alt);
+        if(customTheme.danger) root.style.setProperty("--danger", customTheme.danger);
+        if(customTheme.border) root.style.setProperty("--border", customTheme.border);
+        if(customTheme.focus) root.style.setProperty("--focus", customTheme.focus);
       }
       function loadOpenDyslexic(){
         if(!document.getElementById("od-css")){
@@ -567,7 +722,10 @@
         var spacing = root.getAttribute("data-spacing") || "normal";
         var motion = root.getAttribute("data-motion") || "normal";
         var links = root.getAttribute("data-links") || "normal";
+        var messageDensity = root.getAttribute("data-message-density") || "normal";
         root.setAttribute("data-theme", resolveTheme(pref));
+        if (root.getAttribute("data-theme") === "custom") applyCustomTheme();
+        else clearCustomTheme();
         if (sel) sel.value = pref;
         if (cBtn) cBtn.textContent = contrast === "high" ? "High Contrast On" : "Contrast";
         if (fBtn) fBtn.textContent = font === "dyslexic" ? "OpenDyslexic On" : "Font";
@@ -575,11 +733,16 @@
         if (spacingBtn) spacingBtn.textContent = spacing === "relaxed" ? "Spacing Relaxed" : "Spacing";
         if (motionBtn) motionBtn.textContent = motion === "reduced" ? "Motion Reduced" : "Motion";
         if (linksBtn) linksBtn.textContent = links === "underlined" ? "Links Underlined" : "Links";
+        if (messageDensityBtn) messageDensityBtn.textContent = messageDensity === "compact" ? "Messages Compact" : "Messages";
         if (font === "dyslexic") loadOpenDyslexic();
       }
       if (sel) {
         sel.addEventListener("change", function(){
           var v = sel.value;
+          if (v === "custom" && !customThemeAvailable) {
+            announce("Custom theme is not enabled on your profile yet.");
+            v = "auto";
+          }
           root.setAttribute("data-theme-pref", v);
           localStorage.setItem("fp-theme", v);
           apply();
@@ -644,6 +807,16 @@
           localStorage.setItem("fp-links", next);
           apply();
           announce("Links: " + next);
+        });
+      }
+      if (messageDensityBtn) {
+        messageDensityBtn.addEventListener("click", function(){
+          var cur = root.getAttribute("data-message-density") || "normal";
+          var next = cur === "normal" ? "compact" : "normal";
+          root.setAttribute("data-message-density", next);
+          localStorage.setItem("fp-message-density", next);
+          apply();
+          announce("Message density: " + next);
         });
       }
 

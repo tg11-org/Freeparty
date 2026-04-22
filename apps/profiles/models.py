@@ -58,6 +58,18 @@ class Profile(TimeStampedModel):
 	guardian_locks_visibility_settings = models.BooleanField(default=False)
 	guardian_locks_account_protection = models.BooleanField(default=True)
 	guardian_restrict_dms_to_teens = models.BooleanField(default=False)
+	theme_custom_enabled = models.BooleanField(default=False)
+	theme_custom_bg = models.CharField(max_length=32, blank=True)
+	theme_custom_bg_gradient = models.CharField(max_length=255, blank=True)
+	theme_custom_surface = models.CharField(max_length=32, blank=True)
+	theme_custom_surface2 = models.CharField(max_length=32, blank=True)
+	theme_custom_text = models.CharField(max_length=32, blank=True)
+	theme_custom_text2 = models.CharField(max_length=32, blank=True)
+	theme_custom_accent = models.CharField(max_length=32, blank=True)
+	theme_custom_accent_alt = models.CharField(max_length=32, blank=True)
+	theme_custom_danger = models.CharField(max_length=32, blank=True)
+	theme_custom_border = models.CharField(max_length=32, blank=True)
+	theme_custom_focus = models.CharField(max_length=32, blank=True)
 
 	@property
 	def guardian_email_verified(self) -> bool:

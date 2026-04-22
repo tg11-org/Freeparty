@@ -158,6 +158,97 @@
     </label>
   </div>
 
+  <h3 style="margin-top:1.2rem;">Custom Theme</h3>
+  <p class="field-help" style="margin-top:0;">Pick your own palette for the Custom/User Defined theme option in accessibility settings.</p>
+
+  <div class="toggle-field">
+    {{ form.theme_custom_enabled.as_widget|safe }}
+    <label class="toggle-label" for="{{ form.theme_custom_enabled.id_for_label }}">
+      <span class="toggle-switch" aria-hidden="true"></span>
+      <span class="toggle-copy">
+        <span class="toggle-title">Enable custom theme palette</span>
+        <span class="toggle-help">When enabled, selecting the Custom theme applies these colors.</span>
+      </span>
+    </label>
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_bg.id_for_label }}">{{ form.theme_custom_bg.label }}:</label>
+    {% if form.theme_custom_bg.errors %}<ul class="field-errors">{% for error in form.theme_custom_bg.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_bg }}
+    {% if form.theme_custom_bg.help_text %}<p class="field-help">{{ form.theme_custom_bg.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_bg_gradient.id_for_label }}">{{ form.theme_custom_bg_gradient.label }}:</label>
+    {% if form.theme_custom_bg_gradient.errors %}<ul class="field-errors">{% for error in form.theme_custom_bg_gradient.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_bg_gradient }}
+    {% if form.theme_custom_bg_gradient.help_text %}<p class="field-help">{{ form.theme_custom_bg_gradient.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_surface.id_for_label }}">{{ form.theme_custom_surface.label }}:</label>
+    {% if form.theme_custom_surface.errors %}<ul class="field-errors">{% for error in form.theme_custom_surface.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_surface }}
+    {% if form.theme_custom_surface.help_text %}<p class="field-help">{{ form.theme_custom_surface.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_surface2.id_for_label }}">{{ form.theme_custom_surface2.label }}:</label>
+    {% if form.theme_custom_surface2.errors %}<ul class="field-errors">{% for error in form.theme_custom_surface2.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_surface2 }}
+    {% if form.theme_custom_surface2.help_text %}<p class="field-help">{{ form.theme_custom_surface2.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_text.id_for_label }}">{{ form.theme_custom_text.label }}:</label>
+    {% if form.theme_custom_text.errors %}<ul class="field-errors">{% for error in form.theme_custom_text.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_text }}
+    {% if form.theme_custom_text.help_text %}<p class="field-help">{{ form.theme_custom_text.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_text2.id_for_label }}">{{ form.theme_custom_text2.label }}:</label>
+    {% if form.theme_custom_text2.errors %}<ul class="field-errors">{% for error in form.theme_custom_text2.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_text2 }}
+    {% if form.theme_custom_text2.help_text %}<p class="field-help">{{ form.theme_custom_text2.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_accent.id_for_label }}">{{ form.theme_custom_accent.label }}:</label>
+    {% if form.theme_custom_accent.errors %}<ul class="field-errors">{% for error in form.theme_custom_accent.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_accent }}
+    {% if form.theme_custom_accent.help_text %}<p class="field-help">{{ form.theme_custom_accent.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_accent_alt.id_for_label }}">{{ form.theme_custom_accent_alt.label }}:</label>
+    {% if form.theme_custom_accent_alt.errors %}<ul class="field-errors">{% for error in form.theme_custom_accent_alt.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_accent_alt }}
+    {% if form.theme_custom_accent_alt.help_text %}<p class="field-help">{{ form.theme_custom_accent_alt.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_danger.id_for_label }}">{{ form.theme_custom_danger.label }}:</label>
+    {% if form.theme_custom_danger.errors %}<ul class="field-errors">{% for error in form.theme_custom_danger.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_danger }}
+    {% if form.theme_custom_danger.help_text %}<p class="field-help">{{ form.theme_custom_danger.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_border.id_for_label }}">{{ form.theme_custom_border.label }}:</label>
+    {% if form.theme_custom_border.errors %}<ul class="field-errors">{% for error in form.theme_custom_border.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_border }}
+    {% if form.theme_custom_border.help_text %}<p class="field-help">{{ form.theme_custom_border.help_text }}</p>{% endif %}
+  </div>
+
+  <div class="field-wrap">
+    <label for="{{ form.theme_custom_focus.id_for_label }}">{{ form.theme_custom_focus.label }}:</label>
+    {% if form.theme_custom_focus.errors %}<ul class="field-errors">{% for error in form.theme_custom_focus.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {{ form.theme_custom_focus }}
+    {% if form.theme_custom_focus.help_text %}<p class="field-help">{{ form.theme_custom_focus.help_text }}</p>{% endif %}
+  </div>
+
   <button class="button" type="submit">Save</button>
 </form>
 </section>

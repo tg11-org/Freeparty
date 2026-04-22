@@ -130,6 +130,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.core.context_processors.inbox_counts",
+                "apps.core.context_processors.custom_theme_settings",
             ],
         },
     },

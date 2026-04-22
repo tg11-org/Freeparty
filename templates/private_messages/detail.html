@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Conversation · Freeparty{% endblock %}
 {% block content %}
-<section data-section-anchors="1">
+<section class="dm-view" data-section-anchors="1">
 <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
   <div style="display:flex;flex-wrap:wrap;gap:0.9rem;align-items:flex-start;">
     {% for participant in other_participants %}
@@ -133,7 +133,7 @@
   <div id="envelope-list" style="display:grid;gap:0.65rem;">
     {% if envelopes %}
       {% for message in envelopes %}
-        <article data-envelope-id="{{ message.id }}" style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
+        <article class="dm-envelope" data-envelope-id="{{ message.id }}" style="padding:0.8rem;border:1px solid var(--border);border-radius:10px;">
           {% with display_name=message.sender.user.display_name %}
             <div style="display:flex;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;margin:0 0 0.3rem;">
               <span class="identity-stack">
@@ -142,7 +142,7 @@
                   <span class="identity-handle">@{{ message.sender.handle }}</span>
                 {% endif %}
               </span>
-              <span style="color:var(--text2);">· {{ message.created_at }}</span>
+              <span class="dm-meta" style="color:var(--text2);">· {{ message.created_at }}</span>
             </div>
           {% endwith %}
           <div data-envelope-plaintext="{{ message.id }}" style="margin:0 0 0.35rem;">Decrypting encrypted envelope...</div>
@@ -159,7 +159,7 @@
     {% endif %}
   </div>
 
-  <div style="position:sticky;bottom:0;margin-top:0.9rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);z-index:5;">
+  <div class="dm-compose" style="position:sticky;bottom:0;margin-top:0.9rem;padding:0.8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);z-index:5;">
     {% if can_send_encrypted %}
       <form id="e2ee-send-form" method="post" enctype="multipart/form-data" action="{% url 'private_messages:send' conversation.id %}" novalidate style="display:grid;gap:0.75rem;">
         {% csrf_token %}

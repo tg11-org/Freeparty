@@ -77,9 +77,9 @@
                     {% for media in post.attachments.all %}
                       {% if media.moderation_state == 'normal' %}
                         {% if media.attachment_type == 'image' %}
-                          <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                          <img class="post-media-attachment" src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="border-radius:0.6rem;border:1px solid var(--border);">
                         {% elif media.attachment_type == 'video' %}
-                          <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                          <video class="post-media-attachment" controls preload="metadata" style="border-radius:0.6rem;border:1px solid var(--border);">
                             <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
                             Your browser does not support the video tag.
                           </video>
@@ -98,9 +98,9 @@
                 {% for media in post.attachments.all %}
                   {% if media.moderation_state == 'normal' %}
                     {% if media.attachment_type == 'image' %}
-                      <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                      <img class="post-media-attachment" src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="border-radius:0.6rem;border:1px solid var(--border);">
                     {% elif media.attachment_type == 'video' %}
-                      <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                      <video class="post-media-attachment" controls preload="metadata" style="border-radius:0.6rem;border:1px solid var(--border);">
                         <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
                         Your browser does not support the video tag.
                       </video>
@@ -128,9 +128,9 @@
               {% for media in post.attachments.all %}
                 {% if media.moderation_state == 'normal' %}
                   {% if media.attachment_type == 'image' %}
-                    <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                    <img class="post-media-attachment" src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="border-radius:0.6rem;border:1px solid var(--border);">
                   {% elif media.attachment_type == 'video' %}
-                    <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                    <video class="post-media-attachment" controls preload="metadata" style="border-radius:0.6rem;border:1px solid var(--border);">
                       <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
                       Your browser does not support the video tag.
                     </video>
@@ -151,9 +151,9 @@
           {% for media in post.attachments.all %}
             {% if media.moderation_state == 'normal' %}
               {% if media.attachment_type == 'image' %}
-                <img src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                <img class="post-media-attachment" src="{{ media.file.url }}" alt="{{ media.alt_text|default:'Post image' }}" style="border-radius:0.6rem;border:1px solid var(--border);">
               {% elif media.attachment_type == 'video' %}
-                <video controls preload="metadata" style="max-width:100%;border-radius:0.6rem;border:1px solid var(--border);">
+                <video class="post-media-attachment" controls preload="metadata" style="border-radius:0.6rem;border:1px solid var(--border);">
                   <source src="{{ media.file.url }}" type="{{ media.mime_type }}">
                   Your browser does not support the video tag.
                 </video>
