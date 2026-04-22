@@ -370,6 +370,50 @@ class SocialAjaxToggleTests(TestCase):
 		self.assertTrue(payload["disliked"])
 		self.assertEqual(payload["dislike_count"], 1)
 
+	def test_like_clears_existing_dislike(self):
+		self.client.force_login(self.viewer)
+		self.client.post(
+			f"/social/dislike/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		response = self.client.post(
+			f"/social/like/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["liked"])
+		self.assertFalse(payload["disliked"])
+		self.assertEqual(payload["like_count"], 1)
+		self.assertEqual(payload["dislike_count"], 0)
+		self.assertTrue(self.post.likes.filter(actor=self.viewer.actor).exists())
+		self.assertFalse(Dislike.objects.filter(actor=self.viewer.actor, post=self.post).exists())
+
+	def test_dislike_clears_existing_like(self):
+		self.client.force_login(self.viewer)
+		self.client.post(
+			f"/social/like/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		response = self.client.post(
+			f"/social/dislike/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["disliked"])
+		self.assertFalse(payload["liked"])
+		self.assertEqual(payload["dislike_count"], 1)
+		self.assertEqual(payload["like_count"], 0)
+		self.assertTrue(Dislike.objects.filter(actor=self.viewer.actor, post=self.post).exists())
+		self.assertFalse(self.post.likes.filter(actor=self.viewer.actor).exists())
+
 	def test_bookmark_toggle_returns_json(self):
 		self.client.force_login(self.viewer)
 		response = self.client.post(

@@ -1131,6 +1131,16 @@
           button.classList.toggle("active", liked);
           applyToggleIcon(liked);
           if (count && typeof payload.like_count !== "undefined") count.textContent = String(payload.like_count);
+          var dislikeButton = form.parentElement ? form.parentElement.querySelector("[data-action-button='dislike']") : null;
+          if (dislikeButton && typeof payload.disliked !== "undefined") {
+            var disliked = !!payload.disliked;
+            dislikeButton.classList.toggle("active", disliked);
+            var dislikeIcon = dislikeButton.querySelector("[data-action-icon='dislike']");
+            var dislikeCount = dislikeButton.querySelector("[data-action-count='dislike']");
+            var dislikeSrc = disliked ? dislikeButton.getAttribute("data-icon-on") : dislikeButton.getAttribute("data-icon-off");
+            if (dislikeIcon && dislikeSrc && dislikeIcon.tagName === "IMG") dislikeIcon.src = dislikeSrc;
+            if (dislikeCount && typeof payload.dislike_count !== "undefined") dislikeCount.textContent = String(payload.dislike_count);
+          }
           return;
         }
         if (actionType === "dislike") {
@@ -1138,6 +1148,16 @@
           button.classList.toggle("active", disliked);
           applyToggleIcon(disliked);
           if (count && typeof payload.dislike_count !== "undefined") count.textContent = String(payload.dislike_count);
+          var likeButton = form.parentElement ? form.parentElement.querySelector("[data-action-button='like']") : null;
+          if (likeButton && typeof payload.liked !== "undefined") {
+            var liked = !!payload.liked;
+            likeButton.classList.toggle("active", liked);
+            var likeIcon = likeButton.querySelector("[data-action-icon='like']");
+            var likeCount = likeButton.querySelector("[data-action-count='like']");
+            var likeSrc = liked ? likeButton.getAttribute("data-icon-on") : likeButton.getAttribute("data-icon-off");
+            if (likeIcon && likeSrc && likeIcon.tagName === "IMG") likeIcon.src = likeSrc;
+            if (likeCount && typeof payload.like_count !== "undefined") likeCount.textContent = String(payload.like_count);
+          }
           return;
         }
         if (actionType === "repost") {

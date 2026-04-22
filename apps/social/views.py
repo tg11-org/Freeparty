@@ -266,6 +266,7 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	if not created:
 		like.delete()
 		liked = False
+		disliked = Dislike.objects.filter(actor=actor, post=post).exists()
 	else:
 		denied_response = _deny_if_abuse_limited(
 			request,
@@ -281,6 +282,9 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			like.delete()
 			return denied_response
 		liked = True
+		# A post cannot be both liked and disliked by the same actor.
+		Dislike.objects.filter(actor=actor, post=post).delete()
+		disliked = False
 		ActionVelocityTracker.record_like(actor)
 		create_notification_if_new(
 			recipient=post.author,
@@ -293,7 +297,13 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			request=request,
 			name="social_like_toggle",
 			started_at=started_at,
-			payload={"ok": True, "liked": liked, "like_count": post.like_count},
+			payload={
+				"ok": True,
+				"liked": liked,
+				"disliked": disliked,
+				"like_count": post.like_count,
+				"dislike_count": post.dislike_count,
+			},
 			target_id=str(post.id),
 		)
 	return redirect(request.META.get("HTTP_REFERER", "home"))
@@ -324,6 +334,7 @@ def dislike_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	if not created:
 		dislike.delete()
 		disliked = False
+		liked = Like.objects.filter(actor=actor, post=post).exists()
 	else:
 		denied_response = _deny_if_abuse_limited(
 			request,
@@ -339,13 +350,22 @@ def dislike_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 			dislike.delete()
 			return denied_response
 		disliked = True
+		# A post cannot be both disliked and liked by the same actor.
+		Like.objects.filter(actor=actor, post=post).delete()
+		liked = False
 		ActionVelocityTracker.record_like(actor)
 	if _wants_json(request):
 		return _json_action_response(
 			request=request,
 			name="social_dislike_toggle",
 			started_at=started_at,
-			payload={"ok": True, "disliked": disliked, "dislike_count": post.dislike_count},
+			payload={
+				"ok": True,
+				"disliked": disliked,
+				"liked": liked,
+				"dislike_count": post.dislike_count,
+				"like_count": post.like_count,
+			},
 			target_id=str(post.id),
 		)
 	return redirect(request.META.get("HTTP_REFERER", "home"))
