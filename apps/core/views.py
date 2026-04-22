@@ -22,7 +22,7 @@ from apps.private_messages.services import (
 	is_private_messages_enabled,
 	populate_conversation_activity,
 )
-from apps.social.models import Bookmark, Like, Repost
+from apps.social.models import Bookmark, Dislike, Like, Repost
 from apps.timelines.services import home_timeline, public_timeline
 
 
@@ -57,6 +57,7 @@ def home_view(request: HttpRequest) -> HttpResponse:
 	else:
 		posts_qs = public_timeline(limit=None)
 		liked_ids = set()
+		disliked_ids = set()
 		reposted_ids = set()
 
 	if active_tab == "media":
@@ -72,14 +73,17 @@ def home_view(request: HttpRequest) -> HttpResponse:
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		actor = request.user.actor
 		liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+		disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	else:
 		bookmarked_ids = set()
+		disliked_ids = set()
 	return render(request, "core/home.html", {
 		"posts": posts,
 		"page_obj": page_obj,
 		"liked_ids": liked_ids,
+		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
 		"active_tab": active_tab,

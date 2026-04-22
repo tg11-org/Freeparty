@@ -41,7 +41,7 @@
 <section>
   <h3 style="font-size:1rem;color:var(--text2);margin:0 0 0.75rem;">Posts</h3>
   {% for post in post_results %}
-    {% include "partials/post_card.html" with post=post liked_ids=liked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
+    {% include "partials/post_card.html" with post=post liked_ids=liked_ids disliked_ids=disliked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
   {% endfor %}
   {% include "partials/pagination.html" with page_obj=posts_page_obj page_param="posts_page" query_string=query_string %}
 </section>

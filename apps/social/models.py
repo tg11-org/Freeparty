@@ -58,6 +58,15 @@ class Like(TimeStampedModel):
 		constraints = [models.UniqueConstraint(fields=["actor", "post"], name="uniq_like")]
 
 
+class Dislike(TimeStampedModel):
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	actor = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="dislikes")
+	post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="dislikes")
+
+	class Meta:
+		constraints = [models.UniqueConstraint(fields=["actor", "post"], name="uniq_dislike")]
+
+
 class Repost(TimeStampedModel):
 	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 	actor = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="reposts")

@@ -18,7 +18,7 @@ from apps.moderation.services import ActionVelocityTracker, AdaptiveAbuseControl
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Follow, Like, Mute, Repost
+from apps.social.models import Block, Bookmark, Dislike, Follow, Like, Mute, Repost
 from apps.social.services import approve_follow_request, follow_actor, reject_follow_request, unfollow_actor
 
 
@@ -299,6 +299,58 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
+@ratelimit(key="user_or_ip", rate="120/h", block=True)
+@login_required
+@require_POST
+def dislike_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
+	started_at = perf_counter()
+	actor = request.user.actor
+	post = get_object_or_404(Post, id=post_id)
+	if not can_comment_on_post(actor, post):
+		if _wants_json(request):
+			return _json_action_response(
+				request=request,
+				name="social_dislike_toggle",
+				started_at=started_at,
+				payload={"ok": False, "error": "You cannot engage with this post."},
+				status=403,
+				success=False,
+				target_id=str(post.id),
+				detail="permission_denied",
+			)
+		messages.error(request, "You cannot engage with this post.")
+		return redirect(request.META.get("HTTP_REFERER", "home"))
+	dislike, created = Dislike.objects.get_or_create(actor=actor, post=post)
+	if not created:
+		dislike.delete()
+		disliked = False
+	else:
+		denied_response = _deny_if_abuse_limited(
+			request,
+			action_name="like",
+			started_at=started_at,
+			actor=actor,
+			target_id=str(post.id),
+			denial_detail="abuse_control",
+			fallback_redirect=request.META.get("HTTP_REFERER", "home"),
+			ui_message="Dislike temporarily limited due to account risk controls.",
+		)
+		if denied_response is not None:
+			dislike.delete()
+			return denied_response
+		disliked = True
+		ActionVelocityTracker.record_like(actor)
+	if _wants_json(request):
+		return _json_action_response(
+			request=request,
+			name="social_dislike_toggle",
+			started_at=started_at,
+			payload={"ok": True, "disliked": disliked, "dislike_count": post.dislike_count},
+			target_id=str(post.id),
+		)
+	return redirect(request.META.get("HTTP_REFERER", "home"))
+
+
 @ratelimit(key="user_or_ip", rate="60/h", block=True)
 @login_required
 @require_POST
@@ -468,6 +520,7 @@ def bookmarks_view(request: HttpRequest) -> HttpResponse:
 	page_obj = paginate_queryset(request, visible_posts, per_page=20, page_param="page")
 	posts = page_obj.object_list
 	liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	return render(
@@ -477,6 +530,7 @@ def bookmarks_view(request: HttpRequest) -> HttpResponse:
 			"posts": posts,
 			"page_obj": page_obj,
 			"liked_ids": liked_ids,
+			"disliked_ids": disliked_ids,
 			"reposted_ids": reposted_ids,
 			"bookmarked_ids": bookmarked_ids,
 		},

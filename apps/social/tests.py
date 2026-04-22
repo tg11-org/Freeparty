@@ -6,7 +6,7 @@ from apps.core.services.uris import post_uri
 from apps.moderation.models import Report, TrustSignal
 from apps.notifications.models import Notification
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Mute
+from apps.social.models import Block, Bookmark, Dislike, Mute
 from apps.social.models import Follow
 from apps.social.models import Repost
 
@@ -66,6 +66,18 @@ class SocialPermissionTests(TestCase):
 		response = self.client.post(f"/social/like/{post.id}/")
 		self.assertEqual(response.status_code, 302)
 		self.assertFalse(post.likes.filter(actor=self.user_a.actor).exists())
+
+	def test_cannot_dislike_post_when_blocked(self):
+		post = Post.objects.create(
+			author=self.user_b.actor,
+			content="No dislikes from blocked users",
+			canonical_uri=post_uri("blocked-dislike"),
+		)
+		Block.objects.create(blocker=self.user_b.actor, blocked=self.user_a.actor)
+		self.client.force_login(self.user_a)
+		response = self.client.post(f"/social/dislike/{post.id}/")
+		self.assertEqual(response.status_code, 302)
+		self.assertFalse(Dislike.objects.filter(actor=self.user_a.actor, post=post).exists())
 
 	def test_blocked_profile_renders_blocked_page_for_blocker(self):
 		Block.objects.create(blocker=self.user_a.actor, blocked=self.user_b.actor)
@@ -344,6 +356,19 @@ class SocialAjaxToggleTests(TestCase):
 		self.assertTrue(payload["ok"])
 		self.assertTrue(payload["reposted"])
 		self.assertEqual(payload["repost_count"], 1)
+
+	def test_dislike_toggle_returns_json(self):
+		self.client.force_login(self.viewer)
+		response = self.client.post(
+			f"/social/dislike/{self.post.id}/",
+			HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+			HTTP_ACCEPT="application/json",
+		)
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertTrue(payload["ok"])
+		self.assertTrue(payload["disliked"])
+		self.assertEqual(payload["dislike_count"], 1)
 
 	def test_bookmark_toggle_returns_json(self):
 		self.client.force_login(self.viewer)

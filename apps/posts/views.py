@@ -23,7 +23,7 @@ from apps.moderation.services import ActionVelocityTracker, AdaptiveAbuseControl
 from apps.posts.forms import PostForm
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
 from apps.posts.tasks import process_media_attachment
-from apps.social.models import Bookmark, Like, Repost
+from apps.social.models import Bookmark, Dislike, Like, Repost
 from apps.timelines.services import public_timeline
 
 
@@ -103,17 +103,20 @@ def public_posts_view(request: HttpRequest) -> HttpResponse:
 	page_obj = paginate_queryset(request, posts_qs, per_page=20, page_param="page")
 	posts = page_obj.object_list
 	liked_ids = set()
+	disliked_ids = set()
 	reposted_ids = set()
 	bookmarked_ids = set()
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		actor = request.user.actor
 		liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+		disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	return render(request, "posts/public_list.html", {
 		"posts": posts,
 		"page_obj": page_obj,
 		"liked_ids": liked_ids,
+		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
 		"active_tab": active_tab,
@@ -142,10 +145,12 @@ def post_detail_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	elif getattr(post.author.profile, "avatar", None):
 		og_image_url = request.build_absolute_uri(post.author.profile.avatar.url)
 	liked_ids = set()
+	disliked_ids = set()
 	reposted_ids = set()
 	bookmarked_ids = set()
 	if actor is not None:
 		liked_ids = set(Like.objects.filter(actor=actor, post=post).values_list("post_id", flat=True))
+		disliked_ids = set(Dislike.objects.filter(actor=actor, post=post).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=actor, post=post).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post=post).values_list("post_id", flat=True))
 	return render(request, "posts/detail.html", {
@@ -153,6 +158,7 @@ def post_detail_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		"comments": comments,
 		"og_image_url": og_image_url,
 		"liked_ids": liked_ids,
+		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
 	})

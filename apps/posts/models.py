@@ -54,6 +54,10 @@ class Post(TimeStampedModel):
 		return self.likes.count()
 
 	@property
+	def dislike_count(self) -> int:
+		return self.dislikes.count()
+
+	@property
 	def comment_count(self) -> int:
 		return self.comments.filter(deleted_at__isnull=True).count()
 

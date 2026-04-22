@@ -11,7 +11,7 @@ from apps.core.pagination import paginate_queryset
 from apps.core.permissions import can_view_actor
 from apps.posts.hashtags import extract_hashtags
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Follow, Like, Repost
+from apps.social.models import Block, Bookmark, Dislike, Follow, Like, Repost
 from apps.private_messages.services import get_parental_dm_restriction_error
 
 
@@ -72,6 +72,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	is_blocked_by_me = False
 	is_blocked_by_them = False
 	liked_ids = set()
+	disliked_ids = set()
 	reposted_ids = set()
 	bookmarked_ids = set()
 
@@ -90,6 +91,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 			is_blocked_by_me = blocked_context["is_blocked_by_me"]
 			is_blocked_by_them = blocked_context["is_blocked_by_them"]
 		liked_ids = set(Like.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
+		disliked_ids = set(Dislike.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 
@@ -114,6 +116,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		"show_follower_count": show_follower_count,
 		"show_following_count": show_following_count,
 		"liked_ids": liked_ids,
+		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
 		"can_start_dm": can_start_dm,
@@ -183,12 +186,14 @@ def search_view(request: HttpRequest) -> HttpResponse:
 		actors_page_obj = None
 		posts_page_obj = None
 	liked_ids: set = set()
+	disliked_ids: set = set()
 	reposted_ids: set = set()
 	bookmarked_ids: set = set()
 	if request.user.is_authenticated and posts:
-		from apps.social.models import Bookmark, Like, Repost
+		from apps.social.models import Bookmark, Dislike, Like, Repost
 		post_ids = [p.id for p in posts]
 		liked_ids = set(Like.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
+		disliked_ids = set(Dislike.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 	return render(request, "actors/search.html", {
@@ -198,6 +203,7 @@ def search_view(request: HttpRequest) -> HttpResponse:
 		"actors_page_obj": actors_page_obj,
 		"posts_page_obj": posts_page_obj,
 		"liked_ids": liked_ids,
+		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
 		"query_string": f"q={query}",

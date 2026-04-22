@@ -243,6 +243,7 @@
         padding: 0.25rem 1.45rem 0.25rem 0.55rem;
         font-size: 0.78rem;
         font-weight: 600;
+        cursor: pointer;
       }
       .theme-select-wrap:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
       .theme-select {
@@ -341,6 +342,12 @@
       .button { background: var(--accent); color: #fff; border: 0; padding: 0.45rem 0.9rem; border-radius: var(--radius); cursor: pointer; font-size: 0.9rem; }
       .button:hover { opacity: 0.88; }
       .button-danger { background: var(--danger); }
+      .action-icon {
+        width: 1rem;
+        height: 1rem;
+        display: inline-block;
+        vertical-align: middle;
+      }
       .post-media-attachment {
         display: block;
         width: auto;
@@ -467,8 +474,28 @@
       .profile-avatar-lg { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 3px solid var(--accent); }
       .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
       .mention { color: var(--accent); font-weight: 600; }
+      html[data-font="atkinson"] body,
+      html[data-font="atkinson"] input,
+      html[data-font="atkinson"] textarea,
+      html[data-font="atkinson"] button,
+      html[data-font="atkinson"] select {
+        font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+      }
+      html[data-font="plex"] body,
+      html[data-font="plex"] input,
+      html[data-font="plex"] textarea,
+      html[data-font="plex"] button,
+      html[data-font="plex"] select {
+        font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      }
+      html[data-text-size="xsmall"] { font-size: 87.5%; }
+      html[data-text-size="small"] { font-size: 93.75%; }
       html[data-text-size="large"] { font-size: 112.5%; }
       html[data-text-size="larger"] { font-size: 125%; }
+      html[data-spacing="dense"] body { line-height: 1.4; }
+      html[data-spacing="dense"] .post-card { padding: 0.6rem 0; }
+      html[data-spacing="dense"] .btn { padding-top: 0.15rem; padding-bottom: 0.15rem; }
+      html[data-spacing="dense"] .field-wrap { margin-bottom: 0.6rem; }
       html[data-spacing="relaxed"] body { line-height: 1.8; }
       html[data-links="underlined"] a { text-decoration: underline !important; text-underline-offset: 3px; }
       html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
@@ -659,6 +686,7 @@
       var motionBtn = document.getElementById("motion-btn");
       var linksBtn = document.getElementById("links-btn");
       var messageDensityBtn = document.getElementById("message-density-btn");
+      var themeSelectWrap = document.querySelector(".theme-select-wrap");
       var live = document.getElementById("a11y-live");
       var searchInput = document.querySelector('.search-bar input[name="q"]');
       var customThemeAvailable = {% if custom_theme_available %}true{% else %}false{% endif %};
@@ -713,6 +741,22 @@
           document.head.appendChild(l);
         }
       }
+      function loadAtkinson(){
+        if(!document.getElementById("atkinson-css")){
+          var l = document.createElement("link");
+          l.id = "atkinson-css"; l.rel = "stylesheet";
+          l.href = "https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap";
+          document.head.appendChild(l);
+        }
+      }
+      function loadIbmPlex(){
+        if(!document.getElementById("ibm-plex-css")){
+          var l = document.createElement("link");
+          l.id = "ibm-plex-css"; l.rel = "stylesheet";
+          l.href = "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap";
+          document.head.appendChild(l);
+        }
+      }
       function announce(m){ live.textContent = ""; setTimeout(function(){ live.textContent = m; }, 50); }
       function apply(){
         var pref = root.getAttribute("data-theme-pref") || "auto";
@@ -728,13 +772,41 @@
         else clearCustomTheme();
         if (sel) sel.value = pref;
         if (cBtn) cBtn.textContent = contrast === "high" ? "High Contrast On" : "Contrast";
-        if (fBtn) fBtn.textContent = font === "dyslexic" ? "OpenDyslexic On" : "Font";
-        if (textSizeBtn) textSizeBtn.textContent = textSize === "normal" ? "Text size" : (textSize === "large" ? "Text size Large" : "Text size Larger");
-        if (spacingBtn) spacingBtn.textContent = spacing === "relaxed" ? "Spacing Relaxed" : "Spacing";
+        if (fBtn) {
+          if (font === "dyslexic") fBtn.textContent = "Font Dyslexic";
+          else if (font === "atkinson") fBtn.textContent = "Font Atkinson";
+          else if (font === "plex") fBtn.textContent = "Font Plex";
+          else fBtn.textContent = "Font";
+        }
+        if (textSizeBtn) {
+          if (textSize === "xsmall") textSizeBtn.textContent = "Text XS";
+          else if (textSize === "small") textSizeBtn.textContent = "Text Small";
+          else if (textSize === "large") textSizeBtn.textContent = "Text Large";
+          else if (textSize === "larger") textSizeBtn.textContent = "Text XL";
+          else textSizeBtn.textContent = "Text size";
+        }
+        if (spacingBtn) {
+          if (spacing === "dense") spacingBtn.textContent = "Spacing Dense";
+          else if (spacing === "relaxed") spacingBtn.textContent = "Spacing Relaxed";
+          else spacingBtn.textContent = "Spacing";
+        }
         if (motionBtn) motionBtn.textContent = motion === "reduced" ? "Motion Reduced" : "Motion";
         if (linksBtn) linksBtn.textContent = links === "underlined" ? "Links Underlined" : "Links";
         if (messageDensityBtn) messageDensityBtn.textContent = messageDensity === "compact" ? "Messages Compact" : "Messages";
         if (font === "dyslexic") loadOpenDyslexic();
+        if (font === "atkinson") loadAtkinson();
+        if (font === "plex") loadIbmPlex();
+      }
+      if (themeSelectWrap && sel) {
+        themeSelectWrap.addEventListener("click", function (evt) {
+          if (evt.target === sel) return;
+          if (typeof sel.showPicker === "function") {
+            sel.showPicker();
+          } else {
+            sel.focus();
+            sel.click();
+          }
+        });
       }
       if (sel) {
         sel.addEventListener("change", function(){
@@ -762,17 +834,21 @@
       if (fBtn) {
         fBtn.addEventListener("click", function(){
           var cur = root.getAttribute("data-font") || "default";
-          var next = cur === "default" ? "dyslexic" : "default";
+          var fonts = ["default", "dyslexic", "atkinson", "plex"];
+          var idx = fonts.indexOf(cur);
+          var next = fonts[(idx + 1 + fonts.length) % fonts.length];
           root.setAttribute("data-font", next);
           localStorage.setItem("fp-font", next);
           apply();
-          announce("Font: " + (next === "dyslexic" ? "OpenDyslexic" : "Default"));
+          announce("Font: " + next);
         });
       }
       if (textSizeBtn) {
         textSizeBtn.addEventListener("click", function(){
           var cur = root.getAttribute("data-text-size") || "normal";
-          var next = cur === "normal" ? "large" : (cur === "large" ? "larger" : "normal");
+          var sizes = ["xsmall", "small", "normal", "large", "larger"];
+          var idx = sizes.indexOf(cur);
+          var next = sizes[(idx + 1 + sizes.length) % sizes.length];
           root.setAttribute("data-text-size", next);
           localStorage.setItem("fp-text-size", next);
           apply();
@@ -782,7 +858,9 @@
       if (spacingBtn) {
         spacingBtn.addEventListener("click", function(){
           var cur = root.getAttribute("data-spacing") || "normal";
-          var next = cur === "normal" ? "relaxed" : "normal";
+          var spacingModes = ["dense", "normal", "relaxed"];
+          var idx = spacingModes.indexOf(cur);
+          var next = spacingModes[(idx + 1 + spacingModes.length) % spacingModes.length];
           root.setAttribute("data-spacing", next);
           localStorage.setItem("fp-spacing", next);
           apply();
@@ -857,11 +935,24 @@
         var icon = button ? button.querySelector("[data-action-icon='" + actionType + "']") : null;
         var count = button ? button.querySelector("[data-action-count='" + actionType + "']") : null;
 
+        function applyToggleIcon(isOn) {
+          if (!icon) return;
+          var src = isOn ? button.getAttribute("data-icon-on") : button.getAttribute("data-icon-off");
+          if (src && icon.tagName === "IMG") icon.src = src;
+        }
+
         if (actionType === "like") {
           var liked = !!payload.liked;
           button.classList.toggle("active", liked);
-          if (icon) icon.textContent = liked ? "❤️" : "🤍";
+          applyToggleIcon(liked);
           if (count && typeof payload.like_count !== "undefined") count.textContent = String(payload.like_count);
+          return;
+        }
+        if (actionType === "dislike") {
+          var disliked = !!payload.disliked;
+          button.classList.toggle("active", disliked);
+          applyToggleIcon(disliked);
+          if (count && typeof payload.dislike_count !== "undefined") count.textContent = String(payload.dislike_count);
           return;
         }
         if (actionType === "repost") {
@@ -873,7 +964,7 @@
         if (actionType === "bookmark") {
           var bookmarked = !!payload.bookmarked;
           button.classList.toggle("active", bookmarked);
-          if (icon) icon.textContent = bookmarked ? "📌" : "🔖";
+          applyToggleIcon(bookmarked);
           return;
         }
         if (actionType === "follow") {

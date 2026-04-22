@@ -1,5 +1,5 @@
 {# post_card.html — include with post=post, liked_ids=set, reposted_ids=set #}
-{% load tz mention_tags %}
+{% load tz mention_tags static %}
 <article class="post-card">
   {# Avatar #}
   <div>
@@ -200,33 +200,61 @@
     {% endwith %}
 
     <div class="post-actions">
-      <a class="btn" href="/posts/{{ post.id }}/" title="Comment">💬 {{ post.comment_count }}</a>
+      <a class="btn" href="/posts/{{ post.id }}/" title="Comment">
+        <img class="action-icon" src="{% static 'icons/comment.svg' %}" alt="" aria-hidden="true">
+        {{ post.comment_count }}
+      </a>
       {% if user.is_authenticated %}
         <form method="post" action="/social/like/{{ post.id }}/" data-async-post-action="1" data-action-type="like" data-post-id="{{ post.id }}">
           {% csrf_token %}
-          <button class="btn {% if post.id in liked_ids %}active{% endif %}" type="submit" title="{% if post.id in liked_ids %}Unlike{% else %}Like{% endif %}" data-action-button="like">
-            <span data-action-icon="like">{% if post.id in liked_ids %}❤️{% else %}🤍{% endif %}</span>
+          <button
+            class="btn {% if post.id in liked_ids %}active{% endif %}"
+            type="submit"
+            title="{% if post.id in liked_ids %}Unlike{% else %}Like{% endif %}"
+            data-action-button="like"
+            data-icon-on="{% static 'icons/heart-filled.svg' %}"
+            data-icon-off="{% static 'icons/heart-outline.svg' %}">
+            <img class="action-icon" data-action-icon="like" src="{% if post.id in liked_ids %}{% static 'icons/heart-filled.svg' %}{% else %}{% static 'icons/heart-outline.svg' %}{% endif %}" alt="" aria-hidden="true">
             <span data-action-count="like">{{ post.like_count }}</span>
+          </button>
+        </form>
+        <form method="post" action="/social/dislike/{{ post.id }}/" data-async-post-action="1" data-action-type="dislike" data-post-id="{{ post.id }}">
+          {% csrf_token %}
+          <button
+            class="btn {% if post.id in disliked_ids %}active{% endif %}"
+            type="submit"
+            title="{% if post.id in disliked_ids %}Remove dislike{% else %}Dislike{% endif %}"
+            data-action-button="dislike"
+            data-icon-on="{% static 'icons/thumb-down-filled.svg' %}"
+            data-icon-off="{% static 'icons/thumb-down-outline.svg' %}">
+            <img class="action-icon" data-action-icon="dislike" src="{% if post.id in disliked_ids %}{% static 'icons/thumb-down-filled.svg' %}{% else %}{% static 'icons/thumb-down-outline.svg' %}{% endif %}" alt="" aria-hidden="true">
+            <span data-action-count="dislike">{{ post.dislike_count }}</span>
           </button>
         </form>
         <form method="post" action="/social/repost/{{ post.id }}/" data-async-post-action="1" data-action-type="repost" data-post-id="{{ post.id }}">
           {% csrf_token %}
           <button class="btn {% if post.id in reposted_ids %}active{% endif %}" type="submit" title="{% if post.id in reposted_ids %}Undo repost{% else %}Repost{% endif %}" data-action-button="repost">
-            <span data-action-icon="repost">🔁</span>
+            <img class="action-icon" data-action-icon="repost" src="{% static 'icons/repost.svg' %}" alt="" aria-hidden="true">
             <span data-action-count="repost">{{ post.repost_count }}</span>
           </button>
         </form>
         <form method="post" action="/social/bookmark/{{ post.id }}/" data-async-post-action="1" data-action-type="bookmark" data-post-id="{{ post.id }}">
           {% csrf_token %}
-          <button class="btn {% if post.id in bookmarked_ids %}active{% endif %}" type="submit" title="Bookmark" data-action-button="bookmark">
-            <span data-action-icon="bookmark">🔖</span>
+          <button
+            class="btn {% if post.id in bookmarked_ids %}active{% endif %}"
+            type="submit"
+            title="Bookmark"
+            data-action-button="bookmark"
+            data-icon-on="{% static 'icons/bookmark-filled.svg' %}"
+            data-icon-off="{% static 'icons/bookmark-outline.svg' %}">
+            <img class="action-icon" data-action-icon="bookmark" src="{% if post.id in bookmarked_ids %}{% static 'icons/bookmark-filled.svg' %}{% else %}{% static 'icons/bookmark-outline.svg' %}{% endif %}" alt="" aria-hidden="true">
           </button>
         </form>
         <button class="btn" type="button" title="Share post" onclick="openShareSheet(this)"
           data-share-url="{{ request.scheme }}://{{ request.get_host }}/posts/{{ post.id }}/"
           data-share-title="{{ post.author.handle }}: {{ post.content|truncatechars:80 }}"
-          data-post-id="{{ post.id }}">📤</button>
-        <a class="btn btn-danger" href="/moderation/report/?target_post_id={{ post.id }}" title="Report post">⚑</a>
+          data-post-id="{{ post.id }}"><img class="action-icon" src="{% static 'icons/share.svg' %}" alt="" aria-hidden="true"></button>
+        <a class="btn btn-danger" href="/moderation/report/?target_post_id={{ post.id }}" title="Report post"><img class="action-icon" src="{% static 'icons/flag.svg' %}" alt="" aria-hidden="true"></a>
         {% if user.actor.id == post.author.id %}
           <a class="btn" href="/posts/{{ post.id }}/edit/" title="Edit post">Edit</a>
           <form method="post" action="/posts/{{ post.id }}/delete/" onsubmit="return confirm('Delete this post?');">
@@ -235,8 +263,9 @@
           </form>
         {% endif %}
       {% else %}
-        <span class="btn">🤍 {{ post.like_count }}</span>
-        <span class="btn">🔁 {{ post.repost_count }}</span>
+        <span class="btn"><img class="action-icon" src="{% static 'icons/heart-outline.svg' %}" alt="" aria-hidden="true"> {{ post.like_count }}</span>
+        <span class="btn"><img class="action-icon" src="{% static 'icons/thumb-down-outline.svg' %}" alt="" aria-hidden="true"> {{ post.dislike_count }}</span>
+        <span class="btn"><img class="action-icon" src="{% static 'icons/repost.svg' %}" alt="" aria-hidden="true"> {{ post.repost_count }}</span>
       {% endif %}
     </div>
   </div>
