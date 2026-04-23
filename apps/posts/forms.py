@@ -19,6 +19,15 @@ class PostForm(forms.ModelForm):
         self.fields["is_nsfw"].label = "NSFW"
         self.fields["is_16plus"].label = "16+"
         self.fields["is_18plus"].label = "18+"
+        for field_name in ["local_only", "is_nsfw", "is_16plus", "is_18plus"]:
+            field = self.fields.get(field_name)
+            if field is None:
+                continue
+            existing = field.widget.attrs.get("class", "").strip()
+            classes = [token for token in existing.split() if token]
+            if "toggle-input" not in classes:
+                classes.append("toggle-input")
+            field.widget.attrs["class"] = " ".join(classes)
 
     def clean_attachment(self):
         upload = self.cleaned_data.get("attachment")

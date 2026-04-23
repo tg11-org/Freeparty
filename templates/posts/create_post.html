@@ -1,59 +1,6 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.55rem 0;
-}
-.toggle-row input[type="checkbox"] {
-  display: none;
-}
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 2.6rem;
-  height: 1.45rem;
-  flex-shrink: 0;
-}
-.toggle-switch .track {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: var(--border);
-  transition: background 0.2s;
-  cursor: pointer;
-}
-.toggle-switch .thumb {
-  position: absolute;
-  top: 0.18rem;
-  left: 0.18rem;
-  width: 1.08rem;
-  height: 1.08rem;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.2s;
-  pointer-events: none;
-}
-.toggle-row input[type="checkbox"]:checked + .toggle-switch .track {
-  background: var(--accent, #7c3aed);
-}
-.toggle-row input[type="checkbox"]:checked + .toggle-switch .thumb {
-  transform: translateX(1.15rem);
-}
-.toggle-label {
-  font-size: 0.97rem;
-  cursor: pointer;
-  user-select: none;
-}
-.toggle-desc {
-  font-size: 0.84rem;
-  color: var(--text2);
-}
-</style>
-
 <h2>Create post</h2>
 <form method="post" enctype="multipart/form-data">{% csrf_token %}
   {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
@@ -65,53 +12,49 @@
   <p>{{ form.visibility.label_tag }} {{ form.visibility }}</p>
 
   <div style="display:flex;flex-direction:column;gap:0.1rem;margin:0.5rem 0;">
-    <label class="toggle-row" for="{{ form.is_nsfw.id_for_label }}">
-      {{ form.is_nsfw }}
-      <span class="toggle-switch" aria-hidden="true">
-        <span class="track"></span>
-        <span class="thumb"></span>
-      </span>
-      <span>
-        <span class="toggle-label">{{ form.is_nsfw.label }}</span>
-        <span class="toggle-desc" style="display:block;">Mark as not safe for work — shown behind a blur</span>
-      </span>
-    </label>
+    <div class="toggle-field">
+      {{ form.is_nsfw.as_widget|safe }}
+      <label class="toggle-label" for="{{ form.is_nsfw.id_for_label }}">
+        <span class="toggle-switch" aria-hidden="true"></span>
+        <span class="toggle-copy">
+          <span class="toggle-title">{{ form.is_nsfw.label }}</span>
+          <span class="toggle-help">Mark as not safe for work — shown behind a blur</span>
+        </span>
+      </label>
+    </div>
 
-    <label class="toggle-row" for="{{ form.is_16plus.id_for_label }}">
-      {{ form.is_16plus }}
-      <span class="toggle-switch" aria-hidden="true">
-        <span class="track"></span>
-        <span class="thumb"></span>
-      </span>
-      <span>
-        <span class="toggle-label">{{ form.is_16plus.label }}</span>
-        <span class="toggle-desc" style="display:block;">Restrict to 16+ audiences for mature teen/adult themes</span>
-      </span>
-    </label>
+    <div class="toggle-field">
+      {{ form.is_16plus.as_widget|safe }}
+      <label class="toggle-label" for="{{ form.is_16plus.id_for_label }}">
+        <span class="toggle-switch" aria-hidden="true"></span>
+        <span class="toggle-copy">
+          <span class="toggle-title">{{ form.is_16plus.label }}</span>
+          <span class="toggle-help">Restrict to 16+ audiences for mature teen/adult themes</span>
+        </span>
+      </label>
+    </div>
 
-    <label class="toggle-row" for="{{ form.is_18plus.id_for_label }}">
-      {{ form.is_18plus }}
-      <span class="toggle-switch" aria-hidden="true">
-        <span class="track"></span>
-        <span class="thumb"></span>
-      </span>
-      <span>
-        <span class="toggle-label">{{ form.is_18plus.label }}</span>
-        <span class="toggle-desc" style="display:block;">Restrict to 18+ audiences only</span>
-      </span>
-    </label>
+    <div class="toggle-field">
+      {{ form.is_18plus.as_widget|safe }}
+      <label class="toggle-label" for="{{ form.is_18plus.id_for_label }}">
+        <span class="toggle-switch" aria-hidden="true"></span>
+        <span class="toggle-copy">
+          <span class="toggle-title">{{ form.is_18plus.label }}</span>
+          <span class="toggle-help">Restrict to 18+ audiences only</span>
+        </span>
+      </label>
+    </div>
 
-    <label class="toggle-row" for="{{ form.local_only.id_for_label }}">
-      {{ form.local_only }}
-      <span class="toggle-switch" aria-hidden="true">
-        <span class="track"></span>
-        <span class="thumb"></span>
-      </span>
-      <span>
-        <span class="toggle-label">{{ form.local_only.label }}</span>
-        <span class="toggle-desc" style="display:block;">Do not federate this post to remote servers</span>
-      </span>
-    </label>
+    <div class="toggle-field">
+      {{ form.local_only.as_widget|safe }}
+      <label class="toggle-label" for="{{ form.local_only.id_for_label }}">
+        <span class="toggle-switch" aria-hidden="true"></span>
+        <span class="toggle-copy">
+          <span class="toggle-title">{{ form.local_only.label }}</span>
+          <span class="toggle-help">Do not federate this post to remote servers</span>
+        </span>
+      </label>
+    </div>
   </div>
 
   <p>
