@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.utils import timezone
 
+from apps.core.network import safe_urlopen
 from apps.federation.models import Instance, RemoteActor, RemotePost
 from apps.federation.signing import verify_signed_payload
 
@@ -24,9 +25,9 @@ def is_instance_allowed(instance_domain: str) -> bool:
 	return not instance.is_blocked and instance.allowlist_state == Instance.AllowlistState.ALLOWED
 
 
-def fetch_json_document(url: str) -> tuple[dict, dict[str, str]]:
+def fetch_json_document(url: str, *, expected_domain: str | None = None) -> tuple[dict, dict[str, str]]:
 	request = urllib.request.Request(url, headers={"Accept": "application/json"})
-	with urllib.request.urlopen(request, timeout=10) as response:
+	with safe_urlopen(request, timeout=10, allowed_domain=expected_domain, allow_http=False, allow_redirects=True) as response:
 		payload = response.read()
 		data = json.loads(payload.decode("utf-8"))
 		headers = {
@@ -94,7 +95,7 @@ def fetch_remote_actor(url: str) -> RemoteActor:
 	if not is_instance_allowed(domain):
 		raise ValueError("Remote instance is not allowlisted.")
 	instance = Instance._default_manager.get(domain=domain)
-	data, headers = fetch_json_document(url)
+	data, headers = fetch_json_document(url, expected_domain=domain)
 	raw_payload = json.dumps(data, sort_keys=True).encode("utf-8")
 	if not validate_inbound_signature(
 		instance=instance,
@@ -119,7 +120,7 @@ def fetch_remote_object(url: str) -> RemotePost:
 	if not is_instance_allowed(domain):
 		raise ValueError("Remote instance is not allowlisted.")
 	instance = Instance._default_manager.get(domain=domain)
-	data, headers = fetch_json_document(url)
+	data, headers = fetch_json_document(url, expected_domain=domain)
 	raw_payload = json.dumps(data, sort_keys=True).encode("utf-8")
 	if not validate_inbound_signature(
 		instance=instance,

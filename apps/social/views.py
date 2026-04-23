@@ -270,7 +270,7 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	else:
 		denied_response = _deny_if_abuse_limited(
 			request,
-			action_name="like",
+			action_name="dislike",
 			started_at=started_at,
 			actor=actor,
 			target_id=str(post.id),
@@ -285,7 +285,7 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		# A post cannot be both liked and disliked by the same actor.
 		Dislike.objects.filter(actor=actor, post=post).delete()
 		disliked = False
-		ActionVelocityTracker.record_like(actor)
+		ActionVelocityTracker.record_dislike(actor)
 		create_notification_if_new(
 			recipient=post.author,
 			source_actor=actor,
@@ -338,7 +338,7 @@ def dislike_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	else:
 		denied_response = _deny_if_abuse_limited(
 			request,
-			action_name="like",
+			action_name="dislike",
 			started_at=started_at,
 			actor=actor,
 			target_id=str(post.id),
@@ -353,7 +353,7 @@ def dislike_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		# A post cannot be both disliked and liked by the same actor.
 		Like.objects.filter(actor=actor, post=post).delete()
 		liked = False
-		ActionVelocityTracker.record_like(actor)
+		ActionVelocityTracker.record_dislike(actor)
 	if _wants_json(request):
 		return _json_action_response(
 			request=request,
@@ -536,7 +536,31 @@ def bookmark_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 def bookmarks_view(request: HttpRequest) -> HttpResponse:
 	actor = request.user.actor
 	bookmarks_qs = Bookmark.objects.filter(actor=actor).select_related("post", "post__author", "post__author__profile").prefetch_related("post__attachments").order_by("-created_at")
-	visible_posts = [item.post for item in bookmarks_qs if can_view_post(actor, item.post)]
+	accepted_followee_ids = set(
+		Follow.objects.filter(follower=actor, state=Follow.FollowState.ACCEPTED).values_list("followee_id", flat=True)
+	)
+	blocked_actor_ids = set(
+		Block.objects.filter(blocker=actor).values_list("blocked_id", flat=True)
+	) | set(Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True))
+	visible_posts = []
+	for item in bookmarks_qs:
+		post = item.post
+		author = post.author
+		if post.deleted_at is not None:
+			continue
+		if post.moderation_state in {Post.ModerationState.HIDDEN, Post.ModerationState.TAKEN_DOWN}:
+			continue
+		if author_id := post.author_id:
+			if author_id in blocked_actor_ids:
+				continue
+		if actor.id != author.id:
+			if getattr(author.profile, "is_private_account", False) and author.id not in accepted_followee_ids:
+				continue
+			if post.visibility == Post.Visibility.FOLLOWERS_ONLY and author.id not in accepted_followee_ids:
+				continue
+			if post.visibility == Post.Visibility.PRIVATE:
+				continue
+		visible_posts.append(post)
 	page_obj = paginate_queryset(request, visible_posts, per_page=20, page_param="page")
 	posts = page_obj.object_list
 	liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))

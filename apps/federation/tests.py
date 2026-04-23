@@ -13,13 +13,17 @@ from apps.federation.tasks import execute_federation_delivery
 
 
 class _MockResponse:
-	def __init__(self, payload: dict, *, status: int = 202, headers: dict | None = None):
+	def __init__(self, payload: dict, *, status: int = 202, headers: dict | None = None, final_url: str = ""):
 		self.status = status
 		self._payload = json.dumps(payload).encode("utf-8")
 		self.headers = headers or {}
+		self._final_url = final_url
 
 	def read(self):
 		return self._payload
+
+	def geturl(self):
+		return self._final_url or "https://remote.example/mock"
 
 	def __enter__(self):
 		return self
@@ -179,4 +183,22 @@ class FederationInboundFetchTests(TestCase):
 		)
 
 		with self.assertRaisesMessage(ValueError, "Invalid federation signature."):
+			fetch_remote_actor("https://remote.example/actors/alice")
+
+	@patch("apps.federation.services.urllib.request.urlopen")
+	def test_fetch_remote_actor_rejects_redirect_to_different_host(self, mocked_urlopen):
+		payload = {
+			"id": "https://remote.example/actors/alice",
+			"preferredUsername": "alice",
+			"name": "Alice Remote",
+			"publicKey": {"publicKeyPem": "PUBLIC"},
+		}
+		mocked_urlopen.return_value = _MockResponse(
+			payload,
+			status=200,
+			headers=self._signed_headers(payload),
+			final_url="https://internal.example/actors/alice",
+		)
+
+		with self.assertRaisesMessage(ValueError, "Remote URL host does not match the expected domain."):
 			fetch_remote_actor("https://remote.example/actors/alice")

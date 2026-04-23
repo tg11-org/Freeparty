@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import ipaddress
 import re
-import socket
 from urllib.parse import quote, urlparse
 
+import bleach
 from celery import shared_task
 from django.conf import settings
 
+from apps.core.network import UnsafeRemoteURL, safe_urlopen, validate_remote_url
 from apps.core.services.task_observability import observe_celery_task
 from apps.core.services.task_reliability import (
     mark_task_execution_failed,
@@ -92,14 +92,6 @@ def process_media_attachment(
 # ── Link unfurl helpers ────────────────────────────────────────────────────────
 
 _URL_RE = re.compile(r'https?://[^\s"\'<>]{10,}', re.IGNORECASE)
-_PRIVATE_NETS = [
-    ipaddress.ip_network(net) for net in (
-        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-        "127.0.0.0/8", "169.254.0.0/16", "::1/128", "fc00::/7",
-    )
-]
-# Cloud metadata endpoints that must be blocked
-_BLOCKED_HOSTS = {"169.254.169.254", "metadata.google.internal", "metadata.internal"}
 _OEMBED_PROVIDERS = {
     # Video
     "youtube.com": "https://www.youtube.com/oembed",
@@ -131,20 +123,47 @@ _OEMBED_PROVIDERS = {
     # Crowdfunding
     "kickstarter.com": "https://www.kickstarter.com/services/oembed",
 }
+_OEMBED_ALLOWED_ATTRS = {
+    "iframe": [
+        "allow",
+        "allowfullscreen",
+        "height",
+        "loading",
+        "referrerpolicy",
+        "src",
+        "title",
+        "width",
+    ],
+}
 
 
 def _is_ssrf_target(url: str) -> bool:
     """Return True if the URL resolves to a private/reserved address."""
-    parsed = urlparse(url)
-    host = parsed.hostname or ""
-    if not host or host in _BLOCKED_HOSTS:
-        return True
     try:
-        addr = ipaddress.ip_address(socket.gethostbyname(host))
-        return any(addr in net for net in _PRIVATE_NETS)
-    except (socket.gaierror, ValueError):
-        return True  # unresolvable → block
+        validate_remote_url(url)
+    except UnsafeRemoteURL:
+        return True
+    return False
 
+
+def _sanitize_oembed_html(html: str) -> str:
+    """Keep only allowlisted iframe markup from provider oEmbed responses."""
+    cleaned = bleach.clean(
+        html or "",
+        tags=["iframe"],
+        attributes=_OEMBED_ALLOWED_ATTRS,
+        protocols=["https"],
+        strip=True,
+        strip_comments=True,
+    ).strip()
+    lowered = cleaned.lower()
+    if "<iframe" not in lowered:
+        return ""
+    if "src=" not in lowered:
+        return ""
+    if any(blocked in lowered for blocked in ("javascript:", "data:", "srcdoc")):
+        return ""
+    return cleaned[:5000]
 
 def _fetch_unfurl(url: str) -> dict:
     """Fetch OG/oEmbed metadata for *url*. Returns a dict of fields."""
@@ -168,7 +187,7 @@ def _fetch_unfurl(url: str) -> dict:
                 import json
                 oembed_url = f"{oembed_endpoint}?url={quote(url, safe='')}&format=json&maxwidth=680"
                 req = urllib.request.Request(oembed_url, headers=headers)
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with safe_urlopen(req, timeout=8, allow_http=False, allow_redirects=False) as resp:
                     data = json.loads(resp.read(256 * 1024))
                 result: dict = {
                     "url": url,
@@ -180,9 +199,7 @@ def _fetch_unfurl(url: str) -> dict:
                 }
                 # Only embed iframe for YouTube/Vimeo — sanitise to avoid XSS
                 if data.get("type") in ("video", "rich") and data.get("html"):
-                    html = data["html"]
-                    if "<iframe" in html and "javascript" not in html.lower():
-                        result["embed_html"] = html
+                    result["embed_html"] = _sanitize_oembed_html(data["html"])
                 return result
             except Exception as exc:  # noqa: BLE001
                 return {"fetch_error": f"oEmbed error: {exc}"[:500]}
@@ -190,7 +207,7 @@ def _fetch_unfurl(url: str) -> dict:
     # ── Generic OG scrape ───────────────────────────────────────────────────
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with safe_urlopen(req, timeout=8, allow_redirects=False) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if "text/html" not in content_type:
                 return {"fetch_error": "Non-HTML content-type"}

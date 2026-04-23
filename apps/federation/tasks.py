@@ -12,6 +12,7 @@ from apps.core.services.task_reliability import (
     mark_task_execution_succeeded,
     start_task_execution,
 )
+from apps.core.network import safe_urlopen
 from apps.federation.models import FederationDelivery
 from apps.federation.signing import build_signed_headers
 
@@ -59,7 +60,13 @@ def execute_federation_delivery(self, delivery_id: str, correlation_id: str | No
                 headers={**headers, "Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with safe_urlopen(
+                request,
+                timeout=10,
+                allowed_domain=delivery.target_instance.domain,
+                allow_http=False,
+                allow_redirects=True,
+            ) as response:
                 response_code = getattr(response, "status", 202)
                 response_body = response.read().decode("utf-8", errors="replace")[:500]
 

@@ -24,6 +24,7 @@ class Conversation(TimeStampedModel):
         related_name="created_conversations",
     )
     conversation_type = models.CharField(max_length=16, choices=ConversationType.choices, default=ConversationType.DIRECT)
+    direct_participant_key = models.CharField(max_length=80, blank=True, db_index=True)
     title = models.CharField(max_length=255, blank=True)
     compromised_at = models.DateTimeField(
         null=True,
@@ -37,6 +38,13 @@ class Conversation(TimeStampedModel):
         indexes = [
             models.Index(fields=["conversation_type", "created_at"]),
             models.Index(fields=["compromised_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["direct_participant_key"],
+                condition=~models.Q(direct_participant_key=""),
+                name="uniq_direct_conversation_participant_key",
+            ),
         ]
 
     def __str__(self) -> str:

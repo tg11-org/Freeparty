@@ -212,7 +212,9 @@ def email_test_view(request: HttpRequest) -> HttpResponse:
 	if not (request.user.is_staff or request.user.is_superuser):
 		return HttpResponseForbidden("Staff or superuser access required.")
 
-	recipients = ["gage@tg11.org", "skittlesallday12@icloud.com"]
+	recipients = list(getattr(settings, "EMAIL_DIAGNOSTIC_RECIPIENTS", []) or [])
+	if not recipients and request.user.email:
+		recipients = [request.user.email]
 	logs: list[str] = []
 	result = ""
 	endpoint_results: list[dict[str, str]] = []

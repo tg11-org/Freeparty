@@ -1,3 +1,5 @@
+from django.core.exceptions import ObjectDoesNotExist
+
 from apps.social.models import Block, Follow
 
 
@@ -19,7 +21,7 @@ def follow_actor(follower, followee) -> Follow:
     is_private = False
     try:
         is_private = bool(followee.profile.is_private_account)
-    except Exception:
+    except ObjectDoesNotExist:
         is_private = False
     state = Follow.FollowState.PENDING if is_private else Follow.FollowState.ACCEPTED
     follow, _ = Follow.objects.update_or_create(

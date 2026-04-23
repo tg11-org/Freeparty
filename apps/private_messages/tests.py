@@ -414,6 +414,23 @@ class PrivateMessagesHtmlFlowTests(TestCase):
         self.assertEqual(first.status_code, 302)
         self.assertEqual(second.status_code, 302)
         self.assertEqual(Conversation.objects.count(), 1)
+        conversation = Conversation.objects.get()
+        self.assertTrue(conversation.direct_participant_key)
+
+    def test_start_direct_conversation_reuses_existing_thread_in_reverse_order(self):
+        get_or_create_direct_conversation(
+            created_by=self.alice.actor,
+            participant_a=self.alice.actor,
+            participant_b=self.bob.actor,
+        )
+        conversation, created = get_or_create_direct_conversation(
+            created_by=self.bob.actor,
+            participant_a=self.bob.actor,
+            participant_b=self.alice.actor,
+        )
+        self.assertFalse(created)
+        self.assertEqual(Conversation.objects.count(), 1)
+        self.assertEqual(conversation.direct_participant_key, Conversation.objects.get().direct_participant_key)
 
     def test_minor_with_parental_dm_restriction_cannot_start_dm_with_non_teen(self):
         self.alice.actor.profile.is_minor_account = True

@@ -4,6 +4,8 @@ from uuid import UUID
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Case, DateTimeField, F, Value, When
+from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -119,7 +121,22 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 	elif owner_state == "unassigned":
 		reports = reports.filter(assigned_to__isnull=True)
 	if sla_breached == "true":
-		reports = [report for report in reports if report.sla_breached()]
+		now = timezone.now()
+		reports = (
+			reports.filter(responded_at__isnull=True, sla_target_minutes__gt=0)
+			.annotate(sla_anchor=Coalesce("first_assigned_at", "created_at"))
+			.annotate(
+				sla_deadline=Case(
+					When(severity=Report.Severity.CRITICAL, then=F("sla_anchor") + Value(timezone.timedelta(minutes=30))),
+					When(severity=Report.Severity.HIGH, then=F("sla_anchor") + Value(timezone.timedelta(hours=2))),
+					When(severity=Report.Severity.MEDIUM, then=F("sla_anchor") + Value(timezone.timedelta(hours=8))),
+					When(severity=Report.Severity.LOW, then=F("sla_anchor") + Value(timezone.timedelta(hours=24))),
+					default=F("sla_anchor") + Value(timezone.timedelta(hours=8)),
+					output_field=DateTimeField(),
+				)
+			)
+			.filter(sla_deadline__lt=now)
+		)
 
 	return render(request, "moderation/dashboard.html", {
 		"reports": reports,

@@ -72,4 +72,4 @@ def linkify_mentions(value, autoescape=True):
     if last_end < len(text):
         parts.append(escape(text[last_end:]) if autoescape else text[last_end:])
 
-    return mark_safe(''.join(parts))
+    return mark_safe(''.join(parts))  # nosec B308 - tokens and intervening text are escaped before joining.

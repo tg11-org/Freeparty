@@ -21,16 +21,16 @@ services:
   db:
     image: postgres:16.3
     environment:
-      POSTGRES_DB: freeparty
-      POSTGRES_USER: freeparty
-      POSTGRES_PASSWORD: freeparty
+      POSTGRES_DB: ${POSTGRES_DB:-freeparty}
+      POSTGRES_USER: ${POSTGRES_USER:-freeparty}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-freeparty}
     restart: unless-stopped
     ports:
       - "${BIND_IP:-127.0.0.1}:${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U freeparty -d freeparty"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,7 +68,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["celery", "-A", "config", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
+    command: ["sh", "-c", "celery -A config beat -l info -s \"$${CELERY_BEAT_SCHEDULE_FILENAME:-/tmp/celerybeat-schedule}\""]
     env_file:
       - .env
     restart: unless-stopped

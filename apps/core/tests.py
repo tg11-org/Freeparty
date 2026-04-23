@@ -330,6 +330,7 @@ class EmailDiagnosticsViewTests(TestCase):
         EMAIL_PORT=587,
         EMAIL_USE_TLS=True,
         EMAIL_HOST_USER="noreply@tg11.org",
+        EMAIL_DIAGNOSTIC_RECIPIENTS=["diagnostics@example.com"],
         MAIL_SERVER_HOST="mail.tg11.org",
         MAIL_SERVER_IPV4="45.79.221.81",
         MAIL_SERVER_IPV6="[2600:3c02::2000:81ff:fe85:4b9a]",
@@ -353,7 +354,7 @@ class EmailDiagnosticsViewTests(TestCase):
         self.assertContains(response, "2600:3c02::2000:81ff:fe85:4b9a")
         self.assertContains(response, "Email send call returned")
         self.assertEqual(len(mail.outbox), 3)
-        self.assertEqual(mail.outbox[0].to, ["gage@tg11.org", "skittlesallday12@icloud.com"])
+        self.assertEqual(mail.outbox[0].to, ["diagnostics@example.com"])
 
 
 class DeadLetterReplayCommandTests(TestCase):

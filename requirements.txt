@@ -10,6 +10,7 @@ channels-redis>=4.2,<4.3
 daphne>=4.1,<4.2
 django-ratelimit>=4.1,<4.2
 django-cors-headers>=4.4,<4.5
+bleach>=5.0,<6
 Pillow>=10.4,<10.5
 sentry-sdk[django]>=2.14,<3
 playwright>=1.52,<1.53

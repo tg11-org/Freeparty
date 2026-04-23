@@ -7,7 +7,7 @@ from django.db.models import Count, Q
 
 from apps.moderation.models import TrustSignal, SecurityAuditEvent, Report, ModerationAction
 from apps.posts.models import Post
-from apps.social.models import Like, Repost, Follow
+from apps.social.models import Dislike, Follow, Like, Repost
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +318,16 @@ class ActionVelocityTracker:
 		signal.save(update_fields=["likes_last_hour"])
 
 	@staticmethod
+	def record_dislike(actor):
+		"""Record a dislike action using the engagement velocity bucket."""
+		signal = TrustSignalService.get_trust_signal(actor)
+		signal.likes_last_hour = Dislike.objects.filter(
+			actor=actor,
+			created_at__gte=timezone.now() - timedelta(hours=1),
+		).count()
+		signal.save(update_fields=["likes_last_hour"])
+
+	@staticmethod
 	def record_repost(actor):
 		"""Record a repost action for velocity tracking."""
 		signal = TrustSignalService.get_trust_signal(actor)
@@ -331,7 +341,7 @@ class ActionVelocityTracker:
 	def is_velocity_anomaly(actor, action_type: str) -> bool:
 		"""
 		Check if this action would exceed velocity thresholds.
-		action_type: 'post', 'follow', 'like', 'repost'
+		action_type: 'post', 'follow', 'like', 'dislike', 'repost'
 		"""
 		signal = TrustSignalService.get_trust_signal(actor)
 
@@ -339,7 +349,7 @@ class ActionVelocityTracker:
 			return signal.posts_last_hour > TrustSignalService.velocity_threshold_posts_per_hour()
 		elif action_type == "follow":
 			return signal.follows_last_hour > TrustSignalService.velocity_threshold_follows_per_hour()
-		elif action_type == "like":
+		elif action_type in {"like", "dislike"}:
 			return signal.likes_last_hour > TrustSignalService.velocity_threshold_likes_per_hour()
 		elif action_type == "repost":
 			return signal.reposts_last_hour > TrustSignalService.velocity_threshold_reposts_per_hour()

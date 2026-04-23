@@ -9,7 +9,7 @@ from apps.core.services.uris import post_uri
 from apps.moderation.models import Report, TrustSignal
 from apps.posts.hashtags import extract_hashtags
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Hashtag, LinkPreview, Post, PostEditHistory
-from apps.posts.tasks import _fetch_unfurl, process_media_attachment, unfurl_post_link
+from apps.posts.tasks import _fetch_unfurl, _is_ssrf_target, _sanitize_oembed_html, process_media_attachment, unfurl_post_link
 from apps.social.models import Block, Follow
 
 
@@ -392,6 +392,26 @@ class LinkPreviewTests(TestCase):
 			data = _fetch_unfurl("http://127.0.0.1/internal")
 		self.assertEqual(data["fetch_error"], "SSRF blocked")
 		mocked_urlopen.assert_not_called()
+
+	def test_fetch_unfurl_blocks_ipv6_private_targets(self):
+		self.assertTrue(_is_ssrf_target("http://[::1]/internal"))
+		self.assertTrue(_is_ssrf_target("http://[fd00::1]/internal"))
+
+	def test_oembed_html_sanitizer_strips_hostile_iframe_markup(self):
+		html = (
+			'<iframe src="https://www.youtube.com/embed/demo" onload="alert(1)" '
+			'srcdoc="<script>alert(1)</script>" width="560"></iframe><script>alert(2)</script>'
+		)
+		cleaned = _sanitize_oembed_html(html)
+		self.assertIn("<iframe", cleaned)
+		self.assertIn("https://www.youtube.com/embed/demo", cleaned)
+		self.assertNotIn("onload", cleaned)
+		self.assertNotIn("srcdoc", cleaned)
+		self.assertNotIn("<script", cleaned)
+
+	def test_oembed_html_sanitizer_rejects_javascript_iframe_src(self):
+		cleaned = _sanitize_oembed_html('<iframe src="javascript:alert(1)"></iframe>')
+		self.assertEqual(cleaned, "")
 
 	@override_settings(FEATURE_LINK_UNFURL_ENABLED=True)
 	@patch("apps.posts.tasks._fetch_unfurl")

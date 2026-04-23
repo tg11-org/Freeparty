@@ -80,7 +80,9 @@ echo "Configuring .env for deployment..."
 python3 - <<'PY' "$SITE_DOMAIN" "$SERVER_IP" "$APP_PORT"
 import pathlib
 import re
+import secrets
 import sys
+from urllib.parse import quote, unquote, urlparse
 
 site_domain = sys.argv[1]
 server_ip = sys.argv[2]
@@ -97,6 +99,31 @@ required_updates = {
     'WEB_PORT': app_port,
 }
 
+db_password_match = re.search(r'^POSTGRES_PASSWORD=(.*)$', text, re.M)
+db_password = db_password_match.group(1).strip() if db_password_match else ""
+database_url_match = re.search(r'^DATABASE_URL=(.*)$', text, re.M)
+database_url = database_url_match.group(1).strip() if database_url_match else ""
+if not db_password and database_url:
+    parsed_database_url = urlparse(database_url)
+    db_password = unquote(parsed_database_url.password or "")
+if not db_password or db_password == "replace-with-random-local-password":
+    db_password = secrets.token_urlsafe(32)
+encoded_db_password = quote(db_password, safe="")
+for key, value in {
+    'POSTGRES_DB': 'freeparty',
+    'POSTGRES_USER': 'freeparty',
+    'POSTGRES_PASSWORD': db_password,
+    'DATABASE_URL': f'postgres://freeparty:{encoded_db_password}@db:5432/freeparty',
+}.items():
+    pattern = re.compile(rf'^{re.escape(key)}=.*$', re.M)
+    replacement = f'{key}={value}'
+    if pattern.search(text):
+        text = pattern.sub(replacement, text)
+    else:
+        if not text.endswith('\n'):
+            text += '\n'
+        text += replacement + '\n'
+
 for key, value in required_updates.items():
     pattern = re.compile(rf'^{re.escape(key)}=.*$', re.M)
     replacement = f'{key}={value}'
@@ -107,20 +134,20 @@ for key, value in required_updates.items():
             text += '\n'
         text += replacement + '\n'
 
-    # Keep custom infra port overrides from existing .env (e.g. DB_PORT=5433).
-    # Only set these defaults if missing.
-    default_only = {
-      'DB_PORT': '5432',
-      'REDIS_PORT': '6379',
-      'SMTP_PORT': '1025',
-      'MAILHOG_UI_PORT': '8025',
-    }
+# Keep custom infra port overrides from existing .env (e.g. DB_PORT=5433).
+# Only set these defaults if missing.
+default_only = {
+    'DB_PORT': '5432',
+    'REDIS_PORT': '6379',
+    'SMTP_PORT': '1025',
+    'MAILHOG_UI_PORT': '8025',
+}
 
-    for key, value in default_only.items():
-      pattern = re.compile(rf'^{re.escape(key)}=.*$', re.M)
-      if not pattern.search(text):
+for key, value in default_only.items():
+    pattern = re.compile(rf'^{re.escape(key)}=.*$', re.M)
+    if not pattern.search(text):
         if not text.endswith('\n'):
-          text += '\n'
+            text += '\n'
         text += f'{key}={value}\n'
 
 for key in ('ALLOWED_HOSTS', 'CSRF_TRUSTED_ORIGINS', 'CORS_ALLOWED_ORIGINS'):
@@ -130,8 +157,8 @@ if not text.endswith('\n'):
     text += '\n'
 
 text += f'ALLOWED_HOSTS={site_domain},localhost,127.0.0.1\n'
-text += f'CSRF_TRUSTED_ORIGINS=https://{site_domain},http://{site_domain}\n'
-text += f'CORS_ALLOWED_ORIGINS=https://{site_domain},http://{site_domain}\n'
+text += f'CSRF_TRUSTED_ORIGINS=https://{site_domain}\n'
+text += f'CORS_ALLOWED_ORIGINS=https://{site_domain}\n'
 
 env_path.write_text(text, encoding='utf-8')
 PY

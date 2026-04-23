@@ -311,34 +311,27 @@ def send_encrypted_message_view(request: HttpRequest, conversation_id: str) -> H
         participants__actor=actor,
     )
 
-    # Phase 7.1: Rate limit message sends to prevent abuse
-    message_rate_limit_messages = max(1, int(getattr(settings, "PM_MESSAGE_RATE_LIMIT_MESSAGES", 100)))
-    message_rate_limit_window_seconds = max(1, int(getattr(settings, "PM_MESSAGE_RATE_LIMIT_WINDOW_SECONDS", 60)))
-
-    recent_message_count = EncryptedMessageEnvelope.objects.filter(
-        conversation=conversation,
-        sender=actor,
-        created_at__gte=timezone.now() - timedelta(seconds=message_rate_limit_window_seconds),
-    ).count()
-
-    if recent_message_count >= message_rate_limit_messages:
-        messages.error(
-            request,
-            f"You have sent {recent_message_count} messages in the current safety window. "
-            f"Please wait before sending more messages to this conversation."
-        )
-        if expects_json:
-            return JsonResponse({"ok": False, "error": "Rate limit reached. Please wait before sending again."}, status=429)
-        return redirect("private_messages:detail", conversation_id=conversation.id)
-
     form = EncryptedMessageEnvelopeForm(request.POST, request.FILES)
     if form.is_valid():
         uploaded_attachments = request.FILES.getlist("encrypted_attachments")
         try:
             _validate_uploaded_attachments(uploaded_attachments, form.cleaned_data["attachment_manifest"])
             with transaction.atomic():
+                locked_conversation = Conversation.objects.select_for_update().get(id=conversation.id)
+                message_rate_limit_messages = max(1, int(getattr(settings, "PM_MESSAGE_RATE_LIMIT_MESSAGES", 100)))
+                message_rate_limit_window_seconds = max(1, int(getattr(settings, "PM_MESSAGE_RATE_LIMIT_WINDOW_SECONDS", 60)))
+                recent_message_count = EncryptedMessageEnvelope.objects.filter(
+                    conversation=locked_conversation,
+                    sender=actor,
+                    created_at__gte=timezone.now() - timedelta(seconds=message_rate_limit_window_seconds),
+                ).count()
+                if recent_message_count >= message_rate_limit_messages:
+                    raise ValidationError(
+                        f"You have sent {recent_message_count} messages in the current safety window. "
+                        f"Please wait before sending more messages to this conversation."
+                    )
                 envelope = send_direct_encrypted_message(
-                    conversation=conversation,
+                    conversation=locked_conversation,
                     sender=actor,
                     ciphertext=form.cleaned_data["ciphertext"],
                     message_nonce=form.cleaned_data["message_nonce"],
@@ -353,6 +346,11 @@ def send_encrypted_message_view(request: HttpRequest, conversation_id: str) -> H
                 publish_direct_message_event(envelope)
         except ValidationError as exc:
             form.add_error(None, exc.message)
+            if "current safety window" in exc.message:
+                messages.error(request, exc.message)
+                if expects_json:
+                    return JsonResponse({"ok": False, "error": "Rate limit reached. Please wait before sending again."}, status=429)
+                return redirect("private_messages:detail", conversation_id=conversation.id)
         else:
             messages.success(request, "Encrypted message stored.")
             if expects_json:

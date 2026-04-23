@@ -12,6 +12,7 @@ from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_http_methods
 from django_ratelimit.decorators import ratelimit
+import logging
 
 from apps.accounts.forms import (
 	AccountDeactivationForm,
@@ -26,6 +27,7 @@ from apps.profiles.views import initialize_minor_profile_for_signup
 from apps.moderation.services import SecurityAuditService
 
 
+logger = logging.getLogger(__name__)
 _TOTP_PENDING_SESSION_KEY = "totp_pending_user_id"
 _TOTP_RECOVERY_CODES_SESSION_KEY = "totp_recovery_codes"
 
@@ -86,8 +88,10 @@ class RateLimitedLoginView(LoginView):
 					user_agent=user_agent,
 					reason="invalid_password",
 				)
-			except Exception:
-				pass  # User doesn't exist or other issue, don't expose in logs
+			except User.DoesNotExist:
+				pass
+			except Exception as exc:
+				logger.warning("Failed to record login failure audit event: %s", exc)
 		
 		return super().form_invalid(form)
 
@@ -130,8 +134,10 @@ class RateLimitedPasswordResetView(PasswordResetView):
 				ip_address=ip_address,
 				user_agent=user_agent,
 			)
-		except Exception:
-			pass  # User not found or other issue
+		except User.DoesNotExist:
+			pass
+		except Exception as exc:
+			logger.warning("Failed to record password reset request audit event: %s", exc)
 		
 		return response
 

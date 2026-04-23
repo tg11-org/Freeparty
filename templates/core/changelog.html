@@ -11,6 +11,22 @@
 
   <section style="margin-bottom:2.5rem;">
     <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-04-23 &mdash; Security Hardening: oEmbed XSS, SSRF Guards, DM Dedup, Safer Defaults
+    </h2>
+    <ul>
+      <li>Hardened link preview embeds: provider oEmbed HTML is now sanitized with a strict iframe allowlist before it is stored/rendered.</li>
+      <li>Improved SSRF protections for remote fetches: URLs are validated for allowed schemes, DNS A/AAAA resolution, and private/reserved IP ranges.</li>
+      <li>Federation inbound/outbound fetch now validates the final URL after redirects and enforces the expected instance domain.</li>
+      <li>Direct message threads are now de-duplicated at the database layer using a canonical participant key to prevent race-created duplicate conversations.</li>
+      <li>Encrypted DM send rate-limit check is now enforced inside a transaction lock to prevent concurrent bypass.</li>
+      <li>Production bootstrap defaults tightened: setup script now writes HTTPS-only trusted origins and preserves existing DB credentials; local compose uses env-driven Postgres credentials.</li>
+      <li>Removed deprecated Django setting <code>SECURE_BROWSER_XSS_FILTER</code> in production configuration.</li>
+      <li>Performance improvements: bookmarks visibility avoids per-item permission queries, and unread DM conversation count is computed via DB-side <code>EXISTS</code> checks.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
       2026-04-22 &mdash; Security Hardening, Icon Controls &amp; Further UI Polish
     </h2>
     <ul>
@@ -200,7 +216,7 @@
   </section>
 
   <footer style="margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--text2);font-size:0.82rem;">
-    Freeparty Changelog &middot; Last updated 2026-04-22
+    Freeparty Changelog &middot; Last updated 2026-04-23
   </footer>
 </article>
 {% endblock %}

@@ -5,8 +5,8 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.db import transaction
-from django.db.models import Count, Max, Q
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Exists, Max, OuterRef, Q
 from django.utils import timezone
 
 import hashlib
@@ -17,6 +17,11 @@ from apps.private_messages.models import Conversation, ConversationParticipant, 
 
 
 logger = logging.getLogger("apps.private_messages")
+
+
+def canonical_direct_participant_key(participant_a, participant_b) -> str:
+    participant_ids = sorted([str(participant_a.id), str(participant_b.id)])
+    return ":".join(participant_ids)
 
 
 def _get_profile_or_none(actor):
@@ -196,30 +201,29 @@ def populate_conversation_activity(*, actor, conversations):
 
 
 def get_unread_conversation_count(*, actor) -> int:
-    participant_rows = ConversationParticipant.objects.filter(actor=actor).values("conversation_id", "joined_at", "last_read_at")
-    participant_by_conversation_id = {row["conversation_id"]: row for row in participant_rows}
-    if not participant_by_conversation_id:
-        return 0
-
-    unread_conversation_ids = set()
-    incoming_rows = EncryptedMessageEnvelope.objects.filter(
-        conversation_id__in=participant_by_conversation_id.keys(),
+    unread_after_last_read = EncryptedMessageEnvelope.objects.filter(
+        conversation_id=OuterRef("conversation_id"),
         recipient_actor=actor,
-    ).values("conversation_id", "created_at")
-    for row in incoming_rows:
-        participant = participant_by_conversation_id.get(row["conversation_id"])
-        if participant is None:
-            continue
-        last_read_at = participant["last_read_at"]
-        cutoff = last_read_at or participant["joined_at"]
-        if cutoff is None:
-            unread_conversation_ids.add(row["conversation_id"])
-        elif last_read_at is None and row["created_at"] >= cutoff:
-            unread_conversation_ids.add(row["conversation_id"])
-        elif last_read_at is not None and row["created_at"] > cutoff:
-            unread_conversation_ids.add(row["conversation_id"])
-
-    return len(unread_conversation_ids)
+        created_at__gt=OuterRef("last_read_at"),
+    )
+    unread_since_join = EncryptedMessageEnvelope.objects.filter(
+        conversation_id=OuterRef("conversation_id"),
+        recipient_actor=actor,
+        created_at__gte=OuterRef("joined_at"),
+    )
+    read_count = (
+        ConversationParticipant.objects.filter(actor=actor, last_read_at__isnull=False)
+        .annotate(has_unread=Exists(unread_after_last_read))
+        .filter(has_unread=True)
+        .count()
+    )
+    never_read_count = (
+        ConversationParticipant.objects.filter(actor=actor, last_read_at__isnull=True)
+        .annotate(has_unread=Exists(unread_since_join))
+        .filter(has_unread=True)
+        .count()
+    )
+    return read_count + never_read_count
 
 
 def mark_conversation_read(*, conversation, actor, read_through=None):
@@ -253,10 +257,12 @@ def create_direct_conversation(*, created_by, participant_a, participant_b) -> C
     if participant_a == participant_b:
         raise ValidationError("Direct conversation requires two distinct participants.")
 
+    direct_participant_key = canonical_direct_participant_key(participant_a, participant_b)
     with transaction.atomic():
         conversation = Conversation.objects.create(
             created_by=created_by,
             conversation_type=Conversation.ConversationType.DIRECT,
+            direct_participant_key=direct_participant_key,
         )
         ConversationParticipant.objects.create(conversation=conversation, actor=participant_a)
         ConversationParticipant.objects.create(conversation=conversation, actor=participant_b)
@@ -268,45 +274,73 @@ def get_or_create_direct_conversation(*, created_by, participant_a, participant_
     if participant_a == participant_b:
         raise ValidationError("Direct conversation requires two distinct participants.")
 
-    # Phase 7.1: Rate limit conversation creation per actor
-    conversation_creation_limit = max(1, int(getattr(settings, "PM_CONVERSATION_CREATION_LIMIT", 10)))
-    conversation_creation_window_seconds = max(
-        1,
-        int(getattr(settings, "PM_CONVERSATION_CREATION_WINDOW_SECONDS", 86400)),
-    )
-    recent_conversations = Conversation.objects.filter(
-        created_by=created_by,
-        created_at__gte=timezone.now() - timedelta(seconds=conversation_creation_window_seconds),
-    ).count()
-
-    if recent_conversations >= conversation_creation_limit:
-        raise ValidationError(
-            f"You have created {recent_conversations} conversations in the current safety window. "
-            f"Please wait before creating more conversations."
+    direct_participant_key = canonical_direct_participant_key(participant_a, participant_b)
+    with transaction.atomic():
+        existing = (
+            Conversation.objects.select_for_update()
+            .filter(
+                conversation_type=Conversation.ConversationType.DIRECT,
+                direct_participant_key=direct_participant_key,
+            )
+            .first()
         )
+        if existing is not None:
+            return existing, False
 
-    existing = (
-        Conversation.objects.filter(conversation_type=Conversation.ConversationType.DIRECT)
-        .annotate(
-            participant_count=Count("participants", distinct=True),
-            matched_participant_count=Count(
-                "participants__actor",
-                filter=Q(participants__actor__in=[participant_a, participant_b]),
-                distinct=True,
-            ),
+        # Backward-compatible lookup for older direct threads created before
+        # canonical participant keys existed.
+        existing = (
+            Conversation.objects.select_for_update()
+            .filter(conversation_type=Conversation.ConversationType.DIRECT, direct_participant_key="")
+            .annotate(
+                participant_count=Count("participants", distinct=True),
+                matched_participant_count=Count(
+                    "participants__actor",
+                    filter=Q(participants__actor__in=[participant_a, participant_b]),
+                    distinct=True,
+                ),
+            )
+            .filter(participant_count=2, matched_participant_count=2)
+            .distinct()
+            .first()
         )
-        .filter(participant_count=2, matched_participant_count=2)
-        .distinct()
-        .first()
-    )
-    if existing is not None:
-        return existing, False
+        if existing is not None:
+            existing.direct_participant_key = direct_participant_key
+            existing.save(update_fields=["direct_participant_key", "updated_at"])
+            return existing, False
 
-    return create_direct_conversation(
-        created_by=created_by,
-        participant_a=participant_a,
-        participant_b=participant_b,
-    ), True
+        conversation_creation_limit = max(1, int(getattr(settings, "PM_CONVERSATION_CREATION_LIMIT", 10)))
+        conversation_creation_window_seconds = max(
+            1,
+            int(getattr(settings, "PM_CONVERSATION_CREATION_WINDOW_SECONDS", 86400)),
+        )
+        recent_conversations = Conversation.objects.filter(
+            created_by=created_by,
+            created_at__gte=timezone.now() - timedelta(seconds=conversation_creation_window_seconds),
+        ).count()
+
+        if recent_conversations >= conversation_creation_limit:
+            raise ValidationError(
+                f"You have created {recent_conversations} conversations in the current safety window. "
+                f"Please wait before creating more conversations."
+            )
+
+        try:
+            with transaction.atomic():
+                conversation = Conversation.objects.create(
+                    created_by=created_by,
+                    conversation_type=Conversation.ConversationType.DIRECT,
+                    direct_participant_key=direct_participant_key,
+                )
+                ConversationParticipant.objects.create(conversation=conversation, actor=participant_a)
+                ConversationParticipant.objects.create(conversation=conversation, actor=participant_b)
+        except IntegrityError:
+            existing = Conversation.objects.get(
+                conversation_type=Conversation.ConversationType.DIRECT,
+                direct_participant_key=direct_participant_key,
+            )
+            return existing, False
+    return conversation, True
 
 
 def store_encrypted_message(

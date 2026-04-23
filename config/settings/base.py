@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from datetime import timedelta
 from pathlib import Path
 
@@ -66,6 +67,7 @@ env = environ.Env(
     MAIL_SERVER_HOST=(str, ""),
     MAIL_SERVER_IPV4=(str, ""),
     MAIL_SERVER_IPV6=(str, ""),
+    EMAIL_DIAGNOSTIC_RECIPIENTS=(list, []),
 )
 
 environ.Env.read_env(BASE_DIR / ".env")
@@ -234,7 +236,7 @@ CHANNEL_LAYERS = {
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default=REDIS_URL)
-CELERY_BEAT_SCHEDULE_FILENAME = env("CELERY_BEAT_SCHEDULE_FILENAME", default="/tmp/celerybeat-schedule")
+CELERY_BEAT_SCHEDULE_FILENAME = env("CELERY_BEAT_SCHEDULE_FILENAME", default=str(Path(tempfile.gettempdir()) / "celerybeat-schedule"))
 CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
@@ -277,6 +279,7 @@ ACCOUNT_PURGE_CRON_MINUTE = env.int("ACCOUNT_PURGE_CRON_MINUTE", default=15)
 MAIL_SERVER_HOST = env("MAIL_SERVER_HOST", default="")
 MAIL_SERVER_IPV4 = env("MAIL_SERVER_IPV4", default="")
 MAIL_SERVER_IPV6 = env("MAIL_SERVER_IPV6", default="")
+EMAIL_DIAGNOSTIC_RECIPIENTS = env.list("EMAIL_DIAGNOSTIC_RECIPIENTS", default=[])
 REQUEST_SLOW_MS = env.int("REQUEST_SLOW_MS", default=700)
 FEATURE_PM_E2E_ENABLED = env.bool("FEATURE_PM_E2E_ENABLED", default=False)
 FEATURE_PM_DEV_CIPHERTEXT_PREVIEW = env.bool("FEATURE_PM_DEV_CIPHERTEXT_PREVIEW", default=False)
