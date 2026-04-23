@@ -1,11 +1,12 @@
 from datetime import timedelta
 
 from django.test import Client, TestCase, override_settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.notifications.models import Notification
-from apps.posts.models import Post
+from apps.posts.models import Attachment, Post
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
@@ -113,6 +114,46 @@ class NotificationViewTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Someone replied to your post")
 		self.assertContains(response, f"/posts/{post.id}/")
+
+	def test_notifications_post_label_falls_back_to_attachment_caption(self):
+		post = Post.objects.create(
+			author=self.user.actor,
+			canonical_uri="https://example.com/posts/notify-caption-fallback",
+			content="",
+		)
+		Attachment.objects.create(
+			post=post,
+			attachment_type=Attachment.AttachmentType.IMAGE,
+			file=SimpleUploadedFile("caption-fallback.png", b"img", content_type="image/png"),
+			caption="Caption fallback text",
+			mime_type="image/png",
+			file_size=3,
+		)
+		Notification.objects.create(
+			recipient=self.user.actor,
+			source_actor=self.user.actor,
+			source_post=post,
+			notification_type=Notification.NotificationType.LIKE,
+		)
+		response = self.client.get("/notifications/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Caption fallback text")
+
+	def test_notifications_post_label_falls_back_to_post_id(self):
+		post = Post.objects.create(
+			author=self.user.actor,
+			canonical_uri="https://example.com/posts/notify-id-fallback",
+			content="",
+		)
+		Notification.objects.create(
+			recipient=self.user.actor,
+			source_actor=self.user.actor,
+			source_post=post,
+			notification_type=Notification.NotificationType.LIKE,
+		)
+		response = self.client.get("/notifications/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, f"Post {post.id}")
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})

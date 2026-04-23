@@ -34,7 +34,7 @@
             </div>
           {% endwith %}
         {% endif %}
-        {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post.content|truncatechars:80 }}</a></p>{% endif %}
+        {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post_label|truncatechars:80 }}</a></p>{% endif %}
         {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
         {% if not item.read_at %}
           <form method="post" action="/notifications/{{ item.id }}/mark-read/">{% csrf_token %}
@@ -60,7 +60,7 @@
           </div>
         {% endwith %}
       {% endif %}
-      {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post.content|truncatechars:80 }}</a></p>{% endif %}
+      {% if item.source_post %}<p>On post: <a href="/posts/{{ item.source_post.id }}/">{{ item.source_post_label|truncatechars:80 }}</a></p>{% endif %}
       {% if item.payload.summary %}<p style="margin:0;color:var(--text2);">{{ item.payload.summary }}</p>{% endif %}
       {% if not item.read_at %}
         <form method="post" action="/notifications/{{ item.id }}/mark-read/">{% csrf_token %}

@@ -12,6 +12,21 @@ from apps.core.pagination import paginate_queryset
 from apps.notifications.models import Notification
 
 
+def _notification_post_label(item: Notification) -> str:
+	post = item.source_post
+	if post is None:
+		return ""
+	content = (post.content or "").strip()
+	if content:
+		return content
+	first_attachment = post.attachments.first()
+	if first_attachment is not None:
+		caption = (first_attachment.caption or "").strip()
+		if caption:
+			return caption
+	return f"Post {post.id}"
+
+
 def _group_notifications_by_day(notifications: list[Notification]) -> list[dict[str, object]]:
 	today = timezone.localdate()
 	grouped: list[dict[str, object]] = []
@@ -38,7 +53,7 @@ def notifications_view(request: HttpRequest) -> HttpResponse:
 	filter_type = request.GET.get("type", "all").strip()
 	view_mode = request.GET.get("view", "flat").strip()
 	grouped_view = view_mode == "grouped"
-	queryset = Notification.objects.filter(recipient=actor).select_related("source_actor", "source_post")
+	queryset = Notification.objects.filter(recipient=actor).select_related("source_actor", "source_post").prefetch_related("source_post__attachments")
 	if filter_type == "unread":
 		queryset = queryset.filter(read_at__isnull=True)
 	elif filter_type in {choice[0] for choice in Notification.NotificationType.choices}:
@@ -46,6 +61,8 @@ def notifications_view(request: HttpRequest) -> HttpResponse:
 
 	page_obj = paginate_queryset(request, queryset, per_page=20, page_param="page")
 	notifications = list(page_obj.object_list)
+	for item in notifications:
+		item.source_post_label = _notification_post_label(item)
 	grouped_notifications = _group_notifications_by_day(notifications) if grouped_view else []
 	query_parts: list[str] = []
 	if filter_type != "all":
