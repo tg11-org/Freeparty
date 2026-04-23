@@ -15,6 +15,21 @@
     {% else %}
       <p style="margin-top:0;color:var(--text2);">This account is private or unavailable. You may not have permission to view the full profile.</p>
       <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+        {% if user.is_authenticated and can_request_follow %}
+          {% if is_following %}
+            <form method="post" action="{% url 'social:unfollow' actor.handle %}">{% csrf_token %}
+              <button class="btn" type="submit">✓ Following</button>
+            </form>
+          {% elif is_follow_pending %}
+            <form method="post" action="{% url 'social:unfollow' actor.handle %}">{% csrf_token %}
+              <button class="btn" type="submit">Cancel request</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'social:follow' actor.handle %}">{% csrf_token %}
+              <button class="btn" type="submit">Request to follow</button>
+            </form>
+          {% endif %}
+        {% endif %}
         <a class="btn btn-danger" href="/moderation/report/?target_actor_id={{ actor.id }}">Report</a>
       </div>
     {% endif %}

@@ -26,6 +26,7 @@ class ActorPrivacyVisibilityTests(TestCase):
 		response = self.client.get(f"/actors/{self.owner.actor.handle}/")
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "private or unavailable")
+		self.assertContains(response, "Request to follow")
 
 	def test_private_actor_visible_to_accepted_follower(self):
 		Follow.objects.create(

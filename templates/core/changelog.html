@@ -25,6 +25,7 @@
       <li>Email reliability update: permanent SMTP recipient rejects (for example unknown mailbox) are now treated as terminal non-retriable task failures, reducing noisy retries during signup/password email flows.</li>
       <li>Account UX fix: <code>/accounts/verify/resend/</code> now handles GET requests gracefully with a redirect and helpful message instead of showing a method error/blank page.</li>
       <li>Private profile UX update: actor detail now renders the same restricted profile page used for block scenarios instead of returning a hard 404 for private-account access denial.</li>
+      <li>Private profile restricted page now includes a <em>Request to follow</em> action (plus pending/cancel states) so follow-request flows can be initiated directly when profile content is hidden.</li>
     </ul>
   </section>
 

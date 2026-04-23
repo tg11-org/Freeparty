@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.actors.models import Actor
 from apps.core.pagination import paginate_queryset
-from apps.core.permissions import can_view_actor
+from apps.core.permissions import can_follow_actor, can_view_actor
 from apps.posts.hashtags import extract_hashtags
 from apps.posts.models import Post
 from apps.social.models import Block, Bookmark, Dislike, Follow, Like, Repost
@@ -33,7 +33,28 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 			return render(request, "actors/blocked.html", {"actor": actor, **blocked_context})
 	if not can_view_actor(viewer, actor):
 		if getattr(actor.profile, "is_private_account", False):
-			return render(request, "actors/blocked.html", {"actor": actor, **blocked_context})
+			is_following = False
+			is_follow_pending = False
+			can_request_follow = False
+			if viewer is not None and viewer.id != actor.id:
+				relation = Follow.objects.filter(
+					follower=viewer,
+					followee=actor,
+				).first()
+				is_following = bool(relation and relation.state == Follow.FollowState.ACCEPTED)
+				is_follow_pending = bool(relation and relation.state == Follow.FollowState.PENDING)
+				can_request_follow = can_follow_actor(viewer, actor)
+			return render(
+				request,
+				"actors/blocked.html",
+				{
+					"actor": actor,
+					"is_following": is_following,
+					"is_follow_pending": is_follow_pending,
+					"can_request_follow": can_request_follow,
+					**blocked_context,
+				},
+			)
 		raise Http404("Actor not found")
 
 	active_filter = request.GET.get("filter", "posts")
