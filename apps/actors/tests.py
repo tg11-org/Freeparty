@@ -18,7 +18,14 @@ class ActorPrivacyVisibilityTests(TestCase):
 
 	def test_private_actor_hidden_from_anonymous(self):
 		response = self.client.get(f"/actors/{self.owner.actor.handle}/")
-		self.assertEqual(response.status_code, 404)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "private or unavailable")
+
+	def test_private_actor_hidden_from_non_follower_with_restricted_page(self):
+		self.client.force_login(self.viewer)
+		response = self.client.get(f"/actors/{self.owner.actor.handle}/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "private or unavailable")
 
 	def test_private_actor_visible_to_accepted_follower(self):
 		Follow.objects.create(

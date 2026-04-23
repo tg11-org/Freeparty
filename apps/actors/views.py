@@ -32,6 +32,8 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		if blocked_context["is_blocked_by_me"] or blocked_context["is_blocked_by_them"]:
 			return render(request, "actors/blocked.html", {"actor": actor, **blocked_context})
 	if not can_view_actor(viewer, actor):
+		if getattr(actor.profile, "is_private_account", False):
+			return render(request, "actors/blocked.html", {"actor": actor, **blocked_context})
 		raise Http404("Actor not found")
 
 	active_filter = request.GET.get("filter", "posts")
