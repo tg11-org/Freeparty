@@ -417,6 +417,23 @@ class PrivateMessagesHtmlFlowTests(TestCase):
         conversation = Conversation.objects.get()
         self.assertTrue(conversation.direct_participant_key)
 
+    def test_start_direct_conversation_reuses_legacy_blank_key_thread(self):
+        conversation = Conversation.objects.create(
+            created_by=self.alice.actor,
+            conversation_type=Conversation.ConversationType.DIRECT,
+            direct_participant_key="",
+        )
+        ConversationParticipant.objects.create(conversation=conversation, actor=self.alice.actor)
+        ConversationParticipant.objects.create(conversation=conversation, actor=self.bob.actor)
+
+        self.client.force_login(self.alice)
+        response = self.client.post(f"/messages/start/{self.bob.actor.handle}/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Conversation.objects.count(), 1)
+        conversation.refresh_from_db()
+        self.assertTrue(conversation.direct_participant_key)
+
     def test_start_direct_conversation_reuses_existing_thread_in_reverse_order(self):
         get_or_create_direct_conversation(
             created_by=self.alice.actor,

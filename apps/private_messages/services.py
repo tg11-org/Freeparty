@@ -301,7 +301,6 @@ def get_or_create_direct_conversation(*, created_by, participant_a, participant_
                 ),
             )
             .filter(participant_count=2, matched_participant_count=2)
-            .distinct()
             .first()
         )
         if existing is not None:
