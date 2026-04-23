@@ -22,6 +22,8 @@
       <li>Production bootstrap defaults tightened: setup script now writes HTTPS-only trusted origins and preserves existing DB credentials; local compose uses env-driven Postgres credentials.</li>
       <li>Removed deprecated Django setting <code>SECURE_BROWSER_XSS_FILTER</code> in production configuration.</li>
       <li>Performance improvements: bookmarks visibility avoids per-item permission queries, and unread DM conversation count is computed via DB-side <code>EXISTS</code> checks.</li>
+      <li>Email reliability update: permanent SMTP recipient rejects (for example unknown mailbox) are now treated as terminal non-retriable task failures, reducing noisy retries during signup/password email flows.</li>
+      <li>Account UX fix: <code>/accounts/verify/resend/</code> now handles GET requests gracefully with a redirect and helpful message instead of showing a method error/blank page.</li>
     </ul>
   </section>
 

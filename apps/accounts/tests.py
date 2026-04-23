@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from datetime import timedelta
+from smtplib import SMTPRecipientsRefused
 from unittest.mock import patch
 
 from django.conf import settings
@@ -189,6 +190,28 @@ class TransactionalEmailTaskTests(TestCase):
 		self.assertIn("event=retry_scheduled", joined)
 		self.assertIn("will_retry=True", joined)
 
+	@patch("apps.accounts.tasks.send_mail", side_effect=SMTPRecipientsRefused({"user@example.com": (550, b"unknown user")}))
+	def test_delivery_helper_does_not_schedule_retry_on_recipient_refusal(self, _mock_send_mail):
+		task = SimpleNamespace(
+			name="apps.accounts.tasks.send_system_email",
+			max_retries=5,
+			request=SimpleNamespace(retries=0, id="task-3"),
+		)
+
+		with self.assertLogs("apps.core.services.email_observability", level="INFO") as logs:
+			with self.assertRaises(SMTPRecipientsRefused):
+				_deliver_transactional_email(
+					task=task,
+					subject="System email",
+					message="Body",
+					recipient_list=["user@example.com"],
+				)
+
+		joined = "\n".join(logs.output)
+		self.assertIn("event=failure", joined)
+		self.assertNotIn("event=retry_scheduled", joined)
+		self.assertIn("will_retry=False", joined)
+
 	@patch("apps.accounts.tasks.send_mail")
 	def test_password_reset_task_records_reliable_execution(self, mock_send_mail):
 		send_password_reset_email.run(
@@ -218,6 +241,19 @@ class TransactionalEmailTaskTests(TestCase):
 		execution = AsyncTaskExecution.objects.get(task_name=send_password_reset_email.name)
 		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
 		self.assertEqual(execution.attempt_count, 1)
+
+	@patch("apps.accounts.tasks.send_mail", side_effect=SMTPRecipientsRefused({"user@example.com": (550, b"unknown user")}))
+	def test_password_reset_task_marks_terminal_failure_for_recipient_refusal(self, _mock_send_mail):
+		# Should not raise to caller/celery auto-retry path for permanent SMTP recipient rejects.
+		send_password_reset_email.run(
+			subject="Reset",
+			message="Body",
+			recipient_email="user@example.com",
+			correlation_id="corr-reset-terminal-1",
+		)
+
+		execution = AsyncTaskExecution.objects.get(task_name=send_password_reset_email.name)
+		self.assertEqual(execution.status, AsyncTaskExecution.Status.FAILED)
 
 
 class SignupLegalConsentTests(TestCase):
@@ -272,6 +308,40 @@ class SignupLegalConsentTests(TestCase):
 			{
 				"email": "minor1@example.com",
 				"username": "minor1",
+
+
+	class ResendVerificationViewTests(TestCase):
+		def setUp(self):
+			self.client = Client()
+			self.user = User.objects.create_user(email="resend@example.com", username="resenduser", password="secret123")
+
+		def test_get_requires_authentication_and_redirects_to_login(self):
+			response = self.client.get(reverse("accounts:resend-verification"), follow=True)
+			self.assertEqual(response.status_code, 200)
+			self.assertContains(response, "Sign in to resend your verification email.")
+
+		def test_get_when_authenticated_redirects_home_with_hint(self):
+			self.client.force_login(self.user)
+			response = self.client.get(reverse("accounts:resend-verification"), follow=True)
+			self.assertEqual(response.status_code, 200)
+			self.assertContains(response, "Use the resend button to request a new verification email.")
+
+		@patch("apps.accounts.views.send_verification_email.delay")
+		def test_post_enqueues_task_for_unverified_user(self, mock_delay):
+			self.client.force_login(self.user)
+			response = self.client.post(reverse("accounts:resend-verification"), follow=True)
+			self.assertEqual(response.status_code, 200)
+			mock_delay.assert_called_once_with(str(self.user.id))
+			self.assertContains(response, "Verification email resent.")
+
+		@patch("apps.accounts.views.send_verification_email.delay")
+		def test_post_for_verified_user_does_not_enqueue_task(self, mock_delay):
+			self.user.mark_email_verified()
+			self.client.force_login(self.user)
+			response = self.client.post(reverse("accounts:resend-verification"), follow=True)
+			self.assertEqual(response.status_code, 200)
+			mock_delay.assert_not_called()
+			self.assertContains(response, "Your email is already verified.")
 				"display_name": "Minor One",
 				"password1": "secret12345",
 				"password2": "secret12345",

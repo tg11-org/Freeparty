@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from smtplib import SMTPRecipientsRefused
 
 from celery import shared_task
 from django.conf import settings
@@ -26,14 +27,26 @@ def _payload_digest(*parts: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
-def _record_task_failure(*, task, execution, error: Exception, idempotency_key: str, correlation_id: str | None, payload: dict) -> None:
+def _record_task_failure(
+    *,
+    task,
+    execution,
+    error: Exception,
+    idempotency_key: str,
+    correlation_id: str | None,
+    payload: dict,
+    force_terminal: bool = False,
+    terminal_reason: str = "",
+) -> None:
     retries = int(getattr(task.request, "retries", 0))
     max_retries = int(getattr(task, "max_retries", 0))
+    is_terminal = force_terminal or retries >= max_retries
+    resolved_terminal_reason = terminal_reason if force_terminal else ("max_retries_exceeded" if retries >= max_retries else "")
     mark_task_execution_failed(
         execution=execution,
         error=error,
-        is_terminal=retries >= max_retries,
-        terminal_reason="max_retries_exceeded" if retries >= max_retries else "",
+        is_terminal=is_terminal,
+        terminal_reason=resolved_terminal_reason,
         task_name=task.name,
         task_id=getattr(task.request, "id", ""),
         correlation_id=correlation_id,
@@ -80,6 +93,21 @@ def _deliver_transactional_email(
             fail_silently=False,
             html_message=html_message,
         )
+    except SMTPRecipientsRefused as exc:
+        # Permanent recipient rejection (unknown mailbox, policy reject, etc.).
+        # Log as non-retriable and let caller decide terminal handling.
+        log_smtp_delivery_event(
+            event="failure",
+            task_name=task.name,
+            task_id=task_id,
+            correlation_id=correlation_id,
+            recipient_count=recipient_count,
+            attempt=attempt,
+            max_retries=max_retries,
+            will_retry=False,
+            error=exc.__class__.__name__,
+        )
+        raise
     except Exception as exc:
         will_retry = retries < max_retries
         log_smtp_delivery_event(
@@ -153,6 +181,18 @@ def send_verification_email(self, user_id: str, correlation_id: str | None = Non
                 correlation_id=correlation_id,
             )
             mark_task_execution_succeeded(execution)
+        except SMTPRecipientsRefused as exc:
+            _record_task_failure(
+                task=self,
+                execution=execution,
+                error=exc,
+                idempotency_key=idempotency_key,
+                correlation_id=correlation_id,
+                payload=payload,
+                force_terminal=True,
+                terminal_reason="other",
+            )
+            return
         except Exception as exc:
             _record_task_failure(
                 task=self,
@@ -209,6 +249,18 @@ def send_password_reset_email(
                 html_message=html_message,
             )
             mark_task_execution_succeeded(execution)
+        except SMTPRecipientsRefused as exc:
+            _record_task_failure(
+                task=self,
+                execution=execution,
+                error=exc,
+                idempotency_key=idempotency_key,
+                correlation_id=correlation_id,
+                payload=payload,
+                force_terminal=True,
+                terminal_reason="other",
+            )
+            return
         except Exception as exc:
             _record_task_failure(
                 task=self,
@@ -252,6 +304,18 @@ def send_password_reset_notice(self, email: str, correlation_id: str | None = No
                 correlation_id=correlation_id,
             )
             mark_task_execution_succeeded(execution)
+        except SMTPRecipientsRefused as exc:
+            _record_task_failure(
+                task=self,
+                execution=execution,
+                error=exc,
+                idempotency_key=idempotency_key,
+                correlation_id=correlation_id,
+                payload=payload,
+                force_terminal=True,
+                terminal_reason="other",
+            )
+            return
         except Exception as exc:
             _record_task_failure(
                 task=self,

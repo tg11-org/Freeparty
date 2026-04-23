@@ -230,13 +230,19 @@ def _get_client_ip(request):
 
 
 @ratelimit(key="user_or_ip", rate="3/h", block=True)
-@require_http_methods(["POST"])
+@require_http_methods(["GET", "POST"])
 def resend_verification_view(request: HttpRequest) -> HttpResponse:
 	if not request.user.is_authenticated:
+		messages.info(request, "Sign in to resend your verification email.")
 		return redirect("accounts:login")
+	if request.method == "GET":
+		messages.info(request, "Use the resend button to request a new verification email.")
+		return redirect("home")
 	if settings.EMAIL_VERIFICATION_REQUIRED and not request.user.email_verified:
 		send_verification_email.delay(str(request.user.id))
 		messages.success(request, "Verification email resent.")
+	else:
+		messages.info(request, "Your email is already verified.")
 	return redirect("home")
 
 
