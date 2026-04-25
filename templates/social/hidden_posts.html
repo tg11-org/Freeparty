@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Hidden Posts · Freeparty{% endblock %}
+{% block content %}
+<h2>Your Hidden Posts</h2>
+{% for post in posts %}
+  {% include "partials/post_card.html" with post=post liked_ids=liked_ids disliked_ids=disliked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids hidden_ids=hidden_ids %}
+{% empty %}
+  <p style="color:var(--text2);">No hidden posts yet.</p>
+{% endfor %}
+{% include "partials/pagination.html" with page_obj=page_obj page_param="page" %}
+{% endblock %}

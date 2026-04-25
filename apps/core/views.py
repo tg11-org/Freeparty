@@ -22,7 +22,7 @@ from apps.private_messages.services import (
 	is_private_messages_enabled,
 	populate_conversation_activity,
 )
-from apps.social.models import Bookmark, Dislike, Like, Repost
+from apps.social.models import Bookmark, Dislike, HiddenPost, Like, Repost
 from apps.timelines.services import home_timeline, public_timeline
 
 
@@ -76,8 +76,10 @@ def home_view(request: HttpRequest) -> HttpResponse:
 		disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+		hidden_ids = set(HiddenPost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	else:
 		bookmarked_ids = set()
+		hidden_ids = set()
 		disliked_ids = set()
 	return render(request, "core/home.html", {
 		"posts": posts,
@@ -86,6 +88,7 @@ def home_view(request: HttpRequest) -> HttpResponse:
 		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
+		"hidden_ids": hidden_ids,
 		"active_tab": active_tab,
 		"query_string": f"tab={active_tab}" if active_tab != "all" else "",
 	})

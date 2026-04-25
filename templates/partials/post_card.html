@@ -250,6 +250,10 @@
             <img class="action-icon" data-action-icon="bookmark" src="{% if post.id in bookmarked_ids %}{% static 'icons/bookmark-filled.svg' %}{% else %}{% static 'icons/bookmark-outline.svg' %}{% endif %}" alt="" aria-hidden="true">
           </button>
         </form>
+        <form method="post" action="/social/hide/{{ post.id }}/" data-async-post-action="1" data-action-type="hidden-post" data-post-id="{{ post.id }}">
+          {% csrf_token %}
+          <button class="btn {% if post.id in hidden_ids %}active{% endif %}" type="submit">{% if post.id in hidden_ids %}Unhide{% else %}Hide{% endif %}</button>
+        </form>
         <button class="btn" type="button" title="Share post" onclick="openShareSheet(this)"
           data-share-url="{{ request.scheme }}://{{ request.get_host }}/posts/{{ post.id }}/"
           data-share-title="{{ post.author.handle }}: {{ post.content|truncatechars:80 }}"

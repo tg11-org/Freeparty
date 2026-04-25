@@ -28,6 +28,10 @@
       <strong style="display:block;font-size:1.4rem;">{{ reports_count }}</strong>
       <span>Reports Filed</span>
     </a>
+    <a href="{% url 'social:hidden-posts' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
+      <strong style="display:block;font-size:1.4rem;">{{ hidden_posts_count }}</strong>
+      <span>Hidden Posts</span>
+    </a>
     <a href="{% url 'social:follow-requests' %}" style="display:block;padding:1rem;border:1px solid var(--border);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface2);">
       <strong style="display:block;font-size:1.4rem;">{{ pending_follow_requests_count }}</strong>
       <span>Follow Requests</span>

@@ -6,7 +6,7 @@ from apps.core.services.uris import post_uri
 from apps.moderation.models import Report, TrustSignal
 from apps.notifications.models import Notification
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Dislike, Mute
+from apps.social.models import Block, Bookmark, Dislike, HiddenPost, Mute
 from apps.social.models import Follow
 from apps.social.models import Repost
 
@@ -289,6 +289,44 @@ class RepostHardeningTests(TestCase):
 		self.assertEqual(notif_count, 1)
 
 
+class HiddenPostTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.viewer = User.objects.create_user(email="viewer-hidden@example.com", username="viewerhidden", password="secret123")
+		self.author = User.objects.create_user(email="author-hidden@example.com", username="authorhidden", password="secret123")
+		self.viewer.mark_email_verified()
+		self.author.mark_email_verified()
+		self.post = Post.objects.create(
+			author=self.author.actor,
+			content="Hide me from feed",
+			canonical_uri=post_uri("hidden-post-test"),
+		)
+
+	def test_hide_toggle_creates_and_removes_hidden_post(self):
+		self.client.force_login(self.viewer)
+		first = self.client.post(f"/social/hide/{self.post.id}/")
+		second = self.client.post(f"/social/hide/{self.post.id}/")
+		self.assertEqual(first.status_code, 302)
+		self.assertEqual(second.status_code, 302)
+		self.assertFalse(HiddenPost.objects.filter(actor=self.viewer.actor, post=self.post).exists())
+
+	def test_hidden_post_is_excluded_from_public_feed_for_actor(self):
+		self.client.force_login(self.viewer)
+		before = self.client.get("/posts/public/")
+		self.assertContains(before, "Hide me from feed")
+		self.client.post(f"/social/hide/{self.post.id}/")
+		after = self.client.get("/posts/public/")
+		self.assertNotContains(after, "Hide me from feed")
+
+	def test_hidden_posts_view_lists_hidden_posts(self):
+		HiddenPost.objects.create(actor=self.viewer.actor, post=self.post)
+		self.client.force_login(self.viewer)
+		response = self.client.get("/social/hidden/")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Your Hidden Posts")
+		self.assertContains(response, "Hide me from feed")
+
+
 class BookmarkFlowTests(TestCase):
 	def setUp(self):
 		self.client = Client()
@@ -315,6 +353,14 @@ class BookmarkFlowTests(TestCase):
 		second = self.client.post(f"/social/bookmark/{self.post.id}/")
 		self.assertEqual(second.status_code, 302)
 		self.assertFalse(Bookmark.objects.filter(actor=self.viewer.actor, post=self.post).exists())
+
+	def test_hidden_bookmark_is_not_shown_in_bookmarks_page(self):
+		Bookmark.objects.create(actor=self.viewer.actor, post=self.post)
+		HiddenPost.objects.create(actor=self.viewer.actor, post=self.post)
+		self.client.force_login(self.viewer)
+		response = self.client.get("/social/bookmarks/")
+		self.assertEqual(response.status_code, 200)
+		self.assertNotContains(response, "Bookmark me")
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})

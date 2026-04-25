@@ -84,3 +84,12 @@ class Bookmark(TimeStampedModel):
 	class Meta:
 		constraints = [models.UniqueConstraint(fields=["actor", "post"], name="uniq_bookmark")]
 
+
+class HiddenPost(TimeStampedModel):
+	id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+	actor = models.ForeignKey("actors.Actor", on_delete=models.CASCADE, related_name="hidden_posts")
+	post = models.ForeignKey("posts.Post", on_delete=models.CASCADE, related_name="hidden_by")
+
+	class Meta:
+		constraints = [models.UniqueConstraint(fields=["actor", "post"], name="uniq_hidden_post")]
+

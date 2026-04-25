@@ -18,7 +18,7 @@ from apps.moderation.services import ActionVelocityTracker, AdaptiveAbuseControl
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Dislike, Follow, Like, Mute, Repost
+from apps.social.models import Block, Bookmark, Dislike, Follow, HiddenPost, Like, Mute, Repost
 from apps.social.services import approve_follow_request, follow_actor, reject_follow_request, unfollow_actor
 
 
@@ -536,6 +536,7 @@ def bookmark_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 def bookmarks_view(request: HttpRequest) -> HttpResponse:
 	actor = request.user.actor
 	bookmarks_qs = Bookmark.objects.filter(actor=actor).select_related("post", "post__author", "post__author__profile").prefetch_related("post__attachments").order_by("-created_at")
+	hidden_post_ids = set(HiddenPost.objects.filter(actor=actor).values_list("post_id", flat=True))
 	accepted_followee_ids = set(
 		Follow.objects.filter(follower=actor, state=Follow.FollowState.ACCEPTED).values_list("followee_id", flat=True)
 	)
@@ -544,6 +545,101 @@ def bookmarks_view(request: HttpRequest) -> HttpResponse:
 	) | set(Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True))
 	visible_posts = []
 	for item in bookmarks_qs:
+		post = item.post
+		author = post.author
+		if post.id in hidden_post_ids:
+			continue
+		if post.deleted_at is not None:
+			continue
+		if post.moderation_state in {Post.ModerationState.HIDDEN, Post.ModerationState.TAKEN_DOWN}:
+			continue
+		if author_id := post.author_id:
+			if author_id in blocked_actor_ids:
+				continue
+		if actor.id != author.id:
+			if getattr(author.profile, "is_private_account", False) and author.id not in accepted_followee_ids:
+				continue
+			if post.visibility == Post.Visibility.FOLLOWERS_ONLY and author.id not in accepted_followee_ids:
+				continue
+			if post.visibility == Post.Visibility.PRIVATE:
+				continue
+		visible_posts.append(post)
+	page_obj = paginate_queryset(request, visible_posts, per_page=20, page_param="page")
+	posts = page_obj.object_list
+	liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	hidden_ids = set(HiddenPost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	return render(
+		request,
+		"social/bookmarks.html",
+		{
+			"posts": posts,
+			"page_obj": page_obj,
+			"liked_ids": liked_ids,
+			"disliked_ids": disliked_ids,
+			"reposted_ids": reposted_ids,
+			"bookmarked_ids": bookmarked_ids,
+			"hidden_ids": hidden_ids,
+		},
+	)
+
+
+@ratelimit(key="user_or_ip", rate="120/h", block=True)
+@login_required
+@require_POST
+def hidden_post_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
+	started_at = perf_counter()
+	actor = request.user.actor
+	post = get_object_or_404(Post, id=post_id)
+	if not can_view_post(actor, post):
+		if _wants_json(request):
+			return _json_action_response(
+				request=request,
+				name="social_hidden_post_toggle",
+				started_at=started_at,
+				payload={"ok": False, "error": "You cannot hide this post."},
+				status=403,
+				success=False,
+				target_id=str(post.id),
+				detail="permission_denied",
+			)
+		messages.error(request, "You cannot hide this post.")
+		return redirect(request.META.get("HTTP_REFERER", "home"))
+
+	hidden_row, created = HiddenPost.objects.get_or_create(actor=actor, post=post)
+	if not created:
+		hidden_row.delete()
+		hidden = False
+		messages.success(request, "Post unhidden.")
+	else:
+		hidden = True
+		messages.success(request, "Post hidden from your feeds.")
+	if _wants_json(request):
+		return _json_action_response(
+			request=request,
+			name="social_hidden_post_toggle",
+			started_at=started_at,
+			payload={"ok": True, "hidden": hidden, "remove_card": hidden},
+			target_id=str(post.id),
+		)
+	return redirect(request.META.get("HTTP_REFERER", "home"))
+
+
+@login_required
+@require_http_methods(["GET"])
+def hidden_posts_view(request: HttpRequest) -> HttpResponse:
+	actor = request.user.actor
+	hidden_qs = HiddenPost.objects.filter(actor=actor).select_related("post", "post__author", "post__author__profile").prefetch_related("post__attachments").order_by("-created_at")
+	accepted_followee_ids = set(
+		Follow.objects.filter(follower=actor, state=Follow.FollowState.ACCEPTED).values_list("followee_id", flat=True)
+	)
+	blocked_actor_ids = set(
+		Block.objects.filter(blocker=actor).values_list("blocked_id", flat=True)
+	) | set(Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True))
+	visible_posts = []
+	for item in hidden_qs:
 		post = item.post
 		author = post.author
 		if post.deleted_at is not None:
@@ -567,9 +663,10 @@ def bookmarks_view(request: HttpRequest) -> HttpResponse:
 	disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	reposted_ids = set(Repost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
+	hidden_ids = set(HiddenPost.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))
 	return render(
 		request,
-		"social/bookmarks.html",
+		"social/hidden_posts.html",
 		{
 			"posts": posts,
 			"page_obj": page_obj,
@@ -577,6 +674,7 @@ def bookmarks_view(request: HttpRequest) -> HttpResponse:
 			"disliked_ids": disliked_ids,
 			"reposted_ids": reposted_ids,
 			"bookmarked_ids": bookmarked_ids,
+			"hidden_ids": hidden_ids,
 		},
 	)
 
@@ -650,6 +748,7 @@ def my_social_hub_view(request: HttpRequest) -> HttpResponse:
 		"followers_count": Follow.objects.filter(followee=actor, state=Follow.FollowState.ACCEPTED).count(),
 		"blocked_count": Block.objects.filter(blocker=actor).count(),
 		"muted_count": Mute.objects.filter(muter=actor).count(),
+		"hidden_posts_count": HiddenPost.objects.filter(actor=actor).count(),
 		"reports_count": Report.objects.filter(reporter=actor).count(),
 		"pending_follow_requests_count": Follow.objects.filter(
 			followee=actor,

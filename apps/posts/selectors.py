@@ -4,7 +4,7 @@ from django.db.models import Q
 from django.db.models import QuerySet
 
 from apps.posts.models import Post
-from apps.social.models import Block, Follow
+from apps.social.models import Block, Follow, HiddenPost
 
 
 def visible_public_posts_for_actor(actor=None) -> QuerySet[Post]:
@@ -26,7 +26,9 @@ def visible_public_posts_for_actor(actor=None) -> QuerySet[Post]:
     if actor is not None:
         blocked_by_me = Block.objects.filter(blocker=actor).values_list("blocked_id", flat=True)
         blocked_me = Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True)
+        hidden_post_ids = HiddenPost.objects.filter(actor=actor).values_list("post_id", flat=True)
         qs = qs.exclude(author_id__in=blocked_by_me).exclude(author_id__in=blocked_me)
+        qs = qs.exclude(id__in=hidden_post_ids)
     return qs.select_related("author", "author__profile", "link_preview").prefetch_related("attachments").order_by("-created_at")
 
 
@@ -38,6 +40,7 @@ def visible_home_posts_for_actor(actor) -> QuerySet[Post]:
 
     blocked_by_me = Block.objects.filter(blocker=actor).values_list("blocked_id", flat=True)
     blocked_me = Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True)
+    hidden_post_ids = HiddenPost.objects.filter(actor=actor).values_list("post_id", flat=True)
 
     return (
         Post.objects.filter(
@@ -47,6 +50,7 @@ def visible_home_posts_for_actor(actor) -> QuerySet[Post]:
         .exclude(moderation_state__in=[Post.ModerationState.HIDDEN, Post.ModerationState.TAKEN_DOWN])
         .exclude(author_id__in=blocked_by_me)
         .exclude(author_id__in=blocked_me)
+        .exclude(id__in=hidden_post_ids)
         .select_related("author", "author__profile", "link_preview")
         .prefetch_related("attachments")
         .order_by("-created_at")

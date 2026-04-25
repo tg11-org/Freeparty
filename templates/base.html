@@ -722,6 +722,7 @@
           <a class="nav-link-with-badge" href="/inbox/">Inbox{% if nav_unread_inbox_count %}<span class="nav-badge">{{ nav_unread_inbox_count }}</span>{% endif %}</a>
           <a class="nav-link-with-badge" href="/messages/">Messages{% if nav_unread_message_count %}<span class="nav-badge">{{ nav_unread_message_count }}</span>{% endif %}</a>
           <a href="/social/bookmarks/">Bookmarks</a>
+          <a href="/social/hidden/">Hidden Posts</a>
           <a href="/accounts/manage/">Account</a>
           <a class="nav-link-with-badge" href="/notifications/">Notifications{% if nav_unread_notification_count %}<span class="nav-badge">{{ nav_unread_notification_count }}</span>{% endif %}</a>
           {% if user.is_staff %}<a href="/moderation/">Moderation</a>{% endif %}
@@ -1174,6 +1175,16 @@
           var bookmarked = !!payload.bookmarked;
           button.classList.toggle("active", bookmarked);
           applyToggleIcon(bookmarked);
+          return;
+        }
+        if (actionType === "hidden-post") {
+          var hidden = !!payload.hidden;
+          button.classList.toggle("active", hidden);
+          button.textContent = hidden ? "Unhide" : "Hide";
+          if (hidden && payload.remove_card) {
+            var card = form.closest("article");
+            if (card) card.remove();
+          }
           return;
         }
         if (actionType === "follow") {

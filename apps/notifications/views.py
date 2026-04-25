@@ -10,6 +10,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from apps.core.pagination import paginate_queryset
 from apps.notifications.models import Notification
+from apps.social.models import HiddenPost
 
 
 def _notification_post_label(item: Notification) -> str:
@@ -54,6 +55,8 @@ def notifications_view(request: HttpRequest) -> HttpResponse:
 	view_mode = request.GET.get("view", "flat").strip()
 	grouped_view = view_mode == "grouped"
 	queryset = Notification.objects.filter(recipient=actor).select_related("source_actor", "source_post").prefetch_related("source_post__attachments")
+	hidden_post_ids = HiddenPost.objects.filter(actor=actor).values_list("post_id", flat=True)
+	queryset = queryset.exclude(source_post_id__in=hidden_post_ids)
 	if filter_type == "unread":
 		queryset = queryset.filter(read_at__isnull=True)
 	elif filter_type in {choice[0] for choice in Notification.NotificationType.choices}:

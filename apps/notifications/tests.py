@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.notifications.models import Notification
 from apps.posts.models import Attachment, Post
+from apps.social.models import HiddenPost
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
@@ -154,6 +155,36 @@ class NotificationViewTests(TestCase):
 		response = self.client.get("/notifications/")
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, f"Post {post.id}")
+
+	def test_like_notifications_for_hidden_posts_are_filtered_out(self):
+		hidden_post = Post.objects.create(
+			author=self.user.actor,
+			canonical_uri="https://example.com/posts/notify-hidden-like",
+			content="Hidden like target",
+		)
+		visible_post = Post.objects.create(
+			author=self.user.actor,
+			canonical_uri="https://example.com/posts/notify-visible-like",
+			content="Visible like target",
+		)
+		Notification.objects.create(
+			recipient=self.user.actor,
+			source_actor=self.user.actor,
+			source_post=hidden_post,
+			notification_type=Notification.NotificationType.LIKE,
+		)
+		Notification.objects.create(
+			recipient=self.user.actor,
+			source_actor=self.user.actor,
+			source_post=visible_post,
+			notification_type=Notification.NotificationType.LIKE,
+		)
+		HiddenPost.objects.create(actor=self.user.actor, post=hidden_post)
+
+		response = self.client.get("/notifications/?type=like")
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Visible like target")
+		self.assertNotContains(response, "Hidden like target")
 
 
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})

@@ -11,7 +11,7 @@ from apps.core.pagination import paginate_queryset
 from apps.core.permissions import can_follow_actor, can_view_actor
 from apps.posts.hashtags import extract_hashtags
 from apps.posts.models import Post
-from apps.social.models import Block, Bookmark, Dislike, Follow, Like, Repost
+from apps.social.models import Block, Bookmark, Dislike, Follow, HiddenPost, Like, Repost
 from apps.private_messages.services import get_parental_dm_restriction_error
 
 
@@ -107,6 +107,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	disliked_ids = set()
 	reposted_ids = set()
 	bookmarked_ids = set()
+	hidden_ids = set()
 
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		my_actor = request.user.actor
@@ -126,6 +127,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		disliked_ids = set(Dislike.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
+		hidden_ids = set(HiddenPost.objects.filter(actor=my_actor, post__in=posts).values_list("post_id", flat=True))
 
 	dm_restriction_reason = ""
 	if request.user.is_authenticated and hasattr(request.user, "actor") and request.user.actor.id != actor.id:
@@ -151,6 +153,7 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
+		"hidden_ids": hidden_ids,
 		"can_start_dm": can_start_dm,
 		"dm_restriction_reason": dm_restriction_reason,
 	})
@@ -221,13 +224,15 @@ def search_view(request: HttpRequest) -> HttpResponse:
 	disliked_ids: set = set()
 	reposted_ids: set = set()
 	bookmarked_ids: set = set()
+	hidden_ids: set = set()
 	if request.user.is_authenticated and posts:
-		from apps.social.models import Bookmark, Dislike, Like, Repost
+		from apps.social.models import Bookmark, Dislike, HiddenPost, Like, Repost
 		post_ids = [p.id for p in posts]
 		liked_ids = set(Like.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 		disliked_ids = set(Dislike.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 		reposted_ids = set(Repost.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 		bookmarked_ids = set(Bookmark.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
+		hidden_ids = set(HiddenPost.objects.filter(actor=request.user.actor, post_id__in=post_ids).values_list("post_id", flat=True))
 	return render(request, "actors/search.html", {
 		"query": query,
 		"actor_results": actors,
@@ -238,6 +243,7 @@ def search_view(request: HttpRequest) -> HttpResponse:
 		"disliked_ids": disliked_ids,
 		"reposted_ids": reposted_ids,
 		"bookmarked_ids": bookmarked_ids,
+		"hidden_ids": hidden_ids,
 		"query_string": f"q={query}",
 	})
 

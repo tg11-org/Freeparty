@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.social.models import Block, Bookmark, Follow, Like, Mute, Repost
+from apps.social.models import Block, Bookmark, Follow, HiddenPost, Like, Mute, Repost
 
 
 @admin.register(Follow)
@@ -15,3 +15,4 @@ admin.site.register(Mute)
 admin.site.register(Like)
 admin.site.register(Repost)
 admin.site.register(Bookmark)
+admin.site.register(HiddenPost)
