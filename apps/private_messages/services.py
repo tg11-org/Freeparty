@@ -289,9 +289,8 @@ def get_or_create_direct_conversation(*, created_by, participant_a, participant_
 
         # Backward-compatible lookup for older direct threads created before
         # canonical participant keys existed.
-        existing = (
-            Conversation.objects.select_for_update()
-            .filter(conversation_type=Conversation.ConversationType.DIRECT, direct_participant_key="")
+        legacy_existing_id = (
+            Conversation.objects.filter(conversation_type=Conversation.ConversationType.DIRECT, direct_participant_key="")
             .annotate(
                 participant_count=Count("participants", distinct=True),
                 matched_participant_count=Count(
@@ -301,8 +300,13 @@ def get_or_create_direct_conversation(*, created_by, participant_a, participant_
                 ),
             )
             .filter(participant_count=2, matched_participant_count=2)
+            .order_by("created_at", "id")
+            .values_list("id", flat=True)
             .first()
         )
+        existing = None
+        if legacy_existing_id is not None:
+            existing = Conversation.objects.select_for_update().filter(id=legacy_existing_id).first()
         if existing is not None:
             existing.direct_participant_key = direct_participant_key
             existing.save(update_fields=["direct_participant_key", "updated_at"])

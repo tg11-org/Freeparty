@@ -15,6 +15,15 @@ from apps.social.models import Block, Bookmark, Dislike, Follow, Like, Repost
 from apps.private_messages.services import get_parental_dm_restriction_error
 
 
+def _with_engagement_counts(posts_qs):
+	return posts_qs.annotate(
+		_like_count=models.Count("likes", distinct=True),
+		_dislike_count=models.Count("dislikes", distinct=True),
+		_comment_count=models.Count("comments", filter=models.Q(comments__deleted_at__isnull=True), distinct=True),
+		_repost_count=models.Count("reposts", distinct=True),
+	)
+
+
 @require_http_methods(["GET"])
 def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	try:
@@ -64,23 +73,23 @@ def actor_detail_view(request: HttpRequest, handle: str) -> HttpResponse:
 	repost_posts = None
 	if active_filter == "reposts":
 		repost_ids = Repost.objects.filter(actor=actor).order_by("-created_at").values_list("post_id", flat=True)
-		posts_qs = Post.objects.filter(
+		posts_qs = _with_engagement_counts(Post.objects.filter(
 			id__in=repost_ids, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL
-		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at"))
 	elif active_filter == "media":
-		posts_qs = Post.objects.filter(
+		posts_qs = _with_engagement_counts(Post.objects.filter(
 			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL,
 			attachments__isnull=False,
-		).distinct().select_related("author", "author__profile", "link_preview").order_by("-created_at")
+		).distinct().select_related("author", "author__profile", "link_preview").order_by("-created_at"))
 	elif active_filter == "links":
-		posts_qs = Post.objects.filter(
+		posts_qs = _with_engagement_counts(Post.objects.filter(
 			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL,
 			link_preview__isnull=False,
-		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at"))
 	else:
-		posts_qs = Post.objects.filter(
+		posts_qs = _with_engagement_counts(Post.objects.filter(
 			author=actor, deleted_at__isnull=True, moderation_state=Post.ModerationState.NORMAL
-		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at"))
 
 	page_obj = paginate_queryset(request, posts_qs, per_page=20, page_param="page")
 	posts = page_obj.object_list
@@ -174,11 +183,11 @@ def search_view(request: HttpRequest) -> HttpResponse:
 			blocked_by_me = Block.objects.filter(blocker=viewer).values_list("blocked_id", flat=True)
 			blocked_me = Block.objects.filter(blocked=viewer).values_list("blocker_id", flat=True)
 			actors_qs = actors_qs.exclude(id__in=blocked_by_me).exclude(id__in=blocked_me)
-		posts_qs = Post.objects.filter(
+		posts_qs = _with_engagement_counts(Post.objects.filter(
 			visibility=Post.Visibility.PUBLIC,
 			deleted_at__isnull=True,
 			moderation_state=Post.ModerationState.NORMAL,
-		).select_related("author", "author__profile", "link_preview").order_by("-created_at")
+		).select_related("author", "author__profile", "link_preview").order_by("-created_at"))
 		if hashtag_terms:
 			if getattr(settings, "FEATURE_INDEXED_HASHTAG_SEARCH_ENABLED", True):
 				for tag in hashtag_terms:

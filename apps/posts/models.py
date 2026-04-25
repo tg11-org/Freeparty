@@ -51,18 +51,26 @@ class Post(TimeStampedModel):
 
 	@property
 	def like_count(self) -> int:
+		if hasattr(self, "_like_count"):
+			return int(getattr(self, "_like_count") or 0)
 		return self.likes.count()
 
 	@property
 	def dislike_count(self) -> int:
+		if hasattr(self, "_dislike_count"):
+			return int(getattr(self, "_dislike_count") or 0)
 		return self.dislikes.count()
 
 	@property
 	def comment_count(self) -> int:
+		if hasattr(self, "_comment_count"):
+			return int(getattr(self, "_comment_count") or 0)
 		return self.comments.filter(deleted_at__isnull=True).count()
 
 	@property
 	def repost_count(self) -> int:
+		if hasattr(self, "_repost_count"):
+			return int(getattr(self, "_repost_count") or 0)
 		return self.reposts.count()
 
 

@@ -28,6 +28,7 @@
       <li>Private profile restricted page now includes a <em>Request to follow</em> action (plus pending/cancel states) so follow-request flows can be initiated directly when profile content is hidden.</li>
       <li>Notifications now show better post context when a post body is empty: they fall back to attachment caption first, then to the post ID label.</li>
       <li>Fixed reopening legacy direct-message threads on PostgreSQL by removing an invalid <code>SELECT FOR UPDATE</code> + <code>DISTINCT</code> query combination from the blank-key compatibility lookup.</li>
+      <li>Reduced actor/detail and search feed query load by annotating post engagement counts (likes, dislikes, comments, reposts) so templates avoid per-post count queries.</li>
     </ul>
   </section>
 
