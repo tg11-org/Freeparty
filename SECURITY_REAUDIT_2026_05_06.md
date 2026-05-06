@@ -11,8 +11,8 @@ The previous Critical/High application findings appear remediated in the current
 | ID | Severity | Area | Status |
 | --- | --- | --- | --- |
 | RE-001 | Medium | Supply chain | Twisted CVE-2026-42304 remains open, intentionally noted in `requirements.txt`. |
-| RE-002 | Medium | Verification | `apps/accounts/tests.py` has a syntax error that blocks the account/auth regression suite. |
-| RE-003 | Medium | Verification | Federation tests still patch `urllib.request.urlopen`, but federation fetches now use `safe_fetch`/`httpx`; tests make real network attempts and fail. |
+| RE-002 | Resolved | Verification | `apps/accounts/tests.py` now compiles and the account/auth security slice passes. |
+| RE-003 | Resolved | Verification | Federation tests now patch `safe_fetch` and the federation inbound fetch slice passes. |
 | RE-004 | Low | XSS hardening | `mark_safe()` remains in mention linkification; current escaping is defensive, but Bandit still flags it. |
 | RE-005 | Low | Operational disclosure | `/health/` remains public and displays database/cache health. Detailed readiness JSON is now protected. |
 | RE-006 | Low | Raw SQL/deprecation | Staff security dashboard uses static `.extra(select={"day": "date(created_at)"})`; not injectable, but should be replaced with ORM date truncation. |
@@ -173,66 +173,39 @@ Keep the current note, monitor Twisted stable releases, then upgrade when a stab
 +# TODO: Upgrade Twisted to the first stable release containing the CVE-2026-42304 fix.
 ```
 
-### RE-002 - Account/auth test file has a syntax error
+### RE-002 - Account/auth test file had a syntax error
 
-Severity: Medium  
+Status: Resolved  
 Location: `apps/accounts/tests.py:322-330`  
 OWASP: Security Logging and Monitoring Failures / verification gap
 
 Description:
 
-`apps/accounts/tests.py` is syntactically invalid. The method `test_under_18_signup_requires_guardian_email` starts a POST payload and is cut off before `class ResendVerificationViewTests` begins.
+`apps/accounts/tests.py` was syntactically invalid. The method `test_under_18_signup_requires_guardian_email` started a POST payload and was cut off before `class ResendVerificationViewTests` began. This is now fixed.
 
-Proof of concept:
+Verification:
 
 ```text
-python -m py_compile apps\accounts\tests.py
-SyntaxError: invalid syntax
-Location: apps\accounts\tests.py:330
+python -m py_compile apps\accounts\tests.py apps\federation\tests.py apps\posts\tests.py apps\core\tests.py
+OK
 ```
 
-Impact:
+### RE-003 - Federation tests mocked the old network path
 
-This blocks auth/account regression tests, including the new weak-password regression test at `apps/accounts/tests.py:264`.
-
-Recommended fix:
-
-Complete or remove the truncated test body before `class ResendVerificationViewTests`.
-
-### RE-003 - Federation tests mock old network path
-
-Severity: Medium  
+Status: Resolved  
 Location: `apps/federation/tests.py:103,118,150,168,188`  
 OWASP: SSRF verification gap
 
 Description:
 
-Federation services now use `safe_fetch()`/`httpx`, but tests still patch `apps.federation.services.urllib.request.urlopen`. Those patches no longer intercept network calls, so tests attempt real requests to `remote.example` and time out.
+Federation services now use `safe_fetch()`/`httpx`; tests previously patched `apps.federation.services.urllib.request.urlopen`, which no longer intercepted network calls. The tests now patch `safe_fetch` and return `httpx.Response` objects.
 
-Proof of concept:
+Verification:
 
 ```text
 python manage.py test apps.federation.tests.FederationInboundFetchTests
 Ran 6 tests
-FAILED (errors=5)
-httpx.ConnectTimeout: timed out
-```
-
-Recommended fix:
-
-Patch `apps.federation.services.safe_fetch` and return an `httpx.Response` with a matching request object.
-
-```diff
--@patch("apps.federation.services.urllib.request.urlopen")
-+@patch("apps.federation.services.safe_fetch")
- def test_fetch_remote_actor_persists_allowlisted_actor(self, mocked_fetch):
--    mocked_urlopen.return_value = _MockResponse(...)
-+    mocked_fetch.return_value = httpx.Response(
-+        200,
-+        json=payload,
-+        headers=self._signed_headers(payload),
-+        request=httpx.Request("GET", "https://remote.example/actors/alice"),
-+    )
+OK
 ```
 
 ### RE-004 - `mark_safe()` remains in mention linkification
@@ -344,14 +317,11 @@ System check identified no issues (0 silenced).
 
 ### Test verification
 
-Blocked / failed:
+Passed:
 
-- `apps/accounts/tests.py` cannot compile due syntax error at line 330.
-- `apps.federation.tests.FederationInboundFetchTests` fails because tests patch `urllib` while code uses `safe_fetch`.
-- A broader targeted test run timed out after 180 seconds; no long-running Freeparty Python processes were left running afterward.
-
-Passed smoke checks:
-
+- `python -m py_compile apps\accounts\tests.py apps\federation\tests.py apps\posts\tests.py apps\core\tests.py`
+- `manage.py test apps.federation.tests.FederationInboundFetchTests apps.accounts.tests.SignupLegalConsentTests apps.accounts.tests.RecoveryCodeFlowTests apps.posts.tests.CommentApiParityTests apps.core.tests.MentionAndHashtagLinkifyTests apps.core.tests.RootPathAndHealthStatusTests apps.core.tests.SecurityHeadersMiddlewareTests` ran 43 tests and passed.
+- `manage.py check --deploy` passed with production-safe env overrides.
 - Live HTTPS headers include enforced CSP, HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy`.
 - Live `/.env` returns 404.
 - Live `/health/ready/` returns 404.
@@ -368,10 +338,10 @@ Passed smoke checks:
 | A04 Insecure Design | Public `/health/` page is a small operational disclosure. |
 | A05 Security Misconfiguration | ASGI default and readiness endpoint defaults improved. Live CSP is enforced. |
 | A06 Vulnerable Components | Twisted remains open; Pillow is addressed. |
-| A07 Identification/Auth Failures | TOTP throttling and password validators are addressed. Auth tests currently cannot compile. |
+| A07 Identification/Auth Failures | TOTP throttling and password validators are addressed. Auth security tests now compile and pass. |
 | A08 Software/Data Integrity Failures | No unsafe deserialization found. |
-| A09 Logging/Monitoring Failures | Like/dislike telemetry fixed. Test-suite failures reduce monitoring confidence. |
-| A10 SSRF | Federation now uses `safe_fetch` and no redirects. Tests need updating to verify it. |
+| A09 Logging/Monitoring Failures | Like/dislike telemetry fixed. Security-adjacent test slices now pass. |
+| A10 SSRF | Federation now uses `safe_fetch` and no redirects. Federation tests now patch the correct network helper and pass. |
 
 ## References
 

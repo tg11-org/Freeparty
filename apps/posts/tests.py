@@ -322,7 +322,9 @@ class CommentApiParityTests(TestCase):
 		self.client.force_login(self.other)
 		response = self.client.get(f"/api/v1/comments/?post={private_post.id}")
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json(), [])
+		payload = response.json()
+		self.assertEqual(payload["count"], 0)
+		self.assertEqual(payload["results"], [])
 
 	def test_comment_api_hides_followers_only_comments_from_non_follower(self):
 		followers_post = Post.objects.create(
@@ -336,7 +338,9 @@ class CommentApiParityTests(TestCase):
 		self.client.force_login(self.other)
 		response = self.client.get(f"/api/v1/comments/?post={followers_post.id}")
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json(), [])
+		payload = response.json()
+		self.assertEqual(payload["count"], 0)
+		self.assertEqual(payload["results"], [])
 
 
 class HomeMediaTabTests(TestCase):

@@ -75,8 +75,9 @@ class MentionAndHashtagLinkifyTests(SimpleTestCase):
         # Token starts with 'www.' so the regex would normally match; the
         # resulting href must not carry through a javascript: scheme.
         rendered = linkify_mentions('www.evil.com/" onmouseover="alert(1)')
-        self.assertNotIn('onmouseover', rendered)
-        self.assertNotIn('""', rendered)
+        self.assertIn('href="https://www.evil.com/&quot;"', rendered)
+        self.assertIn(' onmouseover=&quot;alert(1)', rendered)
+        self.assertNotIn('onmouseover="', rendered)
 
     def test_xss_in_handle_is_escaped(self):
         # A handle containing angle brackets must be escaped in the output.
@@ -86,7 +87,9 @@ class MentionAndHashtagLinkifyTests(SimpleTestCase):
     def test_xss_in_hashtag_is_escaped(self):
         # Tags are purely alphanumeric by the regex, but ensure the label is escaped.
         rendered = linkify_mentions('#test"onmouseover="alert(1)')
-        self.assertNotIn('onmouseover', rendered)
+        self.assertIn('href="/actors/search/?q=%23test"', rendered)
+        self.assertIn('&quot;onmouseover=&quot;alert(1)', rendered)
+        self.assertNotIn('onmouseover="', rendered)
 
     def test_data_url_is_not_linkified(self):
         # data: URIs must not become clickable hrefs.
