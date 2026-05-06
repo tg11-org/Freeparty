@@ -3,6 +3,21 @@ from django.core.management.base import BaseCommand
 
 
 GROUP_PERMISSIONS = {
+    # =========================================================================
+    # Organisational labels — no permissions; used for filtering and identity
+    # =========================================================================
+    "Brand Account": [],           # Official brand/company presence
+    "Verified Artist": [],         # Musicians, performers, promoters
+    "Press": [],                   # Journalists and media outlets
+    "Sponsor": [],                 # Commercial sponsors and partners
+    "Beta Tester": [],             # Opted-in testers for pre-release features
+    "Early Adopter": [],           # Users from the founding cohort
+    "Partner Organisation": [],    # NGOs, venues, collectives with formal partnership
+
+    # =========================================================================
+    # Staff permission groups — ordered by access tier (lowest → highest)
+    # =========================================================================
+
     # -------------------------------------------------------------------------
     # Tier 1 — User-facing support: account lookups and lifecycle actions
     # -------------------------------------------------------------------------
