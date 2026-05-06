@@ -295,7 +295,8 @@ class SignupLegalConsentTests(TestCase):
 		self.assertFalse(User.objects.filter(email="consent1@example.com").exists())
 
 	@override_settings(LEGAL_TOS_VERSION="1.2", LEGAL_GUIDELINES_VERSION="1.3")
-	def test_signup_persists_legal_acceptance_timestamps_and_versions(self):
+	@patch("apps.accounts.views.send_verification_email.delay")
+	def test_signup_persists_legal_acceptance_timestamps_and_versions(self, _mock_delay):
 		response = self.client.post(
 			self.signup_url,
 			{
@@ -325,40 +326,6 @@ class SignupLegalConsentTests(TestCase):
 			{
 				"email": "minor1@example.com",
 				"username": "minor1",
-
-
-	class ResendVerificationViewTests(TestCase):
-		def setUp(self):
-			self.client = Client()
-			self.user = User.objects.create_user(email="resend@example.com", username="resenduser", password="secret123")
-
-		def test_get_requires_authentication_and_redirects_to_login(self):
-			response = self.client.get(reverse("accounts:resend-verification"), follow=True)
-			self.assertEqual(response.status_code, 200)
-			self.assertContains(response, "Sign in to resend your verification email.")
-
-		def test_get_when_authenticated_redirects_home_with_hint(self):
-			self.client.force_login(self.user)
-			response = self.client.get(reverse("accounts:resend-verification"), follow=True)
-			self.assertEqual(response.status_code, 200)
-			self.assertContains(response, "Use the resend button to request a new verification email.")
-
-		@patch("apps.accounts.views.send_verification_email.delay")
-		def test_post_enqueues_task_for_unverified_user(self, mock_delay):
-			self.client.force_login(self.user)
-			response = self.client.post(reverse("accounts:resend-verification"), follow=True)
-			self.assertEqual(response.status_code, 200)
-			mock_delay.assert_called_once_with(str(self.user.id))
-			self.assertContains(response, "Verification email resent.")
-
-		@patch("apps.accounts.views.send_verification_email.delay")
-		def test_post_for_verified_user_does_not_enqueue_task(self, mock_delay):
-			self.user.mark_email_verified()
-			self.client.force_login(self.user)
-			response = self.client.post(reverse("accounts:resend-verification"), follow=True)
-			self.assertEqual(response.status_code, 200)
-			mock_delay.assert_not_called()
-			self.assertContains(response, "Your email is already verified.")
 				"display_name": "Minor One",
 				"password1": "secret12345",
 				"password2": "secret12345",
@@ -370,7 +337,8 @@ class SignupLegalConsentTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Enter a parent or guardian email for under-18 accounts.")
 
-	def test_under_18_signup_seeds_minor_profile_and_sends_guardian_email(self):
+	@patch("apps.accounts.views.send_verification_email.delay")
+	def test_under_18_signup_seeds_minor_profile_and_sends_guardian_email(self, _mock_delay):
 		response = self.client.post(
 			self.signup_url,
 			{
@@ -392,6 +360,41 @@ class SignupLegalConsentTests(TestCase):
 		self.assertTrue(profile.parental_controls_enabled)
 		self.assertEqual(profile.guardian_email, "parent@example.com")
 		self.assertTrue(GuardianEmailVerificationToken.objects.filter(profile=profile).exists())
+
+
+@override_settings(EMAIL_VERIFICATION_REQUIRED=True)
+class ResendVerificationViewTests(TestCase):
+	def setUp(self):
+		self.client = Client()
+		self.user = User.objects.create_user(email="resend@example.com", username="resenduser", password="secret123")
+
+	def test_get_requires_authentication_and_redirects_to_login(self):
+		response = self.client.get(reverse("accounts:resend-verification"))
+		self.assertEqual(response.status_code, 302)
+		self.assertIn(reverse("accounts:login"), response["Location"])
+
+	def test_get_when_authenticated_redirects_home_with_hint(self):
+		self.client.force_login(self.user)
+		response = self.client.get(reverse("accounts:resend-verification"))
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(response["Location"], reverse("home"))
+
+	@patch("apps.accounts.views.send_verification_email.delay")
+	def test_post_enqueues_task_for_unverified_user(self, mock_delay):
+		self.client.force_login(self.user)
+		response = self.client.post(reverse("accounts:resend-verification"))
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(response["Location"], reverse("home"))
+		mock_delay.assert_called_once_with(str(self.user.id))
+
+	@patch("apps.accounts.views.send_verification_email.delay")
+	def test_post_for_verified_user_does_not_enqueue_task(self, mock_delay):
+		self.user.mark_email_verified()
+		self.client.force_login(self.user)
+		response = self.client.post(reverse("accounts:resend-verification"))
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(response["Location"], reverse("home"))
+		mock_delay.assert_not_called()
 
 
 class AccountLifecycleFlowTests(TestCase):

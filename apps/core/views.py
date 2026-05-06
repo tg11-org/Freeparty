@@ -11,6 +11,7 @@ from django.core.cache import cache
 from django.core.mail import EmailMessage, get_connection
 from django.db import connections
 from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
@@ -286,7 +287,7 @@ def security_posture_view(request: HttpRequest) -> HttpResponse:
 	audit_by_day = {label: 0 for label in [(parsed_from + timezone.timedelta(days=offset)).isoformat() for offset in range((parsed_to - parsed_from).days + 1)]}
 	for row in (
 		SecurityAuditEvent.objects.filter(created_at__gte=range_start, created_at__lte=range_end)
-		.extra(select={"day": "date(created_at)"})
+		.annotate(day=TruncDate("created_at"))
 		.values("day")
 		.annotate(count=Count("id"))
 	):
@@ -421,7 +422,7 @@ def auth_forensics_view(request: HttpRequest) -> HttpResponse:
 			created_at__lte=range_end,
 			event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE,
 		)
-		.extra(select={"day": "date(created_at)"})
+		.annotate(day=TruncDate("created_at"))
 		.values("day")
 		.annotate(count=Count("id"))
 	):

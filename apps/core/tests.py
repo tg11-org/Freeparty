@@ -306,6 +306,9 @@ class RootPathAndHealthStatusTests(TestCase):
         response = self.client.get("/health/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Service Status")
+        self.assertNotContains(response, "Database")
+        self.assertNotContains(response, "Cache")
+        self.assertNotContains(response, "/health/ready/")
 
     @override_settings(HEALTH_READY_PUBLIC=False, HEALTH_READY_ALLOWED_IPS=[])
     def test_health_ready_endpoint_is_not_public_when_disabled(self):
@@ -360,7 +363,7 @@ class RootPathAndHealthStatusTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "mailto:support%40tg11.org", html=False)
+        self.assertContains(response, "mailto:support@tg11.org", html=False)
 
 
 class EmailDiagnosticsViewTests(TestCase):

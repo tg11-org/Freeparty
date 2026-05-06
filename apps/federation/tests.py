@@ -2,6 +2,7 @@ import json
 import time
 from unittest.mock import patch
 
+import httpx
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import User
@@ -12,24 +13,13 @@ from apps.federation.signing import sign_payload
 from apps.federation.tasks import execute_federation_delivery
 
 
-class _MockResponse:
-	def __init__(self, payload: dict, *, status: int = 202, headers: dict | None = None, final_url: str = ""):
-		self.status = status
-		self._payload = json.dumps(payload).encode("utf-8")
-		self.headers = headers or {}
-		self._final_url = final_url
-
-	def read(self):
-		return self._payload
-
-	def geturl(self):
-		return self._final_url or "https://remote.example/mock"
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, exc_type, exc, tb):
-		return False
+def _httpx_response(url: str, payload: dict, *, method: str = "GET", status: int = 202, headers: dict | None = None) -> httpx.Response:
+	return httpx.Response(
+		status,
+		json=payload,
+		headers=headers or {},
+		request=httpx.Request(method, url),
+	)
 
 
 @override_settings(FEATURE_FEDERATION_OUTBOUND_ENABLED=True, FEDERATION_SHARED_SECRET="shared-secret")
@@ -49,9 +39,9 @@ class FederationTaskReliabilityTests(TestCase):
 			activity_payload={"type": "Create"},
 		)
 
-	@patch("apps.federation.tasks.urllib.request.urlopen")
-	def test_execute_federation_delivery_marks_success_and_records_execution(self, mocked_urlopen):
-		mocked_urlopen.return_value = _MockResponse({"status": "accepted"}, status=202)
+	@patch("apps.federation.tasks.safe_fetch")
+	def test_execute_federation_delivery_marks_success_and_records_execution(self, mocked_fetch):
+		mocked_fetch.return_value = _httpx_response("https://remote.example/inbox", {"status": "accepted"}, method="POST", status=202)
 		execute_federation_delivery.run(str(self.delivery.id), correlation_id="corr-1")
 
 		self.delivery.refresh_from_db()
@@ -64,13 +54,13 @@ class FederationTaskReliabilityTests(TestCase):
 		)
 		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
 		self.assertEqual(execution.attempt_count, 1)
-		request = mocked_urlopen.call_args.args[0]
-		self.assertEqual(request.headers["X-freeparty-key-id"], "freeparty:remote.example")
-		self.assertIn("X-freeparty-signature", request.headers)
+		headers = mocked_fetch.call_args.kwargs["headers"]
+		self.assertEqual(headers["X-Freeparty-Key-Id"], "freeparty:remote.example")
+		self.assertIn("X-Freeparty-Signature", headers)
 
-	@patch("apps.federation.tasks.urllib.request.urlopen")
-	def test_execute_federation_delivery_is_idempotent_after_success(self, mocked_urlopen):
-		mocked_urlopen.return_value = _MockResponse({"status": "accepted"}, status=202)
+	@patch("apps.federation.tasks.safe_fetch")
+	def test_execute_federation_delivery_is_idempotent_after_success(self, mocked_fetch):
+		mocked_fetch.return_value = _httpx_response("https://remote.example/inbox", {"status": "accepted"}, method="POST", status=202)
 		execute_federation_delivery.run(str(self.delivery.id), correlation_id="corr-2")
 		execute_federation_delivery.run(str(self.delivery.id), correlation_id="corr-2")
 
@@ -80,7 +70,7 @@ class FederationTaskReliabilityTests(TestCase):
 		)
 		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
 		self.assertEqual(execution.attempt_count, 1)
-		self.assertEqual(mocked_urlopen.call_count, 1)
+		self.assertEqual(mocked_fetch.call_count, 1)
 
 
 class FederationInboundFetchTests(TestCase):
@@ -100,23 +90,28 @@ class FederationInboundFetchTests(TestCase):
 			"X-Freeparty-Key-Id": key_id,
 		}
 
-	@patch("apps.federation.services.urllib.request.urlopen")
-	def test_fetch_remote_actor_persists_allowlisted_actor(self, mocked_urlopen):
+	@patch("apps.federation.services.safe_fetch")
+	def test_fetch_remote_actor_persists_allowlisted_actor(self, mocked_fetch):
 		payload = {
 			"id": "https://remote.example/actors/alice",
 			"preferredUsername": "alice",
 			"name": "Alice Remote",
 			"publicKey": {"publicKeyPem": "PUBLIC"},
 		}
-		mocked_urlopen.return_value = _MockResponse(payload, status=200, headers=self._signed_headers(payload))
+		mocked_fetch.return_value = _httpx_response(
+			"https://remote.example/actors/alice",
+			payload,
+			status=200,
+			headers=self._signed_headers(payload),
+		)
 
 		remote_actor = fetch_remote_actor("https://remote.example/actors/alice")
 
 		self.assertEqual(remote_actor.handle, "alice")
 		self.assertEqual(RemoteActor.objects.count(), 1)
 
-	@patch("apps.federation.services.urllib.request.urlopen")
-	def test_fetch_remote_object_persists_remote_post(self, mocked_urlopen):
+	@patch("apps.federation.services.safe_fetch")
+	def test_fetch_remote_object_persists_remote_post(self, mocked_fetch):
 		actor_payload = {
 			"id": "https://remote.example/actors/alice",
 			"preferredUsername": "alice",
@@ -130,9 +125,9 @@ class FederationInboundFetchTests(TestCase):
 			"attributedTo": "https://remote.example/actors/alice",
 			"attachment": [{"url": "https://remote.example/media/1.png", "mediaType": "image/png"}],
 		}
-		mocked_urlopen.side_effect = [
-			_MockResponse(post_payload, status=200, headers=self._signed_headers(post_payload)),
-			_MockResponse(actor_payload, status=200, headers=self._signed_headers(actor_payload)),
+		mocked_fetch.side_effect = [
+			_httpx_response("https://remote.example/objects/1", post_payload, status=200, headers=self._signed_headers(post_payload)),
+			_httpx_response("https://remote.example/actors/alice", actor_payload, status=200, headers=self._signed_headers(actor_payload)),
 		]
 
 		remote_post = fetch_remote_object("https://remote.example/objects/1")
@@ -147,8 +142,8 @@ class FederationInboundFetchTests(TestCase):
 		with self.assertRaisesMessage(ValueError, "Remote instance is not allowlisted."):
 			fetch_remote_actor("https://remote.example/actors/alice")
 
-	@patch("apps.federation.services.urllib.request.urlopen")
-	def test_fetch_remote_actor_rejects_stale_signature(self, mocked_urlopen):
+	@patch("apps.federation.services.safe_fetch")
+	def test_fetch_remote_actor_rejects_stale_signature(self, mocked_fetch):
 		payload = {
 			"id": "https://remote.example/actors/alice",
 			"preferredUsername": "alice",
@@ -156,7 +151,8 @@ class FederationInboundFetchTests(TestCase):
 			"publicKey": {"publicKeyPem": "PUBLIC"},
 		}
 		stale_timestamp = str(int(time.time()) - 3600)
-		mocked_urlopen.return_value = _MockResponse(
+		mocked_fetch.return_value = _httpx_response(
+			"https://remote.example/actors/alice",
 			payload,
 			status=200,
 			headers=self._signed_headers(payload, timestamp=stale_timestamp),
@@ -165,8 +161,8 @@ class FederationInboundFetchTests(TestCase):
 		with self.assertRaisesMessage(ValueError, "Invalid federation signature."):
 			fetch_remote_actor("https://remote.example/actors/alice")
 
-	@patch("apps.federation.services.urllib.request.urlopen")
-	def test_fetch_remote_actor_rejects_unexpected_partner_key_id(self, mocked_urlopen):
+	@patch("apps.federation.services.safe_fetch")
+	def test_fetch_remote_actor_rejects_unexpected_partner_key_id(self, mocked_fetch):
 		Instance._default_manager.filter(id=self.instance.id).update(
 			metadata={"shared_secret": "shared-secret", "inbound_key_id": "partner-key-1"}
 		)
@@ -176,7 +172,8 @@ class FederationInboundFetchTests(TestCase):
 			"name": "Alice Remote",
 			"publicKey": {"publicKeyPem": "PUBLIC"},
 		}
-		mocked_urlopen.return_value = _MockResponse(
+		mocked_fetch.return_value = _httpx_response(
+			"https://remote.example/actors/alice",
 			payload,
 			status=200,
 			headers=self._signed_headers(payload, key_id="different-key"),
@@ -185,20 +182,9 @@ class FederationInboundFetchTests(TestCase):
 		with self.assertRaisesMessage(ValueError, "Invalid federation signature."):
 			fetch_remote_actor("https://remote.example/actors/alice")
 
-	@patch("apps.federation.services.urllib.request.urlopen")
-	def test_fetch_remote_actor_rejects_redirect_to_different_host(self, mocked_urlopen):
-		payload = {
-			"id": "https://remote.example/actors/alice",
-			"preferredUsername": "alice",
-			"name": "Alice Remote",
-			"publicKey": {"publicKeyPem": "PUBLIC"},
-		}
-		mocked_urlopen.return_value = _MockResponse(
-			payload,
-			status=200,
-			headers=self._signed_headers(payload),
-			final_url="https://internal.example/actors/alice",
-		)
+	@patch("apps.federation.services.safe_fetch")
+	def test_fetch_remote_actor_rejects_redirect_to_different_host(self, mocked_fetch):
+		mocked_fetch.side_effect = ValueError("Remote URL host does not match the expected domain.")
 
 		with self.assertRaisesMessage(ValueError, "Remote URL host does not match the expected domain."):
 			fetch_remote_actor("https://remote.example/actors/alice")
