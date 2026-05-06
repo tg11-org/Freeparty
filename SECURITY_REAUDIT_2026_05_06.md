@@ -14,8 +14,8 @@ The previous Critical/High application findings appear remediated in the current
 | RE-002 | Resolved | Verification | `apps/accounts/tests.py` now compiles and the account/auth security slice passes. |
 | RE-003 | Resolved | Verification | Federation tests now patch `safe_fetch` and the federation inbound fetch slice passes. |
 | RE-004 | Low | XSS hardening | `mark_safe()` remains in mention linkification; current escaping is defensive, but Bandit still flags it. |
-| RE-005 | Low | Operational disclosure | `/health/` remains public and displays database/cache health. Detailed readiness JSON is now protected. |
-| RE-006 | Low | Raw SQL/deprecation | Staff security dashboard uses static `.extra(select={"day": "date(created_at)"})`; not injectable, but should be replaced with ORM date truncation. |
+| RE-005 | Resolved | Operational disclosure | `/health/` remains public but now exposes only a generic overall status (no component-level DB/cache details); readiness JSON remains protected. |
+| RE-006 | Resolved | Raw SQL/deprecation | Staff security dashboard aggregation now uses ORM `TruncDate` instead of `.extra(...)`. |
 
 ## Remediation Verification
 
@@ -140,7 +140,7 @@ Evidence:
 
 Residual:
 
-- `/health/` is still public and shows database/cache status. Treat as Low unless you intentionally want a public status page.
+- `/health/` remains public by design but now exposes only generic overall status, reducing operational detail leakage.
 
 ## Current Findings
 
@@ -222,49 +222,42 @@ Recommended fix:
 
 Prefer `format_html()` / `format_html_join()` when the helper is next touched, or suppress Bandit with the correct B703 nosec marker after review.
 
-### RE-005 - Public `/health/` page still discloses DB/cache status
+### RE-005 - Public `/health/` page disclosure reduced
 
-Severity: Low  
+Status: Resolved  
 Locations:
 
-- `apps/core/views.py:139-156`
+- `templates/core/health_status.html`
 - live `/health/`
 
 Description:
 
-Readiness JSON is now protected, but the public HTML health page still shows database/cache health.
+The public HTML health page now shows only a general service summary and no longer discloses component-level database/cache status. Readiness JSON remains protected.
 
-Proof of concept:
+Verification:
 
 ```http
 GET https://freeparty.tg11.org/health/
 ```
 
-Recommended fix:
+Expected: generic overall service status only (no DB/cache breakdown).
 
-If this is not intended as a public status page, protect it behind staff auth or show only a generic status publicly.
+### RE-006 - Legacy `.extra()` usage in staff security dashboard
 
-### RE-006 - Static `.extra()` usage in staff security dashboard
-
-Severity: Low  
+Status: Resolved  
 Locations:
 
-- `apps/core/views.py:287-290`
-- `apps/core/views.py:418-425`
+- `apps/core/views.py:290`
+- `apps/core/views.py:425`
 
 Description:
 
-The `.extra(select={"day": "date(created_at)"})` calls are static and not injectable from user input, but `.extra()` is a legacy escape hatch and is easy to misuse later.
+Daily aggregation in staff security dashboards now uses ORM `TruncDate`, removing legacy `.extra()` usage.
 
-Recommended fix:
+Verification:
 
-Replace with `TruncDate`:
-
-```diff
-- .extra(select={"day": "date(created_at)"})
-- .values("day")
-+ .annotate(day=TruncDate("created_at"))
-+ .values("day")
+```text
+SecurityAuditEvent queryset now uses .annotate(day=TruncDate("created_at"))
 ```
 
 ## Scanner Results
@@ -334,8 +327,8 @@ Passed:
 | --- | --- |
 | A01 Broken Access Control | Previous comment API issue appears fixed in source. |
 | A02 Cryptographic Failures | No new issue found in this pass. E2E cryptography was not deeply reviewed. |
-| A03 Injection | No user-controlled raw SQL found. Static `.extra()` remains low risk. |
-| A04 Insecure Design | Public `/health/` page is a small operational disclosure. |
+| A03 Injection | No user-controlled raw SQL found. Legacy `.extra()` usage was removed from staff dashboard aggregation. |
+| A04 Insecure Design | Public `/health/` now presents only generic overall service status without component-level detail. |
 | A05 Security Misconfiguration | ASGI default and readiness endpoint defaults improved. Live CSP is enforced. |
 | A06 Vulnerable Components | Twisted remains open; Pillow is addressed. |
 | A07 Identification/Auth Failures | TOTP throttling and password validators are addressed. Auth security tests now compile and pass. |
@@ -349,3 +342,4 @@ Passed:
 - Django deployment checklist: https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 - Django password validation: https://docs.djangoproject.com/en/5.1/topics/auth/passwords/
 - Django file upload docs: https://docs.djangoproject.com/en/dev/ref/files/uploads/
+

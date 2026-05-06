@@ -11,6 +11,19 @@
 
   <section style="margin-bottom:2.5rem;">
     <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-05-06 &mdash; Security Re-audit Closures: SSRF Pinning, Verification Repairs, and Health/Analytics Hardening
+    </h2>
+    <ul>
+      <li>Upgraded federation remote fetch handling to use the hardened <code>safe_fetch</code> flow with a custom pinned-IP transport, preserving host verification while preventing redirect and private-network SSRF bypasses.</li>
+      <li>Repaired account and federation security test slices after networking refactors: account auth verification tests compile and pass, and federation inbound tests now patch <code>safe_fetch</code> with <code>httpx.Response</code>-based fixtures.</li>
+      <li>Fixed account verification route resolution by ordering <code>/accounts/verify/resend/</code> ahead of tokenized verification routes to prevent accidental shadowing.</li>
+      <li>Reduced public operational detail exposure on <code>/health/</code>: the public page now presents generic overall service status while detailed readiness information remains protected.</li>
+      <li>Removed legacy ORM <code>.extra(...)</code> usage from staff security dashboard day aggregation and migrated to <code>TruncDate</code>-based query annotations.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
       2026-04-23 &mdash; Security Hardening: oEmbed XSS, SSRF Guards, DM Dedup, Safer Defaults
     </h2>
     <ul>
@@ -225,7 +238,7 @@
   </section>
 
   <footer style="margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--text2);font-size:0.82rem;">
-    Freeparty Changelog &middot; Last updated 2026-04-23
+    Freeparty Changelog &middot; Last updated 2026-05-06
   </footer>
 </article>
 {% endblock %}
