@@ -105,6 +105,25 @@
         document.documentElement.setAttribute("data-message-density", md);
         document.documentElement.setAttribute("data-icon-style", is);
         if(resolved === "custom") applyCustomTheme(document.documentElement);
+
+        // Anti-FOUC: set background on <html> immediately so the browser never
+        // paints a white flash while the inline <style> block is still being parsed.
+        var _themeBg = {
+          light: "#f2f6fc", dark: "#07111e", cyberpunk: "#0a0014",
+          forest: "#0d1f0d", sunset: "#1a0a00", ocean: "#001628",
+          rose: "#1a000a", amoled: "#000000",
+          "pride-pan": "#081b2e", "pride-rainbow": "#1f1f2b",
+          "pride-trans": "#173249", "pride-bi": "#1d1738"
+        };
+        var _earlyBg;
+        if(c === "high"){
+          _earlyBg = "#000000";
+        } else if(resolved === "custom" && customThemeAvailable){
+          _earlyBg = normalizeCustomThemeToken(customTheme.bg) || "#07111e";
+        } else {
+          _earlyBg = _themeBg[resolved] || "#f2f6fc";
+        }
+        document.documentElement.style.background = _earlyBg;
       })();
     </script>
     <style>
