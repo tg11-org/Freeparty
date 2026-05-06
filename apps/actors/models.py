@@ -39,6 +39,10 @@ class Actor(TimeStampedModel):
 
 	class Meta:
 		ordering = ["-created_at"]
+		permissions = [
+			("manage_actor_verification", "Can grant or revoke actor verified status"),
+			("suspend_actor", "Can suspend or unsuspend actor accounts"),
+		]
 		indexes = [
 			models.Index(fields=["actor_type", "state"]),
 			models.Index(fields=["remote_domain"]),

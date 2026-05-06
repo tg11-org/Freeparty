@@ -2,10 +2,82 @@ from __future__ import annotations
 
 from typing import Optional
 
+from django.contrib.auth.base_user import AbstractBaseUser
+
 from apps.actors.models import Actor
 from apps.posts.models import Comment, Post
 from apps.profiles.models import Profile
 from apps.social.models import Block, Follow
+
+
+SUPPORT_USER_INFO_PERMISSION = "accounts.view_support_user_info"
+SUPPORT_RESEND_VERIFICATION_PERMISSION = "accounts.resend_verification_email"
+SUPPORT_ACCOUNT_LIFECYCLE_PERMISSION = "accounts.manage_account_lifecycle_support"
+MODERATION_DASHBOARD_PERMISSION = "moderation.access_moderation_dashboard"
+REPORT_REVIEW_PERMISSION = "moderation.review_reports"
+MODERATION_ACTION_PERMISSION = "moderation.manage_moderation_actions"
+AUDIT_SUMMARY_PERMISSION = "moderation.view_audit_summary"
+SECURITY_AUDIT_PERMISSION = "moderation.view_security_audit_events"
+TRUST_SIGNAL_PERMISSION = "moderation.manage_trust_signals"
+SUPPORT_DIAGNOSTICS_PERMISSION = "core.view_support_diagnostics"
+SECURITY_POSTURE_PERMISSION = "core.view_security_posture"
+EMAIL_DIAGNOSTICS_PERMISSION = "core.run_email_diagnostics"
+
+
+def has_any_permission(user: Optional[AbstractBaseUser], *permissions: str) -> bool:
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    return any(user.has_perm(permission) for permission in permissions)
+
+
+def can_access_support_user_info(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, SUPPORT_USER_INFO_PERMISSION)
+
+
+def can_resend_verification(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, SUPPORT_RESEND_VERIFICATION_PERMISSION)
+
+
+def can_manage_account_lifecycle_support(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, SUPPORT_ACCOUNT_LIFECYCLE_PERMISSION)
+
+
+def can_access_moderation_dashboard(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, MODERATION_DASHBOARD_PERMISSION, REPORT_REVIEW_PERMISSION, MODERATION_ACTION_PERMISSION)
+
+
+def can_review_reports(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, REPORT_REVIEW_PERMISSION)
+
+
+def can_manage_moderation_actions(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, MODERATION_ACTION_PERMISSION)
+
+
+def can_view_audit_summary(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, AUDIT_SUMMARY_PERMISSION)
+
+
+def can_view_security_audit_events(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, SECURITY_AUDIT_PERMISSION)
+
+
+def can_manage_trust_signals(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, TRUST_SIGNAL_PERMISSION)
+
+
+def can_view_security_posture(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, SECURITY_POSTURE_PERMISSION)
+
+
+def can_run_email_diagnostics(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, EMAIL_DIAGNOSTICS_PERMISSION)
+
+
+def can_view_security_triage(user: Optional[AbstractBaseUser]) -> bool:
+    return has_any_permission(user, REPORT_REVIEW_PERMISSION, SECURITY_AUDIT_PERMISSION, TRUST_SIGNAL_PERMISSION)
 
 
 def _is_blocked_either_way(actor_a: Actor, actor_b: Actor) -> bool:

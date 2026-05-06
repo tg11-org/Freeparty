@@ -24,6 +24,10 @@ class Instance(TimeStampedModel):
 
 	class Meta:
 		ordering = ["domain"]
+		permissions = [
+			("manage_federation_allowlist", "Can manage federation instance allowlist and blocking"),
+			("view_federation_health", "Can view federation delivery health and instance stats"),
+		]
 
 
 class RemoteActor(TimeStampedModel):

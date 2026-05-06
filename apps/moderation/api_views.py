@@ -7,6 +7,12 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.core.permissions import (
+    can_access_moderation_dashboard,
+    can_manage_moderation_actions,
+    can_review_reports,
+    can_view_audit_summary,
+)
 from apps.moderation.models import ModerationAction, ModerationNote, Report
 from apps.posts.models import Attachment
 from apps.moderation.serializers import (
@@ -18,8 +24,39 @@ from apps.moderation.serializers import (
 )
 
 
+class HasModerationDashboardPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return can_access_moderation_dashboard(request.user)
+
+
+class HasReportReviewPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return can_review_reports(request.user)
+
+
+class HasModerationActionPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return can_manage_moderation_actions(request.user)
+
+
+class HasAuditSummaryPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return can_view_audit_summary(request.user)
+
+
 class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [HasModerationDashboardPermission]
+
+    def get_permissions(self):
+        if self.action in {"update_status"}:
+            permission_classes = [HasReportReviewPermission]
+        elif self.action in {"create_action", "create_note"}:
+            permission_classes = [HasModerationActionPermission]
+        elif self.action in {"sla_analytics"}:
+            permission_classes = [HasAuditSummaryPermission]
+        else:
+            permission_classes = [HasModerationDashboardPermission]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         status_value = self.request.GET.get("status")
@@ -163,7 +200,7 @@ class ModerationReportViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ModerationAttachmentViewSet(viewsets.GenericViewSet):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [HasModerationActionPermission]
     queryset = Attachment.objects.select_related("post")
 
     @action(detail=True, methods=["post"], url_path="state")

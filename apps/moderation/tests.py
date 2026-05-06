@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib.auth.models import Permission
 from django.test import Client, TestCase, override_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
@@ -11,10 +12,29 @@ from apps.posts.models import Attachment, Post
 from apps.social.models import Like
 
 
+def grant_permissions(user, *permission_names):
+	permissions = []
+	for permission_name in permission_names:
+		app_label, codename = permission_name.split(".", 1)
+		permissions.append(Permission.objects.get(content_type__app_label=app_label, codename=codename))
+	user.user_permissions.add(*permissions)
+
+
+def grant_moderator_permissions(user):
+	grant_permissions(
+		user,
+		"moderation.access_moderation_dashboard",
+		"moderation.review_reports",
+		"moderation.manage_moderation_actions",
+		"moderation.view_audit_summary",
+	)
+
+
 class ModerationWorkflowTests(TestCase):
 	def setUp(self):
 		self.client = Client()
 		self.staff = User.objects.create_user(email="mod@example.com", username="mod", password="secret123", is_staff=True)
+		grant_moderator_permissions(self.staff)
 		self.reporter = User.objects.create_user(email="reporter@example.com", username="reporter", password="secret123")
 		self.staff.mark_email_verified()
 		self.reporter.mark_email_verified()
@@ -248,6 +268,7 @@ class ModerationApiTests(TestCase):
 	def setUp(self):
 		self.client = Client()
 		self.staff = User.objects.create_user(email="staff-api@example.com", username="staffapi", password="secret123", is_staff=True)
+		grant_moderator_permissions(self.staff)
 		self.user = User.objects.create_user(email="user-api@example.com", username="userapi", password="secret123")
 		self.staff.mark_email_verified()
 		self.user.mark_email_verified()
@@ -510,6 +531,7 @@ class TrustSignalTests(TestCase):
 		"""Moderation report detail should include target actor's trust signal."""
 		client = Client()
 		staff = User.objects.create_user(email="staff@example.com", username="staff", password="secret123", is_staff=True)
+		grant_moderator_permissions(staff)
 		staff.mark_email_verified()
 		report = Report.objects.create(reporter=self.actor, target_actor=self.actor, reason="self_report")
 
@@ -587,6 +609,7 @@ class SecurityAuditTests(TestCase):
 	def test_log_moderator_action(self):
 		"""SecurityAuditService should log moderation actions by staff."""
 		moderator = User.objects.create_user(email="mod@example.com", username="mod", is_staff=True, password="secret")
+		grant_moderator_permissions(moderator)
 		target = User.objects.create_user(email="target@example.com", username="target", password="secret")
 		
 		SecurityAuditService.log_moderator_action(

@@ -48,6 +48,14 @@ class Report(TimeStampedModel):
 	sla_target_minutes = models.PositiveIntegerField(default=0)
 	evidence_hash = models.CharField(max_length=64, blank=True)
 
+	class Meta:
+		permissions = [
+			("access_moderation_dashboard", "Can access the moderation dashboard"),
+			("review_reports", "Can review moderation reports"),
+			("manage_moderation_actions", "Can apply moderation actions"),
+			("view_audit_summary", "Can view moderation audit summaries"),
+		]
+
 	@classmethod
 	def normalize_reason(cls, reason: str) -> str:
 		value = (reason or "").strip().lower()
@@ -175,6 +183,9 @@ class SecurityAuditEvent(TimeStampedModel):
 			models.Index(fields=["user", "-created_at"]),
 			models.Index(fields=["event_type", "-created_at"]),
 		]
+		permissions = [
+			("view_security_audit_events", "Can review security audit events"),
+		]
 
 	def __str__(self):
 		return f"{self.event_type} by {self.user.email} at {self.created_at}"
@@ -218,6 +229,9 @@ class TrustSignal(TimeStampedModel):
 		ordering = ["-last_computed_at"]
 		indexes = [
 			models.Index(fields=["is_throttled", "-last_computed_at"]),
+		]
+		permissions = [
+			("manage_trust_signals", "Can review and manage trust signals"),
 		]
 
 	def __str__(self):

@@ -1,6 +1,7 @@
 from django.http import HttpResponse
 from django.core import mail
 from django.core.checks import run_checks
+from django.contrib.auth.models import Permission
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from unittest.mock import patch
@@ -18,6 +19,14 @@ from apps.core.templatetags.mention_tags import linkify_mentions
 from apps.core.middleware import RequestObservabilityMiddleware
 from apps.core.services.task_observability import observe_celery_task
 from apps.posts.tasks import unfurl_post_link
+
+
+def grant_permissions(user, *permission_names):
+    permissions = []
+    for permission_name in permission_names:
+        app_label, codename = permission_name.split(".", 1)
+        permissions.append(Permission.objects.get(content_type__app_label=app_label, codename=codename))
+    user.user_permissions.add(*permissions)
 
 
 class MentionAndHashtagLinkifyTests(SimpleTestCase):
@@ -400,6 +409,7 @@ class EmailDiagnosticsViewTests(TestCase):
     def test_send_attempt_produces_logs_and_queues_mail(self):
         self.user.is_staff = True
         self.user.save(update_fields=["is_staff"])
+        grant_permissions(self.user, "core.run_email_diagnostics")
         self.client.force_login(self.user)
         response = self.client.post(
             "/support/email-test/",
@@ -441,8 +451,7 @@ class StaffSecurityDashboardsTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_staff_can_access_security_posture_page(self):
-        self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        grant_permissions(self.user, "core.view_security_posture")
         self.client.force_login(self.user)
 
         response = self.client.get("/support/security-posture/")
@@ -450,8 +459,7 @@ class StaffSecurityDashboardsTests(TestCase):
         self.assertContains(response, "Security Posture Dashboard")
 
     def test_staff_can_access_auth_forensics_page(self):
-        self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        grant_permissions(self.user, "moderation.view_security_audit_events")
         self.client.force_login(self.user)
         SecurityAuditEvent.objects.create(
             user=self.user,
@@ -466,8 +474,7 @@ class StaffSecurityDashboardsTests(TestCase):
         self.assertContains(response, "login_failure")
 
     def test_staff_can_access_security_triage_page(self):
-        self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        grant_permissions(self.user, "moderation.view_security_audit_events")
         self.client.force_login(self.user)
 
         response = self.client.get("/support/security-triage/")
@@ -475,8 +482,7 @@ class StaffSecurityDashboardsTests(TestCase):
         self.assertContains(response, "Security Triage Queue")
 
     def test_auth_forensics_csv_export(self):
-        self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        grant_permissions(self.user, "moderation.view_security_audit_events")
         self.client.force_login(self.user)
         SecurityAuditEvent.objects.create(
             user=self.user,
@@ -491,8 +497,7 @@ class StaffSecurityDashboardsTests(TestCase):
         self.assertIn("attachment; filename=auth-forensics-", response["Content-Disposition"])
 
     def test_auth_forensics_json_export(self):
-        self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        grant_permissions(self.user, "moderation.view_security_audit_events")
         self.client.force_login(self.user)
         SecurityAuditEvent.objects.create(
             user=self.user,

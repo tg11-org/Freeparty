@@ -22,6 +22,12 @@ from django.views.decorators.http import require_http_methods
 from apps.core.forms import EmailDiagnosticsForm, SupportRequestForm
 from apps.core.health_access import is_ready_endpoint_authorized
 from apps.core.pagination import paginate_queryset
+from apps.core.permissions import (
+	can_run_email_diagnostics,
+	can_view_security_audit_events,
+	can_view_security_posture,
+	can_view_security_triage,
+)
 from apps.notifications.models import Notification
 from apps.accounts.models import RecoveryCode, TOTPDevice, User
 from apps.moderation.models import Report, SecurityAuditEvent, TrustSignal
@@ -225,8 +231,8 @@ def support_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_http_methods(["GET"])
 def security_posture_view(request: HttpRequest) -> HttpResponse:
-	if not (request.user.is_staff or request.user.is_superuser):
-		return HttpResponseForbidden("Staff or superuser access required.")
+	if not can_view_security_posture(request.user):
+		return HttpResponseForbidden("Security posture access required.")
 
 	date_from_raw = (request.GET.get("date_from") or "").strip()
 	date_to_raw = (request.GET.get("date_to") or "").strip()
@@ -341,8 +347,8 @@ def security_posture_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_http_methods(["GET"])
 def auth_forensics_view(request: HttpRequest) -> HttpResponse:
-	if not (request.user.is_staff or request.user.is_superuser):
-		return HttpResponseForbidden("Staff or superuser access required.")
+	if not can_view_security_audit_events(request.user):
+		return HttpResponseForbidden("Security audit access required.")
 
 	date_from_raw = (request.GET.get("date_from") or "").strip()
 	date_to_raw = (request.GET.get("date_to") or "").strip()
@@ -460,8 +466,8 @@ def auth_forensics_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_http_methods(["GET"])
 def security_triage_view(request: HttpRequest) -> HttpResponse:
-	if not (request.user.is_staff or request.user.is_superuser):
-		return HttpResponseForbidden("Staff or superuser access required.")
+	if not can_view_security_triage(request.user):
+		return HttpResponseForbidden("Security triage access required.")
 
 	date_from_raw = (request.GET.get("date_from") or "").strip()
 	date_to_raw = (request.GET.get("date_to") or "").strip()
@@ -527,8 +533,8 @@ def security_triage_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_http_methods(["GET", "POST"])
 def email_test_view(request: HttpRequest) -> HttpResponse:
-	if not (request.user.is_staff or request.user.is_superuser):
-		return HttpResponseForbidden("Staff or superuser access required.")
+	if not can_run_email_diagnostics(request.user):
+		return HttpResponseForbidden("Email diagnostics access required.")
 
 	recipients = list(getattr(settings, "EMAIL_DIAGNOSTIC_RECIPIENTS", []) or [])
 	if not recipients and request.user.email:

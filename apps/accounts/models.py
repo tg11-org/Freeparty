@@ -77,6 +77,11 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
 
 	class Meta:
 		ordering = ["-created_at"]
+		permissions = [
+			("view_support_user_info", "Can view support-oriented user/account information"),
+			("resend_verification_email", "Can resend user verification emails"),
+			("manage_account_lifecycle_support", "Can issue account lifecycle support actions"),
+		]
 
 	@property
 	def email_verified(self) -> bool:

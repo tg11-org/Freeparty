@@ -12,6 +12,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods, require_POST
 
+from apps.core.permissions import (
+	can_access_moderation_dashboard,
+	can_manage_moderation_actions,
+	can_review_reports,
+	can_view_audit_summary,
+)
 from apps.actors.models import Actor
 from apps.moderation.models import ModerationAction, ModerationNote, Report
 from apps.posts.models import Attachment, Post
@@ -69,7 +75,7 @@ def report_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
-	if not request.user.is_staff:
+	if not can_access_moderation_dashboard(request.user):
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 
@@ -158,7 +164,7 @@ def moderation_dashboard_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def moderation_report_detail_view(request: HttpRequest, report_id: str) -> HttpResponse:
-	if not request.user.is_staff:
+	if not can_access_moderation_dashboard(request.user):
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 
@@ -183,7 +189,7 @@ def moderation_report_detail_view(request: HttpRequest, report_id: str) -> HttpR
 @login_required
 @require_POST
 def moderation_report_update_view(request: HttpRequest, report_id: str) -> HttpResponse:
-	if not request.user.is_staff:
+	if not can_review_reports(request.user):
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 
@@ -193,6 +199,10 @@ def moderation_report_update_view(request: HttpRequest, report_id: str) -> HttpR
 	notes = request.POST.get("notes", "")
 	internal_note = request.POST.get("internal_note", "")
 	assigned_to = request.POST.get("assigned_to", "").strip()
+
+	if action_type and not can_manage_moderation_actions(request.user):
+		messages.error(request, "Moderation action permission required.")
+		return redirect("moderation:report-detail", report_id=report_id)
 
 	if assigned_to:
 		from apps.accounts.models import User
@@ -244,7 +254,7 @@ def moderation_report_update_view(request: HttpRequest, report_id: str) -> HttpR
 
 @login_required
 def moderation_sla_analytics_view(request: HttpRequest) -> HttpResponse:
-	if not request.user.is_staff:
+	if not can_view_audit_summary(request.user):
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 
@@ -277,7 +287,7 @@ def moderation_sla_analytics_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def moderation_quick_status_view(request: HttpRequest, report_id: str) -> HttpResponse:
-	if not request.user.is_staff:
+	if not can_review_reports(request.user):
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 
@@ -297,7 +307,7 @@ def moderation_quick_status_view(request: HttpRequest, report_id: str) -> HttpRe
 @login_required
 @require_POST
 def moderation_attachment_state_view(request: HttpRequest, attachment_id: str) -> HttpResponse:
-	if not request.user.is_staff:
+	if not can_manage_moderation_actions(request.user):
 		messages.error(request, "Moderator access required.")
 		return redirect("home")
 

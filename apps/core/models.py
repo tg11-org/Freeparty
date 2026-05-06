@@ -44,6 +44,11 @@ class AsyncTaskExecution(TimeStampedModel):
 			models.Index(fields=["task_name", "status"]),
 			models.Index(fields=["correlation_id"]),
 		]
+		permissions = [
+			("view_support_diagnostics", "Can view support diagnostics"),
+			("view_security_posture", "Can view security posture dashboards"),
+			("run_email_diagnostics", "Can run email diagnostics"),
+		]
 
 
 class AsyncTaskFailure(TimeStampedModel):
