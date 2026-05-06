@@ -13,12 +13,10 @@ from apps.core.services.uris import post_uri
 from apps.notifications.models import Notification
 from apps.notifications.services import create_notification_if_new, notify_mentions
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
-from apps.posts.selectors import visible_public_posts_for_actor
+from apps.posts.selectors import visible_posts_for_actor, visible_public_posts_for_actor
 from apps.posts.serializers import CommentSerializer, PostSerializer
 from apps.posts.tasks import process_media_attachment
-
-_ALLOWED_MIME_PREFIXES = ("image/", "video/")
-_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+from apps.posts.upload_validation import validate_post_media_upload
 
 
 class PostViewSet(viewsets.ModelViewSet):
@@ -55,27 +53,19 @@ class PostViewSet(viewsets.ModelViewSet):
         post.save(update_fields=["canonical_uri", "updated_at"])
 
         if upload:
-            content_type = getattr(upload, "content_type", "") or "application/octet-stream"
-            if not any(content_type.startswith(p) for p in _ALLOWED_MIME_PREFIXES):
+            try:
+                attachment_type, validated_mime_type = validate_post_media_upload(upload)
+            except ValueError as exc:
                 post.deleted_at = timezone.now()
                 post.save(update_fields=["deleted_at", "updated_at"])
-                raise ValidationError({"attachment": "Only image and video uploads are supported."})
-            if upload.size > _MAX_ATTACHMENT_BYTES:
-                post.deleted_at = timezone.now()
-                post.save(update_fields=["deleted_at", "updated_at"])
-                raise ValidationError({"attachment": "Attachment is too large (max 25 MB)."})
-            attachment_type = (
-                Attachment.AttachmentType.IMAGE
-                if content_type.startswith("image/")
-                else Attachment.AttachmentType.VIDEO
-            )
+                raise ValidationError({"attachment": str(exc)})
             attachment = Attachment.objects.create(
                 post=post,
                 attachment_type=attachment_type,
                 file=upload,
                 alt_text=self.request.data.get("attachment_alt_text", ""),
                 caption=self.request.data.get("attachment_caption", ""),
-                mime_type=content_type,
+                mime_type=validated_mime_type,
                 file_size=upload.size,
             )
             process_media_attachment.delay(
@@ -121,7 +111,9 @@ class CommentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
-        qs = Comment.objects.filter(deleted_at__isnull=True).select_related("author", "post", "post__author")
+        actor = self.request.user.actor if self.request.user.is_authenticated and hasattr(self.request.user, "actor") else None
+        visible_posts = visible_posts_for_actor(actor=actor)
+        qs = Comment.objects.filter(deleted_at__isnull=True, post__in=visible_posts).select_related("author", "post", "post__author")
         post_id = self.request.query_params.get("post")
         if post_id:
             qs = qs.filter(post_id=post_id)

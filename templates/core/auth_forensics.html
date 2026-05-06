@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Auth Forensics · Freeparty{% endblock %}
+{% block content %}
+<section data-section-anchors="1">
+  <h1>Auth and Session Forensics</h1>
+  <p>Security audit trail for recent authentication behavior (last 7 days).</p>
+
+  <form method="get" style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+    <p style="margin:0;">
+      <label for="date_from">From</label><br>
+      <input id="date_from" type="date" name="date_from" value="{{ date_from }}">
+    </p>
+    <p style="margin:0;">
+      <label for="date_to">To</label><br>
+      <input id="date_to" type="date" name="date_to" value="{{ date_to }}">
+    </p>
+    <p style="margin:0;"><button class="button" type="submit">Apply range</button></p>
+    <p style="margin:0;"><a class="btn" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=csv">Export CSV</a></p>
+    <p style="margin:0;"><a class="btn" href="?date_from={{ date_from }}&date_to={{ date_to }}&format=json">Export JSON</a></p>
+  </form>
+
+  <h2>Summary</h2>
+  <ul>
+    <li>Verified TOTP devices: <strong>{{ verified_totp_count }}</strong></li>
+    <li>Recovery code uses (7d): <strong>{{ recent_recovery_code_use_count }}</strong></li>
+    <li>Login successes (7d): <strong>{{ counts_by_type.login_success|default:0 }}</strong></li>
+    <li>Login failures (7d): <strong>{{ counts_by_type.login_failure|default:0 }}</strong></li>
+    <li>Password reset requests (7d): <strong>{{ counts_by_type.password_reset_request|default:0 }}</strong></li>
+    <li>Password reset completions (7d): <strong>{{ counts_by_type.password_reset_complete|default:0 }}</strong></li>
+  </ul>
+
+  <h2>Accounts With Most Login Failures</h2>
+  {% if users_with_failures %}
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Failures (7d)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for account in users_with_failures %}
+          <tr>
+            <td>{{ account.username }}</td>
+            <td>{{ account.email }}</td>
+            <td>{{ account.login_failure_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No recent login failures recorded in the selected window.</p>
+  {% endif %}
+
+  <h2>Login Failure Chart</h2>
+  {% if failure_chart %}
+    <ul style="list-style:none;padding:0;margin:0;display:grid;gap:0.35rem;">
+      {% for point in failure_chart %}
+        <li>
+          <div style="display:flex;justify-content:space-between;gap:1rem;">
+            <span>{{ point.label }}</span>
+            <strong>{{ point.count }}</strong>
+          </div>
+          <div style="height:10px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;overflow:hidden;">
+            <div style="height:100%;width:{{ point.pct }}%;background:var(--danger);"></div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No failures in selected range.</p>
+  {% endif %}
+
+  <h2>Recent Audit Events</h2>
+  <p>Showing up to 200 events since {{ window_start }}.</p>
+  {% if recent_events %}
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>User</th>
+          <th>IP</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in recent_events %}
+          <tr>
+            <td>{{ event.created_at }}</td>
+            <td>{{ event.event_type }}</td>
+            <td>{{ event.user.username }}</td>
+            <td>{{ event.ip_address|default:"" }}</td>
+            <td>{{ event.details|default:"{}" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No security audit events found in the selected window.</p>
+  {% endif %}
+</section>
+{% endblock %}

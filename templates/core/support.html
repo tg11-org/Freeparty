@@ -59,6 +59,16 @@
     </div>
   {% endif %}
 
+  {% if user.is_staff %}
+    <h2>Staff Security Dashboards</h2>
+    <ul>
+      <li><a href="/support/security-triage/">Security Triage Queue</a></li>
+      <li><a href="/support/security-posture/">Security Posture Dashboard</a></li>
+      <li><a href="/support/auth-forensics/">Auth and Session Forensics</a></li>
+      <li><a href="/support/email-test/">Email Diagnostics</a></li>
+    </ul>
+  {% endif %}
+
   <h2>Priority expectations</h2>
   <ul>
     <li>Urgent safety issues: prioritized as soon as possible.</li>

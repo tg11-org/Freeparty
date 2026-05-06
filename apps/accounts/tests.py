@@ -261,6 +261,23 @@ class SignupLegalConsentTests(TestCase):
 		self.client = Client()
 		self.signup_url = reverse("accounts:signup")
 
+	def test_signup_rejects_weak_password_by_validators(self):
+		response = self.client.post(
+			self.signup_url,
+			{
+				"email": "weakpass@example.com",
+				"username": "weakpass",
+				"display_name": "Weak Pass",
+				"password1": "12345678",
+				"password2": "12345678",
+				"accept_tos": "on",
+				"accept_guidelines": "on",
+			},
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "This password is too common")
+		self.assertFalse(User.objects.filter(email="weakpass@example.com").exists())
+
 	def test_signup_requires_terms_and_guidelines_checkboxes(self):
 		response = self.client.post(
 			self.signup_url,

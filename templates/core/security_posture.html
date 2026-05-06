@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Security Posture · Freeparty{% endblock %}
+{% block content %}
+<section data-section-anchors="1">
+  <h1>Security Posture Dashboard</h1>
+  <p>Runtime safety snapshot for deployment-facing security settings.</p>
+
+  <form method="get" style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+    <p style="margin:0;">
+      <label for="date_from">From</label><br>
+      <input id="date_from" type="date" name="date_from" value="{{ date_from }}">
+    </p>
+    <p style="margin:0;">
+      <label for="date_to">To</label><br>
+      <input id="date_to" type="date" name="date_to" value="{{ date_to }}">
+    </p>
+    <p style="margin:0;"><button class="button" type="submit">Apply range</button></p>
+  </form>
+
+  <h2>Overview</h2>
+  <ul>
+    <li>Guardrail errors: <strong>{{ guardrail_error_count }}</strong></li>
+    <li>Total security check findings: <strong>{{ security_error_count }}</strong></li>
+    <li>CSP rollout mode: <strong>{{ csp_rollout_mode }}</strong></li>
+    <li>CSP enforce enabled: <strong>{{ csp_enforce_enabled }}</strong></li>
+    <li>CSP report-only enabled: <strong>{{ csp_report_only_enabled }}</strong></li>
+  </ul>
+
+  <h2>Checks</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Check</th>
+        <th>Value</th>
+        <th>Status</th>
+        <th>Hint</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in posture_checks %}
+        <tr>
+          <td>{{ item.label }}</td>
+          <td>{{ item.value }}</td>
+          <td><strong>{{ item.status|upper }}</strong></td>
+          <td>{{ item.hint }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Audit Activity Chart</h2>
+  {% if audit_chart %}
+    <ul style="list-style:none;padding:0;margin:0;display:grid;gap:0.35rem;">
+      {% for point in audit_chart %}
+        <li>
+          <div style="display:flex;justify-content:space-between;gap:1rem;">
+            <span>{{ point.label }}</span>
+            <strong>{{ point.count }}</strong>
+          </div>
+          <div style="height:10px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;overflow:hidden;">
+            <div style="height:100%;width:{{ point.pct }}%;background:var(--accent);"></div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No audit activity in selected range.</p>
+  {% endif %}
+
+  <h2>Reports by Status</h2>
+  {% if reports_by_status %}
+    <ul>
+      {% for status, count in reports_by_status.items %}
+        <li><strong>{{ status }}</strong>: {{ count }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No reports in selected range.</p>
+  {% endif %}
+
+  <h2>Readiness Endpoint Controls</h2>
+  <ul>
+    <li>Public detailed readiness: <strong>{{ health_ready_public }}</strong></li>
+    <li>Staff bypass enabled: <strong>{{ health_ready_allow_staff }}</strong></li>
+    <li>Allowed probe IPs: {{ health_ready_allowed_ips|join:", "|default:"(none)" }}</li>
+  </ul>
+
+  <h2>Host / Origin Configuration</h2>
+  <p><strong>ALLOWED_HOSTS:</strong> {{ allowed_hosts|join:", "|default:"(none)" }}</p>
+  <p><strong>CSRF_TRUSTED_ORIGINS:</strong> {{ csrf_trusted_origins|join:", "|default:"(none)" }}</p>
+
+  <h2>Guardrail Findings</h2>
+  {% if guardrail_errors %}
+    <ul>
+      {% for error in guardrail_errors %}
+        <li>
+          <strong>{{ error.id }}:</strong> {{ error.msg }}
+          {% if error.hint %}<br><span>{{ error.hint }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No custom production guardrail failures detected.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,6 +1,7 @@
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.forms import PasswordResetForm
 from django.template import loader
 from django.utils import timezone
@@ -26,6 +27,9 @@ class SignUpForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data.get("password1") != cleaned_data.get("password2"):
             raise forms.ValidationError("Passwords do not match.")
+        password = cleaned_data.get("password1")
+        if password:
+            validate_password(password, self.instance)
         if cleaned_data.get("is_under_18") and not (cleaned_data.get("guardian_email") or "").strip():
             self.add_error("guardian_email", "Enter a parent or guardian email for under-18 accounts.")
         return cleaned_data

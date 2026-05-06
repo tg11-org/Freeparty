@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from apps.accounts.models import User
 from apps.core.models import AsyncTaskExecution, AsyncTaskFailure
+from apps.moderation.models import SecurityAuditEvent
 from apps.core.services.email_observability import log_smtp_delivery_event
 from apps.notifications.models import Notification
 from apps.posts.models import LinkPreview, Post
@@ -64,6 +65,35 @@ class MentionAndHashtagLinkifyTests(SimpleTestCase):
         self.assertIn('href="https://example.com"', rendered)
         self.assertNotIn('<script>', rendered)
 
+    def test_javascript_url_is_not_linkified(self):
+        # A bare javascript: URL must never become an href.
+        rendered = linkify_mentions('javascript:alert(1)')
+        self.assertNotIn('href="javascript:', rendered)
+        self.assertNotIn('<a', rendered)
+
+    def test_javascript_url_disguised_as_www_not_linkified(self):
+        # Token starts with 'www.' so the regex would normally match; the
+        # resulting href must not carry through a javascript: scheme.
+        rendered = linkify_mentions('www.evil.com/" onmouseover="alert(1)')
+        self.assertNotIn('onmouseover', rendered)
+        self.assertNotIn('""', rendered)
+
+    def test_xss_in_handle_is_escaped(self):
+        # A handle containing angle brackets must be escaped in the output.
+        rendered = linkify_mentions('@<script>bad</script>')
+        self.assertNotIn('<script>', rendered)
+
+    def test_xss_in_hashtag_is_escaped(self):
+        # Tags are purely alphanumeric by the regex, but ensure the label is escaped.
+        rendered = linkify_mentions('#test"onmouseover="alert(1)')
+        self.assertNotIn('onmouseover', rendered)
+
+    def test_data_url_is_not_linkified(self):
+        # data: URIs must not become clickable hrefs.
+        rendered = linkify_mentions('data:text/html,<script>alert(1)</script>')
+        self.assertNotIn('href="data:', rendered)
+        self.assertNotIn('<a', rendered)
+
 
 class ProductionConfigGuardrailChecksTests(SimpleTestCase):
     @override_settings(
@@ -72,6 +102,16 @@ class ProductionConfigGuardrailChecksTests(SimpleTestCase):
         ALLOWED_HOSTS=["localhost", "127.0.0.1"],
         CSRF_TRUSTED_ORIGINS=[],
         SITE_DOMAIN="localhost",
+        DATABASES={
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": "freeparty",
+                "USER": "freeparty",
+                "PASSWORD": "freeparty",
+                "HOST": "localhost",
+                "PORT": "5432",
+            }
+        },
     )
     def test_production_checks_fail_for_unsafe_defaults(self):
         with patch.dict("os.environ", {"DJANGO_SETTINGS_MODULE": "config.settings.production"}):
@@ -83,6 +123,7 @@ class ProductionConfigGuardrailChecksTests(SimpleTestCase):
         self.assertIn("core.E003", error_ids)
         self.assertIn("core.E004", error_ids)
         self.assertIn("core.E006", error_ids)
+        self.assertIn("core.E007", error_ids)
 
     @override_settings(
         DEBUG=False,
@@ -266,6 +307,21 @@ class RootPathAndHealthStatusTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Service Status")
 
+    @override_settings(HEALTH_READY_PUBLIC=False, HEALTH_READY_ALLOWED_IPS=[])
+    def test_health_ready_endpoint_is_not_public_when_disabled(self):
+        response = self.client.get("/health/ready/")
+        self.assertEqual(response.status_code, 404)
+
+    @override_settings(HEALTH_READY_PUBLIC=False, HEALTH_READY_ALLOWED_IPS=[], HEALTH_READY_TOKEN="probe-token")
+    def test_health_ready_endpoint_allows_valid_probe_token(self):
+        response = self.client.get("/health/ready/", HTTP_X_HEALTH_TOKEN="probe-token")
+        self.assertIn(response.status_code, (200, 503))
+
+    @override_settings(HEALTH_READY_PUBLIC=False, HEALTH_READY_ALLOWED_IPS=[])
+    def test_api_health_ready_endpoint_is_not_public_when_disabled(self):
+        response = self.client.get("/api/v1/health/ready/")
+        self.assertEqual(response.status_code, 404)
+
     def test_health_status_redirects_without_trailing_slash(self):
         response = self.client.get("/health")
         self.assertIn(response.status_code, (301, 302))
@@ -355,6 +411,95 @@ class EmailDiagnosticsViewTests(TestCase):
         self.assertContains(response, "Email send call returned")
         self.assertEqual(len(mail.outbox), 3)
         self.assertEqual(mail.outbox[0].to, ["diagnostics@example.com"])
+
+
+class StaffSecurityDashboardsTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(email="staffdash@example.com", username="staffdash", password="secret123")
+        self.user.mark_email_verified()
+
+    def test_security_posture_requires_staff(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/support/security-posture/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_auth_forensics_requires_staff(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/support/auth-forensics/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_security_triage_requires_staff(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/support/security-triage/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_can_access_security_posture_page(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.client.force_login(self.user)
+
+        response = self.client.get("/support/security-posture/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Security Posture Dashboard")
+
+    def test_staff_can_access_auth_forensics_page(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.client.force_login(self.user)
+        SecurityAuditEvent.objects.create(
+            user=self.user,
+            event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE,
+            ip_address="127.0.0.1",
+            details={"reason": "invalid_password"},
+        )
+
+        response = self.client.get("/support/auth-forensics/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Auth and Session Forensics")
+        self.assertContains(response, "login_failure")
+
+    def test_staff_can_access_security_triage_page(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.client.force_login(self.user)
+
+        response = self.client.get("/support/security-triage/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Security Triage Queue")
+
+    def test_auth_forensics_csv_export(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.client.force_login(self.user)
+        SecurityAuditEvent.objects.create(
+            user=self.user,
+            event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE,
+            ip_address="127.0.0.1",
+            details={"reason": "invalid_password"},
+        )
+
+        response = self.client.get("/support/auth-forensics/?format=csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("attachment; filename=auth-forensics-", response["Content-Disposition"])
+
+    def test_auth_forensics_json_export(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.client.force_login(self.user)
+        SecurityAuditEvent.objects.create(
+            user=self.user,
+            event_type=SecurityAuditEvent.EventType.LOGIN_SUCCESS,
+            ip_address="127.0.0.1",
+            details={"source": "test"},
+        )
+
+        response = self.client.get("/support/auth-forensics/?format=json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertIn("attachment; filename=auth-forensics-", response["Content-Disposition"])
+        self.assertContains(response, "login_success")
 
 
 class DeadLetterReplayCommandTests(TestCase):

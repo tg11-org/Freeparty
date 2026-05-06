@@ -43,7 +43,7 @@ class PostTests(TestCase):
 	def test_create_post_with_image_attachment(self):
 		client = Client()
 		client.force_login(self.user)
-		upload = SimpleUploadedFile("photo.jpg", b"fakejpegdata", content_type="image/jpeg")
+		upload = SimpleUploadedFile("photo.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF", content_type="image/jpeg")
 		response = client.post(
 			"/posts/new/",
 			{
@@ -78,7 +78,7 @@ class PostTests(TestCase):
 	def test_create_media_only_post_without_body(self):
 		client = Client()
 		client.force_login(self.user)
-		upload = SimpleUploadedFile("photo.jpg", b"fakejpegdata", content_type="image/jpeg")
+		upload = SimpleUploadedFile("photo.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF", content_type="image/jpeg")
 		response = client.post(
 			"/posts/new/",
 			{
@@ -309,6 +309,34 @@ class CommentApiParityTests(TestCase):
 		self.assertEqual(update.status_code, 403)
 		delete = self.client.delete(f"/api/v1/comments/{comment_id}/")
 		self.assertEqual(delete.status_code, 403)
+
+	def test_comment_api_hides_private_post_comments_from_non_authorized_user(self):
+		private_post = Post.objects.create(
+			author=self.owner.actor,
+			content="Private post",
+			visibility=Post.Visibility.PRIVATE,
+			canonical_uri=post_uri("comment-api-private-post"),
+		)
+		Comment.objects.create(post=private_post, author=self.owner.actor, content="Owner-only comment")
+
+		self.client.force_login(self.other)
+		response = self.client.get(f"/api/v1/comments/?post={private_post.id}")
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json(), [])
+
+	def test_comment_api_hides_followers_only_comments_from_non_follower(self):
+		followers_post = Post.objects.create(
+			author=self.owner.actor,
+			content="Followers-only post",
+			visibility=Post.Visibility.FOLLOWERS_ONLY,
+			canonical_uri=post_uri("comment-api-followers-post"),
+		)
+		Comment.objects.create(post=followers_post, author=self.owner.actor, content="Followers-only comment")
+
+		self.client.force_login(self.other)
+		response = self.client.get(f"/api/v1/comments/?post={followers_post.id}")
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json(), [])
 
 
 class HomeMediaTabTests(TestCase):

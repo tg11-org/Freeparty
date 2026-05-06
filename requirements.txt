@@ -11,7 +11,10 @@ daphne>=4.1,<4.2
 django-ratelimit>=4.1,<4.2
 django-cors-headers>=4.4,<4.5
 bleach>=5.0,<6
-Pillow>=10.4,<10.5
+httpx>=0.27,<0.29
+Pillow>=12.2,<12.3
+# FP-010: Twisted CVE-2026-42304 fixed in 26.4.0rc2 (not yet on stable PyPI as of 2026-05-06).
+# Re-audit when Twisted >=26.4.0 stable is released and confirm Daphne/Channels compatibility.
 sentry-sdk[django]>=2.14,<3
 playwright>=1.52,<1.53
 pyotp>=2.9,<3

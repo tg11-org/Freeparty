@@ -59,19 +59,15 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 
 		upload = form.cleaned_data.get("attachment")
 		if upload:
-			content_type = getattr(upload, "content_type", "") or "application/octet-stream"
-			attachment_type = (
-				Attachment.AttachmentType.IMAGE
-				if content_type.startswith("image/")
-				else Attachment.AttachmentType.VIDEO
-			)
+			attachment_type = getattr(upload, "fp_validated_attachment_type", Attachment.AttachmentType.IMAGE)
+			validated_mime_type = getattr(upload, "fp_validated_mime_type", "application/octet-stream")
 			attachment = Attachment.objects.create(
 				post=post,
 				attachment_type=attachment_type,
 				file=upload,
 				alt_text=form.cleaned_data.get("attachment_alt_text", ""),
 				caption=form.cleaned_data.get("attachment_caption", ""),
-				mime_type=content_type,
+				mime_type=validated_mime_type,
 				file_size=getattr(upload, "size", 0),
 			)
 			process_media_attachment.delay(

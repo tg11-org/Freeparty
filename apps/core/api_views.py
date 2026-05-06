@@ -4,6 +4,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.core.health_access import is_ready_endpoint_authorized
+
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
@@ -14,6 +16,9 @@ def api_live_view(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def api_ready_view(request):
+    if not is_ready_endpoint_authorized(request):
+        return Response({"detail": "Not found."}, status=404)
+
     checks = {"database": False, "cache": False}
 
     try:

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Security Triage Queue · Freeparty{% endblock %}
+{% block content %}
+<section data-section-anchors="1">
+  <h1>Security Triage Queue</h1>
+  <p>Prioritized moderation and auth-risk queue for staff response.</p>
+
+  <form method="get" style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+    <p style="margin:0;">
+      <label for="date_from">From</label><br>
+      <input id="date_from" type="date" name="date_from" value="{{ date_from }}">
+    </p>
+    <p style="margin:0;">
+      <label for="date_to">To</label><br>
+      <input id="date_to" type="date" name="date_to" value="{{ date_to }}">
+    </p>
+    <p style="margin:0;"><button class="button" type="submit">Apply range</button></p>
+  </form>
+
+  <h2>High-Risk Open Reports</h2>
+  {% if high_risk_reports %}
+    <ul>
+      {% for report in high_risk_reports %}
+        <li>
+          <a href="/moderation/reports/{{ report.id }}/">{{ report.get_reason_display }}</a>
+          · severity {{ report.get_severity_display }}
+          · status {{ report.status }}
+          · reporter @{{ report.reporter.handle }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No high-risk open reports in this range.</p>
+  {% endif %}
+
+  <h2>Currently Throttled Accounts</h2>
+  {% if throttled_signals %}
+    <table>
+      <thead>
+        <tr>
+          <th>Handle</th>
+          <th>Trust score</th>
+          <th>Reason</th>
+          <th>Throttled until</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for signal in throttled_signals %}
+          <tr>
+            <td><a href="/actors/{{ signal.actor.handle }}/">@{{ signal.actor.handle }}</a></td>
+            <td>{{ signal.trust_score }}</td>
+            <td>{{ signal.throttle_reason|default:"" }}</td>
+            <td>{{ signal.throttled_until|default:"" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No throttled accounts currently detected.</p>
+  {% endif %}
+
+  <h2>Accounts With Most Login Failures</h2>
+  {% if failed_login_accounts %}
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Failures</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in failed_login_accounts %}
+          <tr>
+            <td>{{ user.username }}</td>
+            <td>{{ user.email }}</td>
+            <td>{{ user.login_failure_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No elevated login-failure patterns in this range.</p>
+  {% endif %}
+</section>
+{% endblock %}

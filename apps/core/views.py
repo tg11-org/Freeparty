@@ -1,20 +1,29 @@
 from urllib.parse import urlencode
 import traceback
+import csv
+import json
+from datetime import datetime, time
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.checks import run_checks
 from django.core.cache import cache
 from django.core.mail import EmailMessage, get_connection
 from django.db import connections
+from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from apps.core.forms import EmailDiagnosticsForm, SupportRequestForm
+from apps.core.health_access import is_ready_endpoint_authorized
 from apps.core.pagination import paginate_queryset
 from apps.notifications.models import Notification
+from apps.accounts.models import RecoveryCode, TOTPDevice, User
+from apps.moderation.models import Report, SecurityAuditEvent, TrustSignal
 from apps.private_messages.models import EncryptedMessageEnvelope
 from apps.private_messages.services import (
 	get_conversation_queryset_for_actor,
@@ -101,6 +110,9 @@ def health_live_view(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET"])
 def health_ready_view(request: HttpRequest) -> JsonResponse:
+	if not is_ready_endpoint_authorized(request):
+		return JsonResponse({"detail": "Not found."}, status=404)
+
 	checks = {"database": False, "cache": False}
 
 	try:
@@ -205,6 +217,308 @@ def support_view(request: HttpRequest) -> HttpResponse:
 			"support_form": form,
 			"mailto_url": mailto_url,
 			"support_email": "support@tg11.org",
+		},
+	)
+
+
+@login_required
+@require_http_methods(["GET"])
+def security_posture_view(request: HttpRequest) -> HttpResponse:
+	if not (request.user.is_staff or request.user.is_superuser):
+		return HttpResponseForbidden("Staff or superuser access required.")
+
+	date_from_raw = (request.GET.get("date_from") or "").strip()
+	date_to_raw = (request.GET.get("date_to") or "").strip()
+	parsed_from = parse_date(date_from_raw) if date_from_raw else None
+	parsed_to = parse_date(date_to_raw) if date_to_raw else None
+	if parsed_from is None or parsed_to is None:
+		parsed_to = timezone.localdate()
+		parsed_from = parsed_to - timezone.timedelta(days=6)
+
+	range_start = timezone.make_aware(datetime.combine(parsed_from, time.min), timezone.get_current_timezone())
+	range_end = timezone.make_aware(datetime.combine(parsed_to, time.max), timezone.get_current_timezone())
+
+	security_errors = run_checks(tags=["security"], include_deployment_checks=True)
+	guardrail_errors = [error for error in security_errors if getattr(error, "id", "").startswith("core.E")]
+
+	health_public = bool(getattr(settings, "HEALTH_READY_PUBLIC", True))
+	csp_mode = str(getattr(settings, "CSP_ROLLOUT_MODE", "legacy-report-only") or "legacy-report-only")
+
+	checks = [
+		{
+			"label": "DEBUG disabled",
+			"value": not bool(getattr(settings, "DEBUG", False)),
+			"status": "ok" if not bool(getattr(settings, "DEBUG", False)) else "warn",
+			"hint": "Set DEBUG=False in production.",
+		},
+		{
+			"label": "SSL redirect enabled",
+			"value": bool(getattr(settings, "SECURE_SSL_REDIRECT", False)),
+			"status": "ok" if bool(getattr(settings, "SECURE_SSL_REDIRECT", False)) else "warn",
+			"hint": "Enable SECURE_SSL_REDIRECT in production.",
+		},
+		{
+			"label": "Secure cookies",
+			"value": bool(getattr(settings, "SESSION_COOKIE_SECURE", False)) and bool(getattr(settings, "CSRF_COOKIE_SECURE", False)),
+			"status": "ok" if bool(getattr(settings, "SESSION_COOKIE_SECURE", False)) and bool(getattr(settings, "CSRF_COOKIE_SECURE", False)) else "warn",
+			"hint": "Set SESSION_COOKIE_SECURE/CSRF_COOKIE_SECURE=True.",
+		},
+		{
+			"label": "CSP rollout mode",
+			"value": csp_mode,
+			"status": "ok" if csp_mode in {"strict-report-only", "strict-enforce"} else "info",
+			"hint": "Use strict-report-only, then strict-enforce after cleanup.",
+		},
+		{
+			"label": "Readiness endpoint public",
+			"value": health_public,
+			"status": "warn" if health_public else "ok",
+			"hint": "Set HEALTH_READY_PUBLIC=False in production.",
+		},
+		{
+			"label": "Readiness token configured",
+			"value": bool(str(getattr(settings, "HEALTH_READY_TOKEN", "") or "").strip()),
+			"status": "ok" if bool(str(getattr(settings, "HEALTH_READY_TOKEN", "") or "").strip()) else "info",
+			"hint": "Set HEALTH_READY_TOKEN for non-public probes.",
+		},
+	]
+
+	audit_by_day = {label: 0 for label in [(parsed_from + timezone.timedelta(days=offset)).isoformat() for offset in range((parsed_to - parsed_from).days + 1)]}
+	for row in (
+		SecurityAuditEvent.objects.filter(created_at__gte=range_start, created_at__lte=range_end)
+		.extra(select={"day": "date(created_at)"})
+		.values("day")
+		.annotate(count=Count("id"))
+	):
+		day_label = str(row.get("day"))
+		if day_label in audit_by_day:
+			audit_by_day[day_label] = row.get("count", 0)
+
+	reports_by_status = {
+		row["status"]: row["count"]
+		for row in (
+			Report.objects.filter(created_at__gte=range_start, created_at__lte=range_end)
+			.values("status")
+			.annotate(count=Count("id"))
+		)
+	}
+
+	max_audit = max(audit_by_day.values()) if audit_by_day else 0
+	audit_chart = [
+		{
+			"label": label,
+			"count": count,
+			"pct": int((count / max_audit) * 100) if max_audit else 0,
+		}
+		for label, count in audit_by_day.items()
+	]
+
+	return render(
+		request,
+		"core/security_posture.html",
+		{
+			"posture_checks": checks,
+			"security_error_count": len(security_errors),
+			"guardrail_error_count": len(guardrail_errors),
+			"guardrail_errors": guardrail_errors,
+			"csp_enforce_enabled": bool(getattr(settings, "CSP_ENFORCE_ENABLED", False)),
+			"csp_report_only_enabled": bool(getattr(settings, "CSP_REPORT_ONLY_ENABLED", False)),
+			"health_ready_public": health_public,
+			"health_ready_allow_staff": bool(getattr(settings, "HEALTH_READY_ALLOW_STAFF", True)),
+			"health_ready_allowed_ips": list(getattr(settings, "HEALTH_READY_ALLOWED_IPS", []) or []),
+			"allowed_hosts": list(getattr(settings, "ALLOWED_HOSTS", []) or []),
+			"csrf_trusted_origins": list(getattr(settings, "CSRF_TRUSTED_ORIGINS", []) or []),
+			"csp_rollout_mode": csp_mode,
+			"date_from": parsed_from.isoformat(),
+			"date_to": parsed_to.isoformat(),
+			"audit_chart": audit_chart,
+			"reports_by_status": reports_by_status,
+		},
+	)
+
+
+@login_required
+@require_http_methods(["GET"])
+def auth_forensics_view(request: HttpRequest) -> HttpResponse:
+	if not (request.user.is_staff or request.user.is_superuser):
+		return HttpResponseForbidden("Staff or superuser access required.")
+
+	date_from_raw = (request.GET.get("date_from") or "").strip()
+	date_to_raw = (request.GET.get("date_to") or "").strip()
+	parsed_from = parse_date(date_from_raw) if date_from_raw else None
+	parsed_to = parse_date(date_to_raw) if date_to_raw else None
+	if parsed_from is None or parsed_to is None:
+		parsed_to = timezone.localdate()
+		parsed_from = parsed_to - timezone.timedelta(days=6)
+
+	range_start = timezone.make_aware(datetime.combine(parsed_from, time.min), timezone.get_current_timezone())
+	range_end = timezone.make_aware(datetime.combine(parsed_to, time.max), timezone.get_current_timezone())
+
+	recent_events = list(
+		SecurityAuditEvent.objects.select_related("user")
+		.filter(created_at__gte=range_start, created_at__lte=range_end)
+		.order_by("-created_at")[:200]
+	)
+
+	counts_by_type = {
+		entry["event_type"]: entry["count"]
+		for entry in (
+			SecurityAuditEvent.objects.filter(created_at__gte=range_start, created_at__lte=range_end)
+			.values("event_type")
+			.annotate(count=Count("id"))
+		)
+	}
+
+	users_with_failures = list(
+		User.objects.filter(audit_events__event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE, audit_events__created_at__gte=range_start, audit_events__created_at__lte=range_end)
+		.annotate(login_failure_count=Count("audit_events", filter=Q(audit_events__event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE, audit_events__created_at__gte=range_start, audit_events__created_at__lte=range_end), distinct=True))
+		.order_by("-login_failure_count", "username")[:20]
+	)
+
+	verified_totp_count = TOTPDevice.objects.filter(verified=True).count()
+	recent_recovery_code_use_count = RecoveryCode.objects.filter(used_at__gte=range_start, used_at__lte=range_end).count()
+
+	export_format = (request.GET.get("format") or "").strip().lower()
+	if export_format == "json":
+		payload = [
+			{
+				"created_at": event.created_at.isoformat(),
+				"event_type": event.event_type,
+				"user_id": str(event.user_id),
+				"username": event.user.username,
+				"email": event.user.email,
+				"ip_address": event.ip_address,
+				"details": event.details,
+			}
+			for event in recent_events
+		]
+		return HttpResponse(
+			json.dumps(payload, indent=2),
+			content_type="application/json",
+			headers={"Content-Disposition": f"attachment; filename=auth-forensics-{parsed_from.isoformat()}-to-{parsed_to.isoformat()}.json"},
+		)
+	if export_format == "csv":
+		response = HttpResponse(content_type="text/csv")
+		response["Content-Disposition"] = f"attachment; filename=auth-forensics-{parsed_from.isoformat()}-to-{parsed_to.isoformat()}.csv"
+		writer = csv.writer(response)
+		writer.writerow(["created_at", "event_type", "user_id", "username", "email", "ip_address", "details"])
+		for event in recent_events:
+			writer.writerow([
+				event.created_at.isoformat(),
+				event.event_type,
+				str(event.user_id),
+				event.user.username,
+				event.user.email,
+				event.ip_address or "",
+				json.dumps(event.details or {}, separators=(",", ":")),
+			])
+		return response
+
+	failures_by_day = {label: 0 for label in [(parsed_from + timezone.timedelta(days=offset)).isoformat() for offset in range((parsed_to - parsed_from).days + 1)]}
+	for row in (
+		SecurityAuditEvent.objects.filter(
+			created_at__gte=range_start,
+			created_at__lte=range_end,
+			event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE,
+		)
+		.extra(select={"day": "date(created_at)"})
+		.values("day")
+		.annotate(count=Count("id"))
+	):
+		day_label = str(row.get("day"))
+		if day_label in failures_by_day:
+			failures_by_day[day_label] = row.get("count", 0)
+
+	max_failures = max(failures_by_day.values()) if failures_by_day else 0
+	failure_chart = [
+		{
+			"label": label,
+			"count": count,
+			"pct": int((count / max_failures) * 100) if max_failures else 0,
+		}
+		for label, count in failures_by_day.items()
+	]
+
+	return render(
+		request,
+		"core/auth_forensics.html",
+		{
+			"window_start": range_start,
+			"recent_events": recent_events,
+			"counts_by_type": counts_by_type,
+			"users_with_failures": users_with_failures,
+			"verified_totp_count": verified_totp_count,
+			"recent_recovery_code_use_count": recent_recovery_code_use_count,
+			"date_from": parsed_from.isoformat(),
+			"date_to": parsed_to.isoformat(),
+			"failure_chart": failure_chart,
+		},
+	)
+
+
+@login_required
+@require_http_methods(["GET"])
+def security_triage_view(request: HttpRequest) -> HttpResponse:
+	if not (request.user.is_staff or request.user.is_superuser):
+		return HttpResponseForbidden("Staff or superuser access required.")
+
+	date_from_raw = (request.GET.get("date_from") or "").strip()
+	date_to_raw = (request.GET.get("date_to") or "").strip()
+	parsed_from = parse_date(date_from_raw) if date_from_raw else None
+	parsed_to = parse_date(date_to_raw) if date_to_raw else None
+	if parsed_from is None or parsed_to is None:
+		parsed_to = timezone.localdate()
+		parsed_from = parsed_to - timezone.timedelta(days=6)
+
+	range_start = timezone.make_aware(datetime.combine(parsed_from, time.min), timezone.get_current_timezone())
+	range_end = timezone.make_aware(datetime.combine(parsed_to, time.max), timezone.get_current_timezone())
+
+	high_risk_reports = (
+		Report.objects.select_related("reporter", "target_actor", "target_post")
+		.filter(
+			status__in=[Report.Status.OPEN, Report.Status.UNDER_REVIEW],
+			severity__in=[Report.Severity.HIGH, Report.Severity.CRITICAL],
+			created_at__gte=range_start,
+			created_at__lte=range_end,
+		)
+		.order_by("-created_at")[:20]
+	)
+
+	throttled_signals = (
+		TrustSignal.objects.select_related("actor", "actor__user")
+		.filter(is_throttled=True)
+		.order_by("trust_score", "-last_computed_at")[:20]
+	)
+
+	failed_login_accounts = (
+		User.objects.filter(
+			audit_events__event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE,
+			audit_events__created_at__gte=range_start,
+			audit_events__created_at__lte=range_end,
+		)
+		.annotate(
+			login_failure_count=Count(
+				"audit_events",
+				filter=Q(
+					audit_events__event_type=SecurityAuditEvent.EventType.LOGIN_FAILURE,
+					audit_events__created_at__gte=range_start,
+					audit_events__created_at__lte=range_end,
+				),
+				distinct=True,
+			)
+		)
+		.order_by("-login_failure_count", "username")[:20]
+	)
+
+	return render(
+		request,
+		"core/security_triage.html",
+		{
+			"date_from": parsed_from.isoformat(),
+			"date_to": parsed_to.isoformat(),
+			"high_risk_reports": high_risk_reports,
+			"throttled_signals": throttled_signals,
+			"failed_login_accounts": failed_login_accounts,
 		},
 	)
 

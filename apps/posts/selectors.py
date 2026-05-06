@@ -7,6 +7,39 @@ from apps.posts.models import Post
 from apps.social.models import Block, Follow, HiddenPost
 
 
+def visible_posts_for_actor(actor=None) -> QuerySet[Post]:
+    base_qs = Post.objects.filter(
+        deleted_at__isnull=True,
+        moderation_state=Post.ModerationState.NORMAL,
+    )
+
+    if actor is None:
+        qs = base_qs.filter(
+            visibility__in=[Post.Visibility.PUBLIC, Post.Visibility.UNLISTED],
+            author__profile__is_private_account=False,
+        )
+    else:
+        followed_ids = Follow.objects.filter(
+            follower=actor,
+            state=Follow.FollowState.ACCEPTED,
+        ).values_list("followee_id", flat=True)
+        qs = base_qs.filter(
+            Q(author=actor)
+            | Q(visibility__in=[Post.Visibility.PUBLIC, Post.Visibility.UNLISTED])
+            | Q(visibility=Post.Visibility.FOLLOWERS_ONLY, author_id__in=followed_ids)
+        ).filter(
+            Q(author=actor) | Q(author__profile__is_private_account=False) | Q(author_id__in=followed_ids)
+        )
+
+        blocked_by_me = Block.objects.filter(blocker=actor).values_list("blocked_id", flat=True)
+        blocked_me = Block.objects.filter(blocked=actor).values_list("blocker_id", flat=True)
+        hidden_post_ids = HiddenPost.objects.filter(actor=actor).values_list("post_id", flat=True)
+        qs = qs.exclude(author_id__in=blocked_by_me).exclude(author_id__in=blocked_me)
+        qs = qs.exclude(id__in=hidden_post_ids)
+
+    return qs.select_related("author", "author__profile", "link_preview").prefetch_related("attachments").order_by("-created_at")
+
+
 def visible_public_posts_for_actor(actor=None) -> QuerySet[Post]:
     qs = Post.objects.filter(
         visibility=Post.Visibility.PUBLIC,

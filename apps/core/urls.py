@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.core.views import (
     about_view,
+    auth_forensics_view,
     changelog_view,
     email_test_view,
     faq_view,
@@ -13,6 +14,8 @@ from apps.core.views import (
     inbox_view,
     me_redirect_view,
     privacy_view,
+    security_posture_view,
+    security_triage_view,
     support_view,
     terms_view,
 )
@@ -29,6 +32,9 @@ urlpatterns = [
     path("faq/", faq_view, name="faq"),
     path("support/", support_view, name="support"),
     path("support/email-test/", email_test_view, name="email-test"),
+    path("support/security-posture/", security_posture_view, name="security-posture"),
+    path("support/auth-forensics/", auth_forensics_view, name="auth-forensics"),
+    path("support/security-triage/", security_triage_view, name="security-triage"),
     path("changelog/", changelog_view, name="changelog"),
     path("inbox/", inbox_view, name="inbox"),
     path("me/", me_redirect_view, name="me"),

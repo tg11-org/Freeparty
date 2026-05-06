@@ -82,4 +82,20 @@ def production_configuration_guardrails(app_configs, **kwargs):  # noqa: ARG001
             )
         )
 
+    db_default = (getattr(settings, "DATABASES", {}) or {}).get("default", {})
+    db_engine = str(db_default.get("ENGINE", "") or "").lower()
+    if "postgres" in db_engine:
+        weak_tokens = {"", "freeparty", "postgres", "password", "changeme", "change-me", "dev", "development"}
+        db_name = str(db_default.get("NAME", "") or "").strip().lower()
+        db_user = str(db_default.get("USER", "") or "").strip().lower()
+        db_password = str(db_default.get("PASSWORD", "") or "").strip().lower()
+        if db_user in weak_tokens or db_password in weak_tokens or (db_name and db_name in {"freeparty", "postgres"}):
+            errors.append(
+                Error(
+                    "Database credentials/defaults are weak for production.",
+                    hint="Use strong, unique Postgres credentials and avoid freeparty/postgres fallback values.",
+                    id="core.E007",
+                )
+            )
+
     return errors

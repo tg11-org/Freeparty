@@ -4,10 +4,11 @@ import json
 import urllib.request
 from urllib.parse import urlparse
 
+import httpx
 from django.conf import settings
 from django.utils import timezone
 
-from apps.core.network import safe_urlopen
+from apps.core.network import safe_fetch, safe_urlopen
 from apps.federation.models import Instance, RemoteActor, RemotePost
 from apps.federation.signing import verify_signed_payload
 
@@ -26,16 +27,22 @@ def is_instance_allowed(instance_domain: str) -> bool:
 
 
 def fetch_json_document(url: str, *, expected_domain: str | None = None) -> tuple[dict, dict[str, str]]:
-	request = urllib.request.Request(url, headers={"Accept": "application/json"})
-	with safe_urlopen(request, timeout=10, allowed_domain=expected_domain, allow_http=False, allow_redirects=True) as response:
-		payload = response.read()
-		data = json.loads(payload.decode("utf-8"))
-		headers = {
-			"signature": response.headers.get("X-Freeparty-Signature", ""),
-			"timestamp": response.headers.get("X-Freeparty-Timestamp", ""),
-			"key_id": response.headers.get("X-Freeparty-Key-Id", ""),
-		}
-		return data, headers
+	response = safe_fetch(
+		url,
+		method="GET",
+		headers={"Accept": "application/json"},
+		timeout=10,
+		allowed_domain=expected_domain,
+		allow_http=False,
+	)
+	response.raise_for_status()
+	data = response.json()
+	headers = {
+		"signature": response.headers.get("X-Freeparty-Signature", ""),
+		"timestamp": response.headers.get("X-Freeparty-Timestamp", ""),
+		"key_id": response.headers.get("X-Freeparty-Key-Id", ""),
+	}
+	return data, headers
 
 
 def validate_inbound_signature(*, instance: Instance, raw_payload: bytes, timestamp: str, signature: str, key_id: str) -> bool:

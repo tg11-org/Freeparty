@@ -412,6 +412,7 @@ def enroll_totp_view(request: HttpRequest) -> HttpResponse:
 	)
 
 
+@ratelimit(key="ip", rate="10/5m", method="POST", block=True)
 @require_http_methods(["GET", "POST"])
 def totp_confirm_login_view(request: HttpRequest) -> HttpResponse:
 	"""Second step of login: verify TOTP code for users with an enrolled device."""

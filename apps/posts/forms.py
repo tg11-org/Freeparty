@@ -2,6 +2,7 @@ from django import forms
 
 from apps.posts.models import Attachment
 from apps.posts.models import Post
+from apps.posts.upload_validation import validate_post_media_upload
 
 
 class PostForm(forms.ModelForm):
@@ -34,13 +35,13 @@ class PostForm(forms.ModelForm):
         if not upload:
             return upload
 
-        content_type = getattr(upload, "content_type", "") or ""
-        allowed = {"image/", "video/"}
-        if not any(content_type.startswith(prefix) for prefix in allowed):
-            raise forms.ValidationError("Only image and video uploads are supported.")
+        try:
+            attachment_type, validated_mime_type = validate_post_media_upload(upload)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc))
 
-        if upload.size > 25 * 1024 * 1024:
-            raise forms.ValidationError("Attachment is too large (max 25 MB).")
+        upload.fp_validated_attachment_type = attachment_type
+        upload.fp_validated_mime_type = validated_mime_type
 
         return upload
 

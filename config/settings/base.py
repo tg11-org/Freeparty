@@ -29,6 +29,11 @@ env = environ.Env(
     FEATURE_PM_WEBSOCKET_ENABLED=(bool, False),
     FEATURE_FEDERATION_OUTBOUND_ENABLED=(bool, False),
     FEATURE_ADAPTIVE_ABUSE_CONTROLS_ENABLED=(bool, True),
+    HEALTH_READY_PUBLIC=(bool, True),
+    HEALTH_READY_ALLOW_STAFF=(bool, True),
+    HEALTH_READY_ALLOWED_IPS=(list, ["127.0.0.1", "::1"]),
+    HEALTH_READY_TOKEN=(str, ""),
+    CSP_ROLLOUT_MODE=(str, "legacy-report-only"),
     ABUSE_VELOCITY_BLOCK_ENABLED=(bool, True),
     ABUSE_MINIMUM_ACCOUNT_AGE_DAYS_FOR_TRUST=(int, 7),
     ABUSE_EMAIL_VERIFICATION_TRUST_BONUS=(int, 25),
@@ -249,24 +254,47 @@ CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 SECURE_REFERRER_POLICY = env("SECURE_REFERRER_POLICY", default="strict-origin-when-cross-origin")
+
+# Health readiness endpoint access controls.
+HEALTH_READY_PUBLIC = env.bool("HEALTH_READY_PUBLIC", default=True)
+HEALTH_READY_ALLOW_STAFF = env.bool("HEALTH_READY_ALLOW_STAFF", default=True)
+HEALTH_READY_ALLOWED_IPS = env.list("HEALTH_READY_ALLOWED_IPS", default=["127.0.0.1", "::1"])
+HEALTH_READY_TOKEN = env("HEALTH_READY_TOKEN", default="")
+
+# CSP rollout strategy:
+# - legacy-report-only: current non-breaking policy with inline script/style allowances
+# - strict-report-only: strict policy in report-only mode (no unsafe-inline)
+# - strict-enforce: strict policy enforced
+CSP_ROLLOUT_MODE = env("CSP_ROLLOUT_MODE", default="legacy-report-only").strip().lower()
+_CSP_LEGACY_POLICY = (
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+    "img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'"
+)
+_CSP_STRICT_POLICY = (
+    "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+    "img-src 'self' data: https:; object-src 'none'; script-src 'self'; style-src 'self'"
+)
+
 CSP_ENFORCE_ENABLED = env.bool("CSP_ENFORCE_ENABLED", default=False)
 CSP_ENFORCE_POLICY = env(
     "CSP_ENFORCE_POLICY",
-    default=(
-        "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
-        "img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'"
-    ),
+    default=_CSP_LEGACY_POLICY,
 )
 CSP_REPORT_ONLY_ENABLED = env.bool("CSP_REPORT_ONLY_ENABLED", default=False)
 CSP_REPORT_ONLY_POLICY = env(
     "CSP_REPORT_ONLY_POLICY",
-    default=(
-        "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
-        "img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'"
-    ),
+    default=_CSP_LEGACY_POLICY,
 )
+
+if CSP_ROLLOUT_MODE == "strict-report-only":
+    CSP_ENFORCE_ENABLED = False
+    CSP_REPORT_ONLY_ENABLED = True
+    CSP_REPORT_ONLY_POLICY = env("CSP_STRICT_REPORT_ONLY_POLICY", default=_CSP_STRICT_POLICY)
+elif CSP_ROLLOUT_MODE == "strict-enforce":
+    CSP_ENFORCE_ENABLED = True
+    CSP_ENFORCE_POLICY = env("CSP_STRICT_ENFORCE_POLICY", default=_CSP_STRICT_POLICY)
+    CSP_REPORT_ONLY_ENABLED = False
 
 EMAIL_VERIFICATION_REQUIRED = env("EMAIL_VERIFICATION_REQUIRED")
 LEGAL_TOS_VERSION = env("LEGAL_TOS_VERSION", default="1.0")

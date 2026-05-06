@@ -23,12 +23,11 @@ CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
-CSP_REPORT_ONLY_ENABLED = env.bool("CSP_REPORT_ONLY_ENABLED", default=True)
-CSP_REPORT_ONLY_POLICY = env(
-	"CSP_REPORT_ONLY_POLICY",
-	default=(
-		"default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
-		"img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; "
-		"style-src 'self' 'unsafe-inline'"
-	),
-)
+
+# Keep current behavior by default, but allow staged CSP hardening via CSP_ROLLOUT_MODE.
+CSP_ROLLOUT_MODE = env("CSP_ROLLOUT_MODE", default="legacy-report-only").strip().lower()
+if CSP_ROLLOUT_MODE == "legacy-report-only":
+	CSP_REPORT_ONLY_ENABLED = env.bool("CSP_REPORT_ONLY_ENABLED", default=True)
+
+# Readiness should not be publicly detailed in production by default.
+HEALTH_READY_PUBLIC = env.bool("HEALTH_READY_PUBLIC", default=False)

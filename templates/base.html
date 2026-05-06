@@ -745,6 +745,9 @@
           <a href="/accounts/manage/">Account</a>
           <a class="nav-link-with-badge" href="/notifications/">Notifications{% if nav_unread_notification_count %}<span class="nav-badge">{{ nav_unread_notification_count }}</span>{% endif %}</a>
           {% if user.is_staff %}<a href="/moderation/">Moderation</a>{% endif %}
+          {% if user.is_staff %}<a href="/support/security-triage/">Triage</a>{% endif %}
+          {% if user.is_staff %}<a href="/support/security-posture/">Security</a>{% endif %}
+          {% if user.is_staff %}<a href="/support/auth-forensics/">Auth Logs</a>{% endif %}
           {% if user.is_staff %}<a href="/admin/">Django Admin</a>{% endif %}
           <form method="post" action="{% url 'accounts:logout' %}" style="display:inline;">{% csrf_token %}<button type="submit" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;text-decoration:underline;">Logout</button></form>
         {% else %}

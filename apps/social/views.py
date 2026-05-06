@@ -270,7 +270,7 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 	else:
 		denied_response = _deny_if_abuse_limited(
 			request,
-			action_name="dislike",
+			action_name="like",
 			started_at=started_at,
 			actor=actor,
 			target_id=str(post.id),
@@ -285,7 +285,7 @@ def like_toggle_view(request: HttpRequest, post_id: str) -> HttpResponse:
 		# A post cannot be both liked and disliked by the same actor.
 		Dislike.objects.filter(actor=actor, post=post).delete()
 		disliked = False
-		ActionVelocityTracker.record_dislike(actor)
+		ActionVelocityTracker.record_like(actor)
 		create_notification_if_new(
 			recipient=post.author,
 			source_actor=actor,
