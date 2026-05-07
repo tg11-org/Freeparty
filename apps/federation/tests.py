@@ -40,6 +40,7 @@ class FederationTaskReliabilityTests(TestCase):
 		)
 
 	@patch("apps.federation.tasks.safe_fetch")
+	@override_settings(SITE_DOMAIN="freeparty.local")
 	def test_execute_federation_delivery_marks_success_and_records_execution(self, mocked_fetch):
 		mocked_fetch.return_value = _httpx_response("https://remote.example/inbox", {"status": "accepted"}, method="POST", status=202)
 		execute_federation_delivery.run(str(self.delivery.id), correlation_id="corr-1")
@@ -55,7 +56,7 @@ class FederationTaskReliabilityTests(TestCase):
 		self.assertEqual(execution.status, AsyncTaskExecution.Status.SUCCEEDED)
 		self.assertEqual(execution.attempt_count, 1)
 		headers = mocked_fetch.call_args.kwargs["headers"]
-		self.assertEqual(headers["X-Freeparty-Key-Id"], "freeparty:remote.example")
+		self.assertEqual(headers["X-Freeparty-Key-Id"], "freeparty:freeparty.local")
 		self.assertIn("X-Freeparty-Signature", headers)
 
 	@patch("apps.federation.tasks.safe_fetch")
@@ -188,3 +189,98 @@ class FederationInboundFetchTests(TestCase):
 
 		with self.assertRaisesMessage(ValueError, "Remote URL host does not match the expected domain."):
 			fetch_remote_actor("https://remote.example/actors/alice")
+
+
+@override_settings(FEATURE_FEDERATION_INBOUND_ENABLED=True)
+class FederationInboxTests(TestCase):
+	def setUp(self):
+		self.instance = Instance._default_manager.create(
+			domain="remote.example",
+			allowlist_state=Instance.AllowlistState.ALLOWED,
+			metadata={"shared_secret": "shared-secret"},
+		)
+
+	def _signed_headers(self, payload: dict) -> dict[str, str]:
+		encoded = json.dumps(payload).encode("utf-8")
+		signed = sign_payload(payload=encoded, shared_secret="shared-secret")
+		return {
+			"HTTP_X_FREEPARTY_SIGNATURE": signed["signature"],
+			"HTTP_X_FREEPARTY_TIMESTAMP": signed["timestamp"],
+			"HTTP_X_FREEPARTY_KEY_ID": "freeparty:remote.example",
+		}
+
+	def test_inbox_accepts_signed_create_activity(self):
+		payload = {
+			"id": "https://remote.example/activities/create-1",
+			"type": "Create",
+			"actor": "https://remote.example/actors/alice",
+			"object": {
+				"id": "https://remote.example/objects/1",
+				"type": "Note",
+				"attributedTo": "https://remote.example/actors/alice",
+				"content": "hello inbound",
+			},
+		}
+
+		response = self.client.post(
+			"/federation/inbox/",
+			data=json.dumps(payload),
+			content_type="application/json",
+			**self._signed_headers(payload),
+		)
+
+		self.assertEqual(response.status_code, 202)
+		self.assertEqual(FederationDelivery.objects.count(), 0)
+		self.assertEqual(RemoteActor.objects.count(), 1)
+		self.assertEqual(RemotePost.objects.count(), 1)
+
+	def test_inbox_rejects_bad_signature(self):
+		payload = {
+			"id": "https://remote.example/activities/create-2",
+			"type": "Create",
+			"object": {"id": "https://remote.example/objects/2", "type": "Note", "content": "bad sig"},
+		}
+
+		response = self.client.post(
+			"/federation/inbox/",
+			data=json.dumps(payload),
+			content_type="application/json",
+			HTTP_X_FREEPARTY_SIGNATURE="invalid",
+			HTTP_X_FREEPARTY_TIMESTAMP="1234567890",
+			HTTP_X_FREEPARTY_KEY_ID="freeparty:remote.example",
+		)
+
+		self.assertEqual(response.status_code, 403)
+
+
+@override_settings(FEATURE_FEDERATION_OUTBOUND_ENABLED=True)
+class FederationPostQueueingTests(TestCase):
+	@patch("apps.federation.tasks.execute_federation_delivery.delay")
+	def test_creating_federated_public_post_queues_deliveries(self, mocked_delay):
+		user = User.objects.create_user(email="poster@example.com", username="poster", password="secret123")
+		user.mark_email_verified()
+		Instance._default_manager.create(
+			domain="remote-one.example",
+			allowlist_state=Instance.AllowlistState.ALLOWED,
+			metadata={"shared_secret": "shared-secret", "inbox_url": "https://remote-one.example/inbox"},
+		)
+		Instance._default_manager.create(
+			domain="remote-two.example",
+			allowlist_state=Instance.AllowlistState.ALLOWED,
+			metadata={"shared_secret": "shared-secret", "inbox_url": "https://remote-two.example/inbox"},
+		)
+
+		from apps.core.services.uris import post_uri
+		from apps.posts.models import Post
+
+		post = Post.objects.create(
+			author=user.actor,
+			canonical_uri=post_uri("pending"),
+			content="Federate me",
+			federated=True,
+		)
+		post.canonical_uri = post_uri(post.id)
+		post.save(update_fields=["canonical_uri", "updated_at"])
+
+		self.assertEqual(FederationDelivery.objects.count(), 2)
+		self.assertEqual(mocked_delay.call_count, 2)

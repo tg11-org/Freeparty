@@ -9,7 +9,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.core.network import safe_fetch, safe_urlopen
-from apps.federation.models import Instance, RemoteActor, RemotePost
+from apps.federation.models import FederationDelivery, FederationObject, Instance, RemoteActor, RemotePost
 from apps.federation.signing import verify_signed_payload
 
 
@@ -149,3 +149,139 @@ def fetch_remote_object(url: str) -> RemotePost:
 		defaults={**sanitized, "instance": instance, "remote_actor": remote_actor, "fetched_at": timezone.now()},
 	)
 	return remote_post
+
+
+def build_post_create_activity(post) -> dict:
+	attachments = []
+	for attachment in post.attachments.all():
+		attachments.append(
+			{
+				"url": attachment.file.url,
+				"mediaType": attachment.mime_type,
+				"name": attachment.caption or "",
+			}
+		)
+
+	object_payload = {
+		"id": post.canonical_uri,
+		"type": "Note",
+		"attributedTo": post.author.canonical_uri,
+		"content": post.content,
+		"attachment": attachments,
+		"published": post.created_at.isoformat(),
+	}
+
+	return {
+		"id": f"{post.canonical_uri}#create",
+		"type": "Create",
+		"actor": post.author.canonical_uri,
+		"object": object_payload,
+		"published": post.created_at.isoformat(),
+	}
+
+
+def enqueue_post_for_federation(post) -> int:
+	if not getattr(settings, "FEATURE_FEDERATION_OUTBOUND_ENABLED", False):
+		return 0
+	if post.local_only or not post.federated:
+		return 0
+	if post.visibility not in {"public", "unlisted"}:
+		return 0
+
+	allowed_instances = Instance._default_manager.filter(
+		allowlist_state=Instance.AllowlistState.ALLOWED,
+		is_blocked=False,
+	)
+	activity_payload = build_post_create_activity(post)
+	deliveries = []
+	for instance in allowed_instances:
+		delivery, created = FederationDelivery.objects.get_or_create(
+			target_instance=instance,
+			object_uri=post.canonical_uri,
+			defaults={
+				"actor": post.author,
+				"activity_payload": activity_payload,
+				"state": FederationDelivery.DeliveryState.PENDING,
+			},
+		)
+		if created:
+			deliveries.append(delivery)
+
+	if not deliveries:
+		return 0
+
+	from apps.federation.tasks import execute_federation_delivery
+
+	for delivery in deliveries:
+		execute_federation_delivery.delay(str(delivery.id))
+	return len(deliveries)
+
+
+def _resolve_actor_handle(actor_uri: str) -> str:
+	path = urlparse(actor_uri).path.strip("/")
+	if not path:
+		return "remote"
+	segments = [segment for segment in path.split("/") if segment]
+	return segments[-1][:255] if segments else "remote"
+
+
+def ingest_inbound_activity(*, instance: Instance, payload: dict, signature_metadata: dict[str, str]) -> FederationObject:
+	activity_id = str(payload.get("id") or "").strip()
+	activity_type = str(payload.get("type") or "").strip().lower()
+	object_data = payload.get("object") if isinstance(payload.get("object"), dict) else {}
+	object_uri = str(object_data.get("id") or payload.get("object") or activity_id).strip()
+	if not activity_id:
+		activity_id = object_uri
+	if not object_uri:
+		raise ValueError("Inbound activity payload missing object identifier.")
+
+	if activity_type == "create" and object_data:
+		actor_uri = str(object_data.get("attributedTo") or payload.get("actor") or "").strip()
+		if actor_uri:
+			remote_actor, _ = RemoteActor.objects.update_or_create(
+				canonical_uri=actor_uri,
+				defaults={
+					"instance": instance,
+					"handle": _resolve_actor_handle(actor_uri),
+					"display_name": "",
+					"fetched_at": timezone.now(),
+				},
+			)
+			RemotePost.objects.update_or_create(
+				canonical_uri=object_uri,
+				defaults={
+					"instance": instance,
+					"remote_actor": remote_actor,
+					"content": str(object_data.get("content") or "").strip(),
+					"attachments": object_data.get("attachment") or [],
+					"metadata": {
+						"type": object_data.get("type", ""),
+						"inbound_activity_type": activity_type,
+					},
+					"fetched_at": timezone.now(),
+				},
+			)
+
+	object_type = FederationObject.ObjectType.OTHER
+	object_kind = str(object_data.get("type") or "").strip().lower()
+	if object_kind in {"person", "actor", "service", "application"}:
+		object_type = FederationObject.ObjectType.ACTOR
+	elif object_kind in {"note", "article", "image", "video"}:
+		object_type = FederationObject.ObjectType.POST
+
+	federation_object, _ = FederationObject.objects.update_or_create(
+		external_id=activity_id,
+		defaults={
+			"instance": instance,
+			"canonical_uri": object_uri,
+			"object_type": object_type,
+			"payload": payload,
+			"signature_metadata": signature_metadata,
+			"fetched_at": timezone.now(),
+			"processing_state": FederationObject.ProcessingState.PROCESSED,
+		},
+	)
+
+	instance.last_seen_at = timezone.now()
+	instance.save(update_fields=["last_seen_at", "updated_at"])
+	return federation_object

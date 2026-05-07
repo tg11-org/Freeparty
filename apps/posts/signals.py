@@ -25,3 +25,15 @@ def trigger_link_unfurl(sender, instance, created, **kwargs):
     from apps.posts.tasks import unfurl_post_link
 
     unfurl_post_link.delay(str(instance.id))
+
+
+@receiver(post_save, sender=Post)
+def queue_federation_delivery(sender, instance, created, **kwargs):
+    if not created:
+        return
+    if not getattr(settings, "FEATURE_FEDERATION_OUTBOUND_ENABLED", False):
+        return
+
+    from apps.federation.services import enqueue_post_for_federation
+
+    enqueue_post_for_federation(instance)

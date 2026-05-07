@@ -20,6 +20,7 @@ urlpatterns = [
     path("", include("apps.core.urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("actors/", include("apps.actors.urls")),
+    path("federation/", include("apps.federation.urls")),
     path("profiles/", include("apps.profiles.urls")),
     path("posts/", include("apps.posts.urls")),
     path("social/", include("apps.social.urls")),

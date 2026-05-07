@@ -23,6 +23,9 @@
       <li>Support staff can now use limited Django admin actions to resend verification emails and reissue account lifecycle recovery/cancellation links without broader moderation or configuration access.</li>
       <li>Expanded staff group roster to 11 roles covering the full operational surface: <strong>Content Reviewer</strong> (read-only dashboard), <strong>Community Manager</strong> (moderation without security access), <strong>Minor Safety Specialist</strong> (CSAM/NCII-focused with account lifecycle), <strong>Security Analyst</strong> (read-only security posture and audit events), <strong>Federation Manager</strong> (instance allowlist/blocklist and actor oversight), <strong>DevOps/SRE</strong> (operational health without user data), and <strong>Read-Only Auditor</strong> (compliance read access across all subsystems).</li>
       <li>Added custom permissions to <code>federation.Instance</code> (<code>manage_federation_allowlist</code>, <code>view_federation_health</code>) and <code>actors.Actor</code> (<code>manage_actor_verification</code>, <code>suspend_actor</code>) to support fine-grained federation and actor management roles.</li>
+      <li>Implemented an inbound federation inbox endpoint at <code>/federation/inbox/</code> with allowlist checks, HMAC signature verification, replay-window validation, and structured storage of received activities.</li>
+      <li>Implemented automatic outbound federation queueing for new local posts marked as federated: allowlisted partner instances now receive signed <code>Create</code> activity deliveries via Celery.</li>
+      <li>Added a dedicated federation inbound feature flag (<code>FEATURE_FEDERATION_INBOUND_ENABLED</code>) to allow controlled rollout independent from outbound federation.</li>
     </ul>
   </section>
 

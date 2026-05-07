@@ -51,7 +51,7 @@ def execute_federation_delivery(self, delivery_id: str, correlation_id: str | No
             shared_secret = delivery.target_instance.metadata.get("shared_secret") or getattr(settings, "FEDERATION_SHARED_SECRET", "")
             headers = build_signed_headers(
                 payload=payload_bytes,
-                key_id=f"freeparty:{delivery.target_instance.domain}",
+                key_id=f"freeparty:{getattr(settings, 'SITE_DOMAIN', '').strip()}",
                 shared_secret=shared_secret,
             )
             response = safe_fetch(
