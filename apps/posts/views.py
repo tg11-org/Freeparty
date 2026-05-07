@@ -55,6 +55,7 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 		post = form.save(commit=False)
 		post.author = actor
 		post.canonical_uri = post_uri(post.id)
+		post.federated = not post.local_only
 		post.save()
 
 		upload = form.cleaned_data.get("attachment")
