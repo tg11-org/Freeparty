@@ -6,11 +6,24 @@
   <a class="btn {% if active_tab == 'all' %}active{% endif %}" href="/posts/public/">All posts</a>
   <a class="btn {% if active_tab == 'media' %}active{% endif %}" href="/posts/public/?tab=media">Photos and videos</a>
   <a class="btn {% if active_tab == 'links' %}active{% endif %}" href="/posts/public/?tab=links">Links</a>
+  <a class="btn {% if active_tab == 'federated' %}active{% endif %}" href="/posts/public/?tab=federated">🌐 Federated</a>
 </div>
-{% for post in posts %}
-  {% include "partials/post_card.html" with post=post liked_ids=liked_ids disliked_ids=disliked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
-{% empty %}
-  <p style="color:var(--text2);">No public posts yet.</p>
-{% endfor %}
+{% if active_tab == 'federated' %}
+  {% for item in feed_items %}
+    {% if item.is_remote %}
+      {% include "partials/remote_post_card.html" with post=item.obj %}
+    {% else %}
+      {% include "partials/post_card.html" with post=item.obj liked_ids=liked_ids disliked_ids=disliked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
+    {% endif %}
+  {% empty %}
+    <p style="color:var(--text2);">No federated posts yet. Add a remote instance in the admin to start receiving posts.</p>
+  {% endfor %}
+{% else %}
+  {% for post in posts %}
+    {% include "partials/post_card.html" with post=post liked_ids=liked_ids disliked_ids=disliked_ids reposted_ids=reposted_ids bookmarked_ids=bookmarked_ids %}
+  {% empty %}
+    <p style="color:var(--text2);">No public posts yet.</p>
+  {% endfor %}
+{% endif %}
 {% include "partials/pagination.html" with page_obj=page_obj page_param="page" %}
 {% endblock %}

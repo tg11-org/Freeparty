@@ -24,7 +24,7 @@ from apps.posts.forms import PostForm
 from apps.posts.models import Attachment, Comment, CommentEditHistory, Post, PostEditHistory
 from apps.posts.tasks import process_media_attachment
 from apps.social.models import Bookmark, Dislike, HiddenPost, Like, Repost
-from apps.timelines.services import public_timeline
+from apps.timelines.services import federated_public_timeline, public_timeline
 
 
 @login_required
@@ -87,8 +87,39 @@ def create_post_view(request: HttpRequest) -> HttpResponse:
 def public_posts_view(request: HttpRequest) -> HttpResponse:
 	actor = request.user.actor if request.user.is_authenticated and hasattr(request.user, "actor") else None
 	active_tab = request.GET.get("tab", "all").strip().lower()
-	if active_tab not in {"all", "media", "links"}:
+	if active_tab not in {"all", "media", "links", "federated"}:
 		active_tab = "all"
+
+	liked_ids: set = set()
+	disliked_ids: set = set()
+	reposted_ids: set = set()
+	bookmarked_ids: set = set()
+	hidden_ids: set = set()
+
+	if active_tab == "federated":
+		feed_items = federated_public_timeline(actor=actor)
+		page_obj = paginate_queryset(request, feed_items, per_page=20, page_param="page")
+		# build like/bookmark sets for local posts only
+		if request.user.is_authenticated and hasattr(request.user, "actor"):
+			actor = request.user.actor
+			local_posts = [item["obj"] for item in page_obj.object_list if not item["is_remote"]]
+			liked_ids = set(Like.objects.filter(actor=actor, post__in=local_posts).values_list("post_id", flat=True))
+			disliked_ids = set(Dislike.objects.filter(actor=actor, post__in=local_posts).values_list("post_id", flat=True))
+			reposted_ids = set(Repost.objects.filter(actor=actor, post__in=local_posts).values_list("post_id", flat=True))
+			bookmarked_ids = set(Bookmark.objects.filter(actor=actor, post__in=local_posts).values_list("post_id", flat=True))
+			hidden_ids = set(HiddenPost.objects.filter(actor=actor, post__in=local_posts).values_list("post_id", flat=True))
+		return render(request, "posts/public_list.html", {
+			"feed_items": page_obj.object_list,
+			"page_obj": page_obj,
+			"liked_ids": liked_ids,
+			"disliked_ids": disliked_ids,
+			"reposted_ids": reposted_ids,
+			"bookmarked_ids": bookmarked_ids,
+			"hidden_ids": hidden_ids,
+			"active_tab": active_tab,
+			"query_string": "tab=federated",
+		})
+
 	posts_qs = public_timeline(actor=actor, limit=None)
 	if active_tab == "media":
 		posts_qs = posts_qs.filter(
@@ -99,11 +130,6 @@ def public_posts_view(request: HttpRequest) -> HttpResponse:
 		posts_qs = posts_qs.filter(link_preview__isnull=False)
 	page_obj = paginate_queryset(request, posts_qs, per_page=20, page_param="page")
 	posts = page_obj.object_list
-	liked_ids = set()
-	disliked_ids = set()
-	reposted_ids = set()
-	bookmarked_ids = set()
-	hidden_ids = set()
 	if request.user.is_authenticated and hasattr(request.user, "actor"):
 		actor = request.user.actor
 		liked_ids = set(Like.objects.filter(actor=actor, post__in=posts).values_list("post_id", flat=True))

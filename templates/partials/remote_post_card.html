@@ -1,0 +1,34 @@
+{# remote_post_card.html — include with post=RemotePost instance #}
+{% load tz %}
+<article class="post-card">
+  <div>
+    {% if post.remote_actor.avatar_url %}
+      <a href="{{ post.canonical_uri }}" target="_blank" rel="noopener noreferrer">
+        <img class="post-avatar" src="{{ post.remote_actor.avatar_url }}" alt="@{{ post.remote_actor.handle }}'s avatar">
+      </a>
+    {% else %}
+      <a href="{{ post.canonical_uri }}" target="_blank" rel="noopener noreferrer">
+        <div class="post-avatar-placeholder" aria-hidden="true">{{ post.remote_actor.handle|first|upper }}</div>
+      </a>
+    {% endif %}
+  </div>
+  <div class="post-body">
+    <div class="post-meta">
+      <span class="identity-stack">
+        <span>
+          <a href="{{ post.canonical_uri }}" target="_blank" rel="noopener noreferrer" class="identity-name">
+            {{ post.remote_actor.display_name|default:post.remote_actor.handle }}
+          </a>
+        </span>
+        <span class="identity-handle">@{{ post.remote_actor.handle }}@{{ post.instance.domain }}</span>
+      </span>
+      <span>·</span>
+      <time datetime="{{ post.created_at|date:"c" }}" title="{{ post.created_at }}">{{ post.created_at|timesince }} ago</time>
+      <span style="display:inline-block;padding:0.1rem 0.4rem;border-radius:4px;background:var(--surface2);color:var(--text2);font-size:0.7rem;font-weight:600;line-height:1.4;" title="From {{ post.instance.domain }}">🌐 {{ post.instance.domain }}</span>
+    </div>
+    <div class="post-content multiline-scroll">{{ post.content }}</div>
+    <div class="post-actions" style="margin-top:0.5rem;">
+      <a href="{{ post.canonical_uri }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="font-size:0.8rem;">View original ↗</a>
+    </div>
+  </div>
+</article>
