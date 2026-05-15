@@ -182,9 +182,16 @@ def _fetch_unfurl(url: str) -> dict:
 
     # ── Special handling for Giphy (oEmbed is broken, use direct iframe) ────
     if host == "giphy.com":
-        # Extract GIF ID from URL (last path component)
-        gif_id = parsed.path.rstrip("/").split("/")[-1]
-        if gif_id:
+        path_parts = [part for part in parsed.path.rstrip("/").split("/") if part]
+        slug_or_id = path_parts[-1] if path_parts else ""
+
+        # giphy.com/gifs/<slug>-<id> -> use only trailing ID for /embed/<id>
+        if "-" in slug_or_id:
+            gif_id = slug_or_id.rsplit("-", 1)[-1]
+        else:
+            gif_id = slug_or_id
+
+        if gif_id and re.fullmatch(r"[A-Za-z0-9]+", gif_id):
             result: dict = {
                 "url": url,
                 "title": "GIPHY",

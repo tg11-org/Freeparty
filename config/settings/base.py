@@ -269,11 +269,13 @@ HEALTH_READY_TOKEN = env("HEALTH_READY_TOKEN", default="")
 CSP_ROLLOUT_MODE = env("CSP_ROLLOUT_MODE", default="legacy-report-only").strip().lower()
 _CSP_LEGACY_POLICY = (
     "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+    "frame-src 'self' https:; "
     "img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline'; "
     "style-src 'self' 'unsafe-inline'"
 )
 _CSP_STRICT_POLICY = (
     "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+    "frame-src 'self' https:; "
     "img-src 'self' data: https:; object-src 'none'; script-src 'self'; style-src 'self'"
 )
 
