@@ -180,6 +180,21 @@ def _fetch_unfurl(url: str) -> dict:
         "Accept": "text/html,application/json;q=0.9,*/*;q=0.5",
     }
 
+    # ── Special handling for Giphy (oEmbed is broken, use direct iframe) ────
+    if host == "giphy.com":
+        # Extract GIF ID from URL (last path component)
+        gif_id = parsed.path.rstrip("/").split("/")[-1]
+        if gif_id:
+            result: dict = {
+                "url": url,
+                "title": "GIPHY",
+                "site_name": "GIPHY",
+                "description": "",
+                "thumbnail_url": "",
+                "embed_html": f'<iframe src="https://giphy.com/embed/{gif_id}" width="100%" height="100%" style="position:absolute" frameBorder="0" class="giphy-embed" allowFullScreen></iframe>',
+            }
+            return result
+
     # ── oEmbed path for known video providers ───────────────────────────────
     for provider_host, oembed_endpoint in _OEMBED_PROVIDERS.items():
         if host.endswith(provider_host):
