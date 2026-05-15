@@ -197,8 +197,8 @@ def _fetch_unfurl(url: str) -> dict:
                     "thumbnail_url": data.get("thumbnail_url", "")[:2000],
                     "embed_html": "",
                 }
-                # Only embed iframe for YouTube/Vimeo — sanitise to avoid XSS
-                if data.get("type") in ("video", "rich") and data.get("html"):
+                # Embed iframe for rich-media types (video, rich, animatedgif, etc.) — sanitise to avoid XSS
+                if data.get("type") in ("video", "rich", "animatedgif", "file") and data.get("html"):
                     result["embed_html"] = _sanitize_oembed_html(data["html"])
                 return result
             except Exception as exc:  # noqa: BLE001
