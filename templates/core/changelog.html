@@ -11,6 +11,19 @@
 
   <section style="margin-bottom:2.5rem;">
     <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
+      2026-05-15 &mdash; Link Embed Fixes: YouTube/Vimeo/Giphy Restoration, CSP Hardening for Cloudflare
+    </h2>
+    <ul>
+      <li>Fixed web embed rendering by adding <code>frame-src 'self' https:</code> to Content-Security-Policy, allowing third-party video iframes (YouTube, Vimeo) to load correctly.</li>
+      <li>Implemented Giphy embed support with direct iframe generation, bypassing Giphy's broken oEmbed endpoint: GIF slugs are now parsed correctly and embedded as interactive players.</li>
+      <li>Extended oEmbed type support to include <code>animatedgif</code> and <code>file</code> types in addition to <code>video</code> and <code>rich</code>, enabling embeds from more providers.</li>
+      <li>Whitelisted Cloudflare Insights analytics in CSP: added <code>script-src https://static.cloudflareinsights.com</code> and <code>connect-src https://cloudflareinsights.com</code> to allow Web Analytics beacon to function.</li>
+      <li>Updated CSP defaults in settings and .env.example to include frame-src and Cloudflare Insights allowances.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:2.5rem;">
+    <h2 style="font-size:1.1rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;">
       2026-05-06 &mdash; Security Re-audit Closures: SSRF Pinning, Verification Repairs, and Health/Analytics Hardening
     </h2>
     <ul>
